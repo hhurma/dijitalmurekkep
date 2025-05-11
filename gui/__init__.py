@@ -1,0 +1,1 @@
+# Bu dosya, 'gui' klasörünün bir Python paketi olduğunu belirtir. 

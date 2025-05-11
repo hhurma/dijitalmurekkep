@@ -1,0 +1,158 @@
+
+# 🧾 Python Projesi Kodlama Kuralları (Cursor AI Uyumlu)
+
+Bu kurallar, AI destekli editörlerde Python projelerinin okunabilir, sürdürülebilir ve modüler şekilde geliştirilmesini amaçlar.
+
+---
+
+## 🔧 Genel Kurallar
+
+- Tüm Python dosyaları PEP8 kurallarına uygun yazılmalıdır.
+- Fonksiyonlar **`snake_case`**, sınıflar **`PascalCase`** ile adlandırılmalıdır.
+- Kodlar fonksiyonel bloklara ayrılmalı; her fonksiyon tek bir sorumluluğa sahip olmalıdır.
+- Gereksiz yorum satırlarından kaçınılmalı; gerekli açıklamalar **Türkçe ve işlev odaklı** yazılmalıdır.
+
+---
+
+## 🧱 Yapı ve Dosya Organizasyonu
+
+```
+proje/
+├── main.py
+├── gui/
+│   └── arayuz.py
+├── handlers/
+│   ├── genel_handler.py
+│   └── dosya_handler.py
+├── utils/
+│   └── logger.py
+├── config/
+│   └── settings.json
+└── README.md
+```
+
+- Her klasör tek bir sorumluluk taşımalıdır.
+- `main.py` programın giriş noktası olmalı.
+- Ayarlar `config/` altında JSON veya `.env` dosyalarında tutulmalıdır.
+
+---
+
+## 🧠 Main Fonksiyonu
+
+- Tüm uygulamalar bir `main()` fonksiyonu içermelidir.
+- Çalıştırma bloğu zorunludur:
+
+```python
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+## 🖼️ GUI (Graphical User Interface)
+
+- GUI kodları `gui/` klasöründe toplanmalıdır.
+- GUI bileşenleri (`Tkinter`, `PyQt`, `Kivy`, vb.) yalnızca bu klasörde tanımlanmalıdır.
+- GUI olayları **handler fonksiyonlarına** yönlendirilmelidir.
+
+---
+
+## ⚙️ Handler Kuralları
+
+- Handler fonksiyonları `handlers/` klasöründe tanımlanmalıdır.
+- Fonksiyon isimleri `handle_` öneki ile başlamalıdır.
+- Her handler yalnızca bir işle ilgilenmelidir.
+- Handler fonksiyonlarında **GUI bileşen kodu bulunmamalıdır**.
+
+---
+
+## 🪵 Logging ve Konsol Çıktısı
+
+- `print()` sadece geçici testlerde kullanılmalıdır.
+- Gerçek çıktı ve hata yönetimi için `logging` modülü tercih edilmelidir.
+
+```python
+import logging
+logging.basicConfig(level=logging.INFO)
+logging.info("İşlem başarıyla tamamlandı.")
+```
+
+- Log seviyeleri: `info`, `error`, `debug`, `warning`
+
+---
+
+## ⚙️ Yapılandırma ve Ayarlar
+
+- Sabit değişkenler `settings.json` dosyalarında tutulmalıdır.
+- Bu dosya ayrı bir yapılandırma modülü ile (`config_loader.py`) yüklenmelidir.
+- Kod içinde sabit değerler doğrudan yazılmamalıdır.
+
+---
+
+## 🧪 Test Edilebilirlik
+
+- Fonksiyonlar dışa bağımlılığı olmayan, kolay test edilebilir yapıda olmalıdır.
+- İş mantığı (handler), GUI’den tamamen ayrılmalıdır.
+- Her işlem mantığı için birim test yazılabilecek yapı kurulmalıdır.
+
+---
+
+### 📏 Dosya Uzunluğu ve Sorumluluk Kuralı
+
+- Her `.py` dosyası tek bir amacı yerine getirmeli.
+- Dosya uzunluğu **maksimum 500–600 satır** ile sınırlandırılmalı.
+- 600 satırı geçen dosyalar parçalara ayrılmalı.
+- Handler'lar, yardımcı fonksiyonlar (`utils/`), yapılandırmalar (`config/`) ayrı dosyalarda tutulmalı.
+
+---
+
+## 🧩 Helper Fonksiyonlar ve Modülerleştirme
+
+- Karmaşık işlemleri sadeleştirmek için `helpers/` klasöründe yardımcı fonksiyonlar tanımlanmalıdır.
+- Ortak işlemler (tarih biçimlendirme, dosya kontrolü, string işleme vb.) tek bir yerde toplanmalıdır.
+- Yardımcı modüller, iş mantığını ana fonksiyonlardan ayırarak okunabilirliği artırır.
+- Her helper fonksiyonu **tek sorumluluk** ilkesine uygun şekilde yazılmalıdır.
+
+---
+
+## 🕒 Derleme Tarihi Entegrasyonu (`build_info.py`)
+
+- Tüm Python projelerinde `build_info.py` adında bir modül bulunmalıdır.
+- Bu modül, programın her derlenişinde geçerli tarih ve saat bilgisini içermelidir.
+- Tarih ve saat bilgisi, `YYYY-MM-DD HH:MM` formatında `BUILD_TIMESTAMP` adında bir sabitte saklanmalıdır.
+
+**Otomatik oluşturulacak dosya örneği:**
+
+```python
+# build_info.py
+from datetime import datetime
+
+BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
+```
+
+- Yapay zeka, `CHANGELOG.md`, `VERSIONS.md`, `logs/` gibi dosyaları oluştururken yalnızca bu sabiti kullanmalıdır.
+- Farklı yerlerde farklı tarih bilgisi oluşturmak **yasaktır**.
+- `README.md`, `setup.py`, `LICENSE` gibi dosyalara tarih bilgisi **otomatik yazılmamalıdır**.
+---
+
+## 🔖 Sürüm Numarası ve Belge Güncelleme Kuralları
+
+### 📌 Sürüm Numaralandırma
+- Projede her önemli değişiklik sonrası yeni bir sürüm numarası verilmelidir.
+- Sürüm formatı: `vX.Y.Z` şeklinde olmalıdır. Örnek: `v1.2.0`
+    - `X`: Büyük sürüm – geri uyumsuz değişikliklerde artırılır.
+    - `Y`: Orta sürüm – yeni özelliklerde artırılır.
+    - `Z`: Küçük sürüm – hata düzeltmelerinde artırılır.
+- Bu sürüm numarası `CHANGELOG.md`, `README.md` ve (varsa) `__version__.py` gibi yerlerde açıkça belirtilmelidir.
+
+### 📝 CHANGELOG.md
+- Her sürüm için ayrı bir başlık açılmalı:
+  ```markdown
+  ## [v1.2.0] - 2025-05-03
+  ```
+- Tarih değeri yalnızca `build_info.py` içindeki `BUILD_TIMESTAMP` sabitinden alınmalıdır.
+
+### 📘 README.md
+- Sürüm bilgisi README içinde görünür olmalı.
+- Kurulum talimatları veya örnek kodlar değişirse sürüm bilgisi eşlenmeli şekilde güncellenmelidir.
+

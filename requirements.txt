@@ -1,0 +1,5 @@
+PyQt6
+PyOpenGL
+PyQt6-OpenGL # OpenGL widgetları için gerekli
+qtawesome # İkonlar için 
+fpdf2 # PDF export için eklendi (reportlab alternatifi) 
