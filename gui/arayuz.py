@@ -28,6 +28,7 @@ from .grid_settings_dialog import GridSettingsDialog # YENİ EKLENDİ
 from handlers import page_handler, tool_handler, canvas_handler, action_handler, file_handler, settings_handler, pdf_handler # settings_handler ve pdf_handler eklendi
 # --- --- --- --- --- --- --- --- --- --- -- #
 from handlers import clipboard_handler
+from handlers import shape_pool_handler
 
 def get_config_file_path():
     import sys
@@ -504,6 +505,19 @@ class MainWindow(QMainWindow):
         self.paste_action.triggered.connect(self._handle_paste_action)
         self.paste_action.setEnabled(True)
 
+        # --- Şekil Havuzu Actionları ---
+        self.store_shape_action = QAction(qta.icon('fa5s.save', color='orange'), "Şekli Depola...", self)
+        self.store_shape_action.setStatusTip("Seçili şekli havuza kaydet")
+        self.store_shape_action.triggered.connect(lambda: shape_pool_handler.handle_store_shape(self.page_manager, self))
+
+        self.add_shape_from_pool_action = QAction(qta.icon('fa5s.plus', color='purple'), "Depodan Şekil Ekle...", self)
+        self.add_shape_from_pool_action.setStatusTip("Havuzdan seçilen şekli sayfaya ekle")
+        self.add_shape_from_pool_action.triggered.connect(lambda: shape_pool_handler.handle_add_shape_from_pool(self.page_manager, self))
+
+        self.delete_shape_from_pool_action = QAction(qta.icon('fa5s.trash', color='red'), "Depodan Şekil Sil...", self)
+        self.delete_shape_from_pool_action.setStatusTip("Havuzdan şekil grubunu sil")
+        self.delete_shape_from_pool_action.triggered.connect(lambda: shape_pool_handler.handle_delete_shape_from_pool(self.page_manager, self))
+
     def _create_toolbar(self):
         """Toolbar'ı oluşturur ve actionları ekler."""
         toolbar = self.addToolBar("Ana Araçlar")
@@ -716,6 +730,11 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self.cut_action)
         edit_menu.addAction(self.copy_action)
         edit_menu.addAction(self.paste_action)
+        edit_menu.addSeparator()
+        # --- Şekil Havuzu Actionları ---
+        edit_menu.addAction(self.store_shape_action)
+        edit_menu.addAction(self.add_shape_from_pool_action)
+        edit_menu.addAction(self.delete_shape_from_pool_action)
         edit_menu.addSeparator()
         edit_menu.addAction(self.clear_action)
 
