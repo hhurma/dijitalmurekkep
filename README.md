@@ -14,6 +14,12 @@ PyQt6 ve OpenGL tabanlı, kalem destekli dijital not alma uygulaması.
 - Ayarların ve son açılan dosyaların otomatik kaydı
 - Sürükle-bırak ile sayfa sıralama
 - Kapsamlı klavye kısayolları
+- **Şekil Havuzu (Depo) Özelliği:**
+  - Seçili bir veya birden fazla şekil ve/veya serbest çizim (kalemle path) birlikte "havuz"a (depo) kaydedilebilir.
+  - Havuzdan istenen grup, başlığı ile seçilerek aktif sayfaya eklenebilir.
+  - Hem şekiller (dikdörtgen, daire, çizgi vb.) hem de serbest çizimler (lines) aynı anda depolanabilir ve geri çağrılabilir.
+  - Havuzdan şekil/çizim grubu silinebilir.
+  - Tüm işlemler Edit menüsünden kolayca erişilebilir.
 
 ## Klasör Yapısı
 
@@ -22,8 +28,10 @@ proje/
 ├── main.py
 ├── gui/
 │   └── arayuz.py
+│   └── config/
+│       └── shape_pool.json   # Şekil havuzu verisi
 ├── handlers/
-│   ├── genel_handler.py
+│   ├── shape_pool_handler.py # Şekil havuzu işlemleri
 │   └── dosya_handler.py
 ├── utils/
 │   └── logger.py
@@ -47,7 +55,7 @@ python main.py
 
 ## Sürüm ve Derleme Bilgisi
 
-Sürüm: v1.0.0  
+Sürüm: v1.1.0  
 Derleme tarihi: `build_info.py` içindeki `BUILD_TIMESTAMP` sabiti kullanılır.
 
 ## Katkı ve Lisans
