@@ -379,8 +379,32 @@ def draw_temporary_pointer_stroke(painter: QPainter,
             visible_life_ratios.append(life_ratio)
     if len(visible_points) > 1:
         avg_life_ratio = sum(visible_life_ratios) / len(visible_life_ratios)
-        avg_glow_width = max(1.0, base_width * avg_life_ratio * glow_width_factor)
-        avg_glow_alpha = int(original_alpha * avg_life_ratio * glow_alpha_factor)
+        # 1. Katman: Çok geniş ve daha yüksek alpha
+        wide_glow_width = max(1.0, base_width * avg_life_ratio * glow_width_factor * 3.5)  # Genişlik artırıldı
+        wide_glow_alpha = int(original_alpha * avg_life_ratio * glow_alpha_factor * 0.7)   # Alpha artırıldı (0.25 -> 0.7)
+        if wide_glow_alpha > 0:
+            glow_path = QPainterPath()
+            glow_path.moveTo(visible_points[0])
+            for p in visible_points[1:]:
+                glow_path.lineTo(p)
+            glow_color = QColor(base_q_color)
+            # Glow rengini biraz daha açık yap (örneğin beyaza yaklaştır)
+            glow_color = QColor(
+                min(255, glow_color.red() + 60),
+                min(255, glow_color.green() + 60),
+                min(255, glow_color.blue() + 60),
+                wide_glow_alpha
+            )
+            pen.setColor(glow_color)
+            pen.setWidthF(wide_glow_width)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(glow_path)
+        # 2. Katman: Normal glow
+        avg_glow_width = max(1.0, base_width * avg_life_ratio * glow_width_factor * 1.5)  # Genişlik artırıldı
+        avg_glow_alpha = int(original_alpha * avg_life_ratio * glow_alpha_factor * 0.9)   # Alpha artırıldı
         if avg_glow_alpha > 0:
             glow_path = QPainterPath()
             glow_path.moveTo(visible_points[0])
@@ -416,6 +440,29 @@ def draw_temporary_pointer_stroke(painter: QPainter,
             pen.setWidthF(core_width)
             painter.setPen(pen)
             painter.drawLine(p1, p2)
+
+    # --- Feather Glow: Çok katmanlı, yumuşak geçişli glow ---
+    if len(visible_points) > 1:
+        glow_path = QPainterPath()
+        glow_path.moveTo(visible_points[0])
+        for p in visible_points[1:]:
+            glow_path.lineTo(p)
+        for i in range(6, 0, -1):  # 6 katman, dıştan içe
+            factor = i / 6.0
+            width = base_width * glow_width_factor * (1.0 + factor * 2.5)
+            alpha = int(original_alpha * glow_alpha_factor * factor * 0.5)
+            if alpha <= 0:
+                continue
+            glow_color = QColor(base_q_color)
+            glow_color.setAlpha(alpha)
+            pen.setColor(glow_color)
+            pen.setWidthF(width)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(glow_path)
+
     painter.restore()
 
 # draw_eraser_preview canvas içindeki paintEvent'in sonunda doğrudan çiziliyor, burada gerek yok.

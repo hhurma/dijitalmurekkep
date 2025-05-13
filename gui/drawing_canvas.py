@@ -196,13 +196,13 @@ class DrawingCanvas(QWidget):
         self.current_temporary_line_points: List[Tuple[QPointF, float]] = [] 
         self.current_temporary_line_timer = QTimer(self) 
         self.current_temporary_line_timer.timeout.connect(self._check_temporary_lines)
-        self.current_temporary_line_timer.start(50) 
+        self.current_temporary_line_timer.start(30)  # Daha akıcı animasyon için 30ms
         self.temporary_line_duration = 5.0 
         self.temp_pointer_color = QColor('#FFA500') 
         self.temp_pointer_width = 3.0 
-        self.temp_glow_width_factor: float = 2.5
+        self.temp_glow_width_factor: float = 4.0  # Daha geniş glow
         self.temp_core_width_factor: float = 0.5
-        self.temp_glow_alpha_factor: float = 0.55 
+        self.temp_glow_alpha_factor: float = 0.85  # Daha opak glow
         self.temp_core_alpha_factor: float = 0.9
         self.laser_pointer_color = QColor('#FF0000') 
         self.laser_pointer_size = 10.0 
@@ -259,6 +259,12 @@ class DrawingCanvas(QWidget):
             self.snap_lines_to_grid = CANVAS_DEFAULT_GRID_SETTINGS['grid_snap_enabled']
             self.grid_visible_on_snap = CANVAS_DEFAULT_GRID_SETTINGS['grid_visible_on_snap']
 
+        self.pointer_trail_points = []  # (QPointF, timestamp)
+        self.pointer_trail_duration = 1.2  # Saniye
+        self.pointer_trail_timer = QTimer(self)
+        self.pointer_trail_timer.timeout.connect(self._update_pointer_trail)
+        self.pointer_trail_timer.start(20)
+
     def get_image_export_data(self) -> List[dict]:
         """Sahnedeki resim öğelerinden PDF dışa aktarma için veri toplar."""
         export_data = []
@@ -292,8 +298,7 @@ class DrawingCanvas(QWidget):
         return export_data
 
     def paintEvent(self, event: QPaintEvent):
-        logging.debug(f"PaintEvent - Grid Ayarları: ThinColor={getattr(self, 'grid_thin_color', 'Yok')}, ThickInterval={getattr(self, 'grid_thick_line_interval', 'Yok')}")
-        # logging.debug(f"[drawing_canvas] paintEvent: shapes id={id(self.shapes)}, içerik={self.shapes}")
+        # logging.debug(f"PaintEvent - Grid Ayarları: ThinColor={getattr(self, 'grid_thin_color', 'Yok')}, ThickInterval={getattr(self, 'grid_thick_line_interval', 'Yok')}")
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
@@ -354,7 +359,8 @@ class DrawingCanvas(QWidget):
                                                            self.temp_core_alpha_factor)
         # --- YENİ: finalize edilmiş geçici pointer çizgilerini çiz ---
         if hasattr(self, 'temporary_lines'):
-            for line_points, color_tuple, width in self.temporary_lines:
+            for line in self.temporary_lines:
+                line_points, color_tuple, width = line[0], line[1], line[2]
                 utils_drawing_helpers.draw_temporary_pointer_stroke(
                     painter,
                     line_points,
@@ -473,6 +479,27 @@ class DrawingCanvas(QWidget):
                     j += 1
                 painter.restore()
         painter.end()
+
+        # --- Pointer Tool Glow/Fade-out Trail ---
+        if self.current_tool == ToolType.TEMPORARY_POINTER and len(self.pointer_trail_points) > 1:
+            for glow in range(8, 0, -1):
+                path = QPainterPath()
+                path.moveTo(self.pointer_trail_points[0][0])
+                for p, _ in self.pointer_trail_points[1:]:
+                    path.lineTo(p)
+                alpha = int(60 * (glow / 8.0))
+                width = 18 * (glow / 8.0)
+                color = QColor(255, 80, 80, alpha)
+                pen = QPen(color, width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+                painter.setPen(pen)
+                painter.drawPath(path)
+            path = QPainterPath()
+            path.moveTo(self.pointer_trail_points[0][0])
+            for p, _ in self.pointer_trail_points[1:]:
+                path.lineTo(p)
+            pen = QPen(QColor(255, 255, 255, 220), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+            painter.drawPath(path)
 
     def screen_to_world(self, screen_pos: QPointF) -> QPointF:
         if self._parent_page:
@@ -750,6 +777,14 @@ class DrawingCanvas(QWidget):
 
         # TODO: Diğer araçlara özel cursorlar eklenebilir (örn. Crosshair)
 
+        # Pointer trail timer kontrolü
+        if tool == ToolType.TEMPORARY_POINTER:
+            if not self.pointer_trail_timer.isActive():
+                self.pointer_trail_timer.start(20)
+        else:
+            if self.pointer_trail_timer.isActive():
+                self.pointer_trail_timer.stop()
+
     def clear_canvas(self):
         command = ClearCanvasCommand(self)
         self.undo_manager.execute(command)
@@ -958,39 +993,44 @@ class DrawingCanvas(QWidget):
     # --- --- --- --- --- --- --- --- --- ---
 
     def _check_temporary_lines(self):
-        """Zamanlayıcı tarafından çağrılır, süresi dolan geçici ÇİZGİ NOKTALARINI siler."""
+        """Zamanlayıcı tarafından çağrılır, süresi dolan geçici pointer çizgilerini animasyonlu olarak siler."""
         current_time = time.time()
         something_changed = False
-        
-        # Listenin kopyası üzerinde işlem yapalım veya dikkatlice yönetelim
         new_temporary_lines = []
-        
-        for points_with_ts, color, width in self.temporary_lines:
-            # Süresi dolmayan noktaları filtrele
-            valid_points_with_ts = [
-                (point, timestamp) for point, timestamp in points_with_ts
-                if current_time - timestamp < self.temporary_line_duration
-            ]
-            
-            # Eğer çizgide hala nokta kaldıysa listeye geri ekle
-            if valid_points_with_ts:
-                new_temporary_lines.append((valid_points_with_ts, color, width))
-                # Eğer nokta sayısı azaldıysa değişiklik oldu demektir
-                if len(valid_points_with_ts) != len(points_with_ts):
-                    something_changed = True
-            else:
-                 # Çizgide hiç nokta kalmadıysa, tamamen silindi
-                 something_changed = True 
-                 # logging.debug("A temporary line completely expired.") # Bu kalsın, seyrek bir olay
-                 
-        # Ana listeyi güncelle
-        self.temporary_lines = new_temporary_lines
+        animasyon_suresi = 1.0  # Silme animasyonu süresi (saniye)
+        # timer_interval = 0.05   # Timer aralığı (saniye) - Artık kullanılmayacak
 
-        # Eğer herhangi bir değişiklik olduysa ekranı güncelle
-        if something_changed:
-            # logging.debug(f"Checked temporary lines. Remaining lines: {len(self.temporary_lines)}") # Çok sık log olabilir
+        for line in self.temporary_lines:
+            points, color, width, start_time, animasyon_basladi = line
+            if not animasyon_basladi:
+                if current_time - start_time < self.temporary_line_duration:
+                    new_temporary_lines.append([points, color, width, start_time, False])
+                else:
+                    if len(points) > 0:
+                        new_temporary_lines.append([points, color, width, start_time, True])
+                        something_changed = True
+            else:
+                # Animasyon başladıysa, her adımda sadece 1 nokta sil
+                if len(points) > 0:
+                    points.pop()
+                    if len(points) > 0:
+                        new_temporary_lines.append([points, color, width, start_time, True])
+                        something_changed = True
+                    else:
+                        something_changed = True
+                else:
+                    something_changed = True
+        # --- paintEvent'te aktif çizim için fade-out başlat ---
+        if self.temporary_drawing_active and len(self.current_temporary_line_points) > 1:
+            ilk_zaman = self.current_temporary_line_points[0][1]
+            if current_time - ilk_zaman > self.temporary_line_duration:
+                self.current_temporary_line_points.pop(0)
+                something_changed = True
+        self.temporary_lines = new_temporary_lines
+        # Sadece bir değişiklik olduysa ve ekranda geçici çizgi veya aktif çizim varsa update çağır
+        if something_changed and (self.temporary_lines or self.temporary_drawing_active):
             self.update()
-    # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- #
+        # Timer'ı durdurma kodu kaldırıldı
 
     # --- YENİ: İşaretçi Ayarlarını Uygula --- #
     def apply_pointer_settings(self, settings: dict):
@@ -1508,3 +1548,26 @@ class DrawingCanvas(QWidget):
         self.snap_lines_to_grid = settings_dict.get('grid_snap_enabled', getattr(self, 'snap_lines_to_grid', CANVAS_DEFAULT_GRID_SETTINGS['grid_snap_enabled']))
         self.grid_visible_on_snap = settings_dict.get('grid_visible_on_snap', getattr(self, 'grid_visible_on_snap', CANVAS_DEFAULT_GRID_SETTINGS['grid_visible_on_snap']))
         self.update()
+
+    def _update_pointer_trail(self):
+        if self.current_tool == ToolType.TEMPORARY_POINTER:
+            now = time.time()
+            self.pointer_trail_points = [(p, t) for (p, t) in self.pointer_trail_points if now - t < self.pointer_trail_duration]
+            self.update()
+
+    def mousePressEvent(self, event):
+        if self.current_tool == ToolType.TEMPORARY_POINTER and event.button() == Qt.MouseButton.LeftButton:
+            self.pointer_trail_points = [(event.position(), time.time())]
+            self.update()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.current_tool == ToolType.TEMPORARY_POINTER and event.buttons() & Qt.MouseButton.LeftButton:
+            self.pointer_trail_points.append((event.position(), time.time()))
+            self.update()
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self.current_tool == ToolType.TEMPORARY_POINTER and event.button() == Qt.MouseButton.LeftButton:
+            pass  # Çizim bitince iz fade-out ile silinecek
+        super().mouseReleaseEvent(event)
