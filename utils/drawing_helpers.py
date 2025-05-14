@@ -210,7 +210,55 @@ def draw_shape(painter: QPainter, shape_data: List[Any], line_style: str = 'soli
     fill_rgba_from_data = shape_data[6] if len(shape_data) >= 7 else None
     # logging.debug(f"draw_shape called. ToolType from data: {tool_type_from_data}, Fill RGBA from data: {fill_rgba_from_data}, Received line_style: {line_style}") # KALDIRILDI
 
-    tool_type, color_tuple, width, p1, p2 = shape_data[:5]
+    tool_type, color_tuple, width = shape_data[:3]
+    
+    # Düzenlenebilir Çizgi için özel durum
+    if tool_type == ToolType.EDITABLE_LINE:
+        control_points = shape_data[3]  # 4. öğe kontrol noktaları listesidir
+        line_style = shape_data[4] if len(shape_data) > 4 else 'solid'
+        
+        # Kontrol noktaları listesini kullanarak Bezier eğrilerini çiz
+        if len(control_points) >= 4:
+            painter.save()
+            qcolor = rgba_to_qcolor(color_tuple)
+            pen = QPen(qcolor, width)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            
+            # Çizgi stilini ayarla
+            if line_style == 'dashed':
+                pen.setStyle(Qt.PenStyle.DashLine)
+            elif line_style == 'dotted':
+                pen.setStyle(Qt.PenStyle.DotLine)
+            elif line_style == 'dashdot':
+                pen.setStyle(Qt.PenStyle.DashDotLine)
+            else:
+                pen.setStyle(Qt.PenStyle.SolidLine)
+                
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            
+            # Bezier eğrisi path'ini oluştur
+            path = QPainterPath()
+            path.moveTo(control_points[0])
+            
+            # Tüm bezier segmentlerini çiz
+            for i in range(0, len(control_points) - 3, 3):
+                if i + 3 < len(control_points):
+                    path.cubicTo(
+                        control_points[i + 1],  # c1
+                        control_points[i + 2],  # c2
+                        control_points[i + 3]   # p1
+                    )
+            
+            painter.drawPath(path)
+            painter.restore()
+            return
+    
+    # Normal şekiller için mevcut kodun devamı
+    p1, p2 = None, None
+    if len(shape_data) > 4:
+        p1, p2 = shape_data[3], shape_data[4]
     
     # line_style parametresi öncelikli, yoksa shape_data[5]'i kullan (serileştirme sonrası için)
     if len(shape_data) >= 6 and line_style == 'solid': # Eğer argüman olarak stil gelmemişse (solid varsayılan)

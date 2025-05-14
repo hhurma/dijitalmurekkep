@@ -126,6 +126,64 @@ def handle_selector_rect_select_move(canvas: 'DrawingCanvas', pos: QPointF, even
 def handle_selector_resize_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
     """Seçili öğelerin (çizim/şekil) yeniden boyutlandırılmasını yönetir."""
     logging.debug(f"[selector_tool_handler] handle_selector_resize_move: shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
+    
+    # --- YENİ: DÜZENLENEBILIR ÇIZGI için özel tutamaç işlemi --- #
+    if (
+        len(canvas.selected_item_indices) == 1 and
+        canvas.selected_item_indices[0][0] == 'shapes' and
+        canvas.grabbed_handle_type
+    ):
+        shape_index = canvas.selected_item_indices[0][1]
+        if 0 <= shape_index < len(canvas.shapes):
+            shape_data = canvas.shapes[shape_index]
+            tool_type = shape_data[0]
+            
+            # Düzenlenebilir çizgi işlemi
+            if tool_type == ToolType.EDITABLE_LINE:
+                # Bezier kontrol noktaları
+                control_points = shape_data[3]
+                
+                # Handle tipi inceleniyor
+                if canvas.grabbed_handle_type.startswith('main_'):
+                    # Ana kontrol noktası taşınıyor
+                    idx = int(canvas.grabbed_handle_type.split('_')[1])
+                    if 0 <= idx < len(control_points):
+                        # Ana noktayı güncelle
+                        control_points[idx] = pos
+                        
+                        # Komşu kontrol noktalarını da güncelle (eğer varsa)
+                        if idx > 0 and idx-1 < len(control_points):  # Önceki kontrol noktası
+                            # Önceki kontrol noktasıyla yeni ana nokta arasındaki vektörü koru
+                            if idx-2 >= 0:  # Önceki ana nokta
+                                prev_main = control_points[idx-3]
+                                old_control = control_points[idx-1]
+                                # Eski ana noktadan kontrol noktasına vektör
+                                old_vector = old_control - prev_main
+                                # Bu vektörü yeni konuma uygula
+                                control_points[idx-1] = pos - old_vector
+                        
+                        if idx+1 < len(control_points):  # Sonraki kontrol noktası
+                            # Sonraki kontrol noktasıyla yeni ana nokta arasındaki vektörü koru
+                            control_points[idx+1] = pos + (control_points[idx+1] - control_points[idx])
+                
+                elif canvas.grabbed_handle_type.startswith('control1_'):
+                    # İlk kontrol noktası taşınıyor (C1)
+                    idx = int(canvas.grabbed_handle_type.split('_')[1])
+                    if 0 <= idx < len(control_points):
+                        # Kontrol noktasını güncelle
+                        control_points[idx] = pos
+                
+                elif canvas.grabbed_handle_type.startswith('control2_'):
+                    # İkinci kontrol noktası taşınıyor (C2)
+                    idx = int(canvas.grabbed_handle_type.split('_')[1])
+                    if 0 <= idx < len(control_points):
+                        # Kontrol noktasını güncelle
+                        control_points[idx] = pos
+                
+                # Değişiklikleri canvas'a uygula
+                canvas.update()
+                return
+
     # --- DÜZ ÇİZGİ (LINE) için özel uç tutamaç işlemi --- #
     if (
         len(canvas.selected_item_indices) == 1 and
@@ -143,6 +201,7 @@ def handle_selector_resize_move(canvas: 'DrawingCanvas', pos: QPointF, event: QT
                     canvas.shapes[shape_index][4] = pos
                 canvas.update()
                 return
+                
     # --- KLASİK DAVRANIŞ (diğer şekiller ve klasik tutamaçlar) --- #
     if not canvas.resize_start_pos.isNull() and canvas.grabbed_handle_type and not canvas.resize_original_bbox.isNull():
         new_bbox = geometry_helpers.calculate_new_bbox(canvas.resize_original_bbox, canvas.grabbed_handle_type, pos, canvas.resize_start_pos)
@@ -181,18 +240,34 @@ def handle_selector_resize_move(canvas: 'DrawingCanvas', pos: QPointF, event: QT
                         else: logging.warning(f"Resize Move: Geçersiz lines index {index}")
                     elif item_type == 'shapes':
                         if 0 <= index < len(canvas.shapes):
-                            original_p1 = original_item_data[3]
-                            original_p2 = original_item_data[4]
-                            logging.debug(f"  Shape[{index}] P1 (Original): {original_p1}, P2 (Original): {original_p2}")
-                            relative_p1 = original_p1 - original_center
-                            scaled_p1 = QPointF(relative_p1.x() * scale_x, relative_p1.y() * scale_y)
-                            transformed_p1 = scaled_p1 + original_center + translate_delta
-                            relative_p2 = original_p2 - original_center
-                            scaled_p2 = QPointF(relative_p2.x() * scale_x, relative_p2.y() * scale_y)
-                            transformed_p2 = scaled_p2 + original_center + translate_delta
-                            logging.debug(f"    P1 (Transformed): {transformed_p1}, P2 (Transformed): {transformed_p2}")
-                            canvas.shapes[index][3] = transformed_p1
-                            canvas.shapes[index][4] = transformed_p2
+                            shape_tool_type = canvas.shapes[index][0]
+                            
+                            # Düzenlenebilir çizgi için özel boyutlandırma
+                            if shape_tool_type == ToolType.EDITABLE_LINE:
+                                original_points = original_item_data[3]  # Bezier kontrol noktaları
+                                transformed_points = []
+                                
+                                for p_idx, p_val in enumerate(original_points):
+                                    relative_p = p_val - original_center
+                                    scaled_p = QPointF(relative_p.x() * scale_x, relative_p.y() * scale_y)
+                                    transformed_p = scaled_p + original_center + translate_delta
+                                    transformed_points.append(transformed_p)
+                                
+                                canvas.shapes[index][3] = transformed_points
+                            else:
+                                # Diğer şekiller için standart işlemler
+                                original_p1 = original_item_data[3]
+                                original_p2 = original_item_data[4]
+                                logging.debug(f"  Shape[{index}] P1 (Original): {original_p1}, P2 (Original): {original_p2}")
+                                relative_p1 = original_p1 - original_center
+                                scaled_p1 = QPointF(relative_p1.x() * scale_x, relative_p1.y() * scale_y)
+                                transformed_p1 = scaled_p1 + original_center + translate_delta
+                                relative_p2 = original_p2 - original_center
+                                scaled_p2 = QPointF(relative_p2.x() * scale_x, relative_p2.y() * scale_y)
+                                transformed_p2 = scaled_p2 + original_center + translate_delta
+                                logging.debug(f"    P1 (Transformed): {transformed_p1}, P2 (Transformed): {transformed_p2}")
+                                canvas.shapes[index][3] = transformed_p1
+                                canvas.shapes[index][4] = transformed_p2
                         else: logging.warning(f"Resize Move: Geçersiz shapes index {index}")
                 except Exception as e:
                      logging.error(f"Resize Move sırasında öğe ({item_type}[{index}]) güncellenirken hata: {e}", exc_info=True)
@@ -256,6 +331,56 @@ def handle_selector_resize_release(canvas: 'DrawingCanvas', pos: QPointF, event:
     """Seçili öğelerin yeniden boyutlandırılmasının bittiği olayı yönetir."""
     logging.debug(f"[selector_tool_handler] handle_selector_resize_release: shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
     logging.debug(f"Resize selection finished. Handle: {canvas.grabbed_handle_type}, End World Pos: {pos}")
+    
+    # --- YENİ: DÜZENLENEBILIR ÇIZGI için özel tutamaç işlemi --- #
+    if (
+        len(canvas.selected_item_indices) == 1 and
+        canvas.selected_item_indices[0][0] == 'shapes' and
+        canvas.grabbed_handle_type and
+        (canvas.grabbed_handle_type.startswith('main_') or 
+         canvas.grabbed_handle_type.startswith('control1_') or 
+         canvas.grabbed_handle_type.startswith('control2_'))
+    ):
+        shape_index = canvas.selected_item_indices[0][1]
+        if 0 <= shape_index < len(canvas.shapes):
+            shape_data = canvas.shapes[shape_index]
+            tool_type = shape_data[0]
+            
+            if tool_type == ToolType.EDITABLE_LINE:
+                # Değişiklikleri kalıcı hale getirmek için
+                from utils.commands import UpdateEditableLineCommand
+                
+                original_control_points = []
+                if canvas.original_resize_states and canvas.original_resize_states[0]:
+                    original_control_points = canvas.original_resize_states[0][3]
+                
+                current_control_points = shape_data[3]
+                
+                # Değişikliği kaydet
+                if original_control_points and current_control_points and original_control_points != current_control_points:
+                    command = UpdateEditableLineCommand(
+                        canvas,
+                        shape_index,
+                        original_control_points,
+                        current_control_points
+                    )
+                    canvas.undo_manager.execute(command)
+                    
+                    if canvas._parent_page:
+                        canvas._parent_page.mark_as_modified()
+                    if hasattr(canvas, 'content_changed'):
+                        canvas.content_changed.emit()
+                
+                # UI ve durum temizleme
+                QApplication.restoreOverrideCursor()
+                canvas.resizing_selection = False
+                canvas.grabbed_handle_type = None
+                canvas.original_resize_states.clear()
+                canvas.resize_original_bbox = QRectF()
+                canvas.resize_start_pos = QPointF()
+                canvas.update()
+                return
+    
     if canvas.grabbed_handle_type and canvas.original_resize_states:
         final_states = canvas._get_current_selection_states(canvas._parent_page)
         final_bbox = canvas._get_combined_bbox([]) # Pass empty list, it uses canvas.selected_item_indices

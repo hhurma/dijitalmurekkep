@@ -129,6 +129,9 @@ def handle_shape_release(canvas: 'DrawingCanvas', pos: QPointF):
                 logging.debug("UndoManager: execute çağrısı bitti (DrawShapeCommand).")
                 if canvas._parent_page: 
                     canvas._parent_page.mark_as_modified()
+                # Sayfanın değiştiğini belirten sinyali gönderelim
+                if hasattr(canvas, 'content_changed'):
+                    canvas.content_changed.emit()
                 # logging.debug(f"shape_tool_handler: DrawShapeCommand pushed for {tool_type.name}.") # KALDIRILDI
             else:
                 logging.error("shape_tool_handler: DrawShapeCommand oluşturulamadığı için undo yığınına eklenemedi.")

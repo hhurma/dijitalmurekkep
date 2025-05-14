@@ -190,6 +190,119 @@ def draw_selection_overlay(canvas: 'DrawingCanvas', painter: QPainter):
                         canvas.current_handles[key] = handle_rect
                     painter.restore()
                     return # Diğer seçim kutusu ve tutamaçlar çizilmesin
+                
+                # --- YENİ: Düzenlenebilir Çizgi (EDITABLE_LINE) için özel tutamaç --- #
+                elif tool_type == ToolType.EDITABLE_LINE:
+                    control_points = shape_data[3]  # Bezier kontrol noktaları
+                    if not control_points or len(control_points) < 4:
+                        return
+                    
+                    handle_size_screen = selection_helpers.HANDLE_SIZE
+                    half_handle_screen = handle_size_screen / 2.0
+                    bezier_handle_size_screen = handle_size_screen * 0.8
+                    half_bezier_handle_screen = bezier_handle_size_screen / 2.0
+                    
+                    # Önce, çizginin kendisini çizelim (seçili olduğunu belirtmek için)
+                    painter.save()
+                    selection_pen = QPen(QColor(0, 100, 255, 150), 1, Qt.PenStyle.DashLine)
+                    selection_pen.setCosmetic(True)
+                    painter.setPen(selection_pen)
+                    
+                    # Bezier çizgilerini çizmek için QPainterPath kullan
+                    path = QPainterPath()
+                    path.moveTo(canvas.world_to_screen(control_points[0]))
+                    
+                    # Cubic Bezier eğrilerini çiz
+                    for i in range(0, len(control_points) - 3, 3):
+                        p0_screen = canvas.world_to_screen(control_points[i])
+                        p1_screen = canvas.world_to_screen(control_points[i + 1])
+                        p2_screen = canvas.world_to_screen(control_points[i + 2])
+                        p3_screen = canvas.world_to_screen(control_points[i + 3])
+                        
+                        path.cubicTo(p1_screen, p2_screen, p3_screen)
+                    
+                    painter.drawPath(path)
+                    
+                    # Şimdi kontrol noktalarını çizelim
+                    handle_pen = QPen(Qt.GlobalColor.black)
+                    handle_pen.setCosmetic(True)
+                    
+                    for i in range(0, len(control_points), 3):
+                        # Ana noktalar (kubik bezier eğrilerinin uç noktaları)
+                        if i < len(control_points):
+                            p_screen = canvas.world_to_screen(control_points[i])
+                            
+                            # Ana nokta tutamaçlarını çiz (mavi)
+                            painter.setPen(handle_pen)
+                            painter.setBrush(QBrush(QColor(0, 100, 255, 128)))  # Mavi
+                            
+                            handle_rect = QRectF(
+                                p_screen.x() - half_handle_screen,
+                                p_screen.y() - half_handle_screen,
+                                handle_size_screen,
+                                handle_size_screen
+                            )
+                            painter.drawRect(handle_rect)
+                            
+                            # Tutamaç bilgisini canvas'a kaydet
+                            handle_key = f"main_{i}"
+                            canvas.current_handles[handle_key] = handle_rect
+                        
+                        # Bezier kontrol noktaları (ara noktalar)
+                        # İlk kontrol noktası (C1)
+                        if i + 1 < len(control_points):
+                            # Kontrol çizgisini çiz
+                            if i < len(control_points):
+                                p0_screen = canvas.world_to_screen(control_points[i])
+                                c1_screen = canvas.world_to_screen(control_points[i + 1])
+                                painter.setPen(QPen(QColor(0, 200, 0, 100), 1, Qt.PenStyle.DashLine))
+                                painter.drawLine(p0_screen, c1_screen)
+                            
+                            # Kontrol noktası tutamacını çiz (yeşil)
+                            c1_screen = canvas.world_to_screen(control_points[i + 1])
+                            painter.setPen(handle_pen)
+                            painter.setBrush(QBrush(QColor(0, 200, 0, 128)))  # Yeşil
+                            
+                            handle_rect = QRectF(
+                                c1_screen.x() - half_bezier_handle_screen,
+                                c1_screen.y() - half_bezier_handle_screen,
+                                bezier_handle_size_screen,
+                                bezier_handle_size_screen
+                            )
+                            painter.drawEllipse(handle_rect)
+                            
+                            # Tutamaç bilgisini canvas'a kaydet
+                            handle_key = f"control1_{i+1}"
+                            canvas.current_handles[handle_key] = handle_rect
+                        
+                        # İkinci kontrol noktası (C2)
+                        if i + 2 < len(control_points):
+                            # Kontrol çizgisini çiz
+                            if i + 3 < len(control_points):
+                                p3_screen = canvas.world_to_screen(control_points[i + 3])
+                                c2_screen = canvas.world_to_screen(control_points[i + 2])
+                                painter.setPen(QPen(QColor(200, 0, 0, 100), 1, Qt.PenStyle.DashLine))
+                                painter.drawLine(p3_screen, c2_screen)
+                            
+                            # Kontrol noktası tutamacını çiz (kırmızı)
+                            c2_screen = canvas.world_to_screen(control_points[i + 2])
+                            painter.setPen(handle_pen)
+                            painter.setBrush(QBrush(QColor(200, 0, 0, 128)))  # Kırmızı
+                            
+                            handle_rect = QRectF(
+                                c2_screen.x() - half_bezier_handle_screen,
+                                c2_screen.y() - half_bezier_handle_screen,
+                                bezier_handle_size_screen,
+                                bezier_handle_size_screen
+                            )
+                            painter.drawEllipse(handle_rect)
+                            
+                            # Tutamaç bilgisini canvas'a kaydet
+                            handle_key = f"control2_{i+2}"
+                            canvas.current_handles[handle_key] = handle_rect
+                    
+                    painter.restore()
+                    return  # Diğer seçim kutuları ve tutamaçlar çizilmesin
         # --- Diğer şekiller için klasik seçim kutusu ve tutamaçlar --- #
         combined_bbox_world = canvas._get_combined_bbox([])
         if not combined_bbox_world.isNull():

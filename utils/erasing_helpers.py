@@ -19,6 +19,44 @@ if TYPE_CHECKING:
 #  'shapes': [index1, index2, ...]} # Şekiller şimdilik tam siliniyor
 EraseChanges = Dict[str, Any]
 
+def erase_at_position(canvas: 'DrawingCanvas', position: QPointF, eraser_width: float):
+    """Belirtilen pozisyonda silgiyi uygular.
+
+    Args:
+        canvas: DrawingCanvas örneği
+        position: Silginin uygulanacağı dünya koordinatı
+        eraser_width: Silginin genişliği
+    """
+    from utils.commands import EraseCommand
+    
+    # Silgi yolu olarak sadece tek bir nokta koy
+    erase_path = [position]
+    
+    # Silgi değişikliklerini hesapla
+    changes = calculate_erase_changes(canvas.lines, canvas.shapes, erase_path, eraser_width)
+    
+    if changes['lines'] or changes['shapes']:
+        # Silme komutu oluştur
+        command = EraseCommand(canvas, changes)
+        
+        # Komutu uygula
+        canvas.undo_manager.execute(command)
+        
+        # Canvas'ı güncelle
+        canvas.update()
+        
+        # İçerik değişti sinyalini gönder (eğer varsa)
+        if hasattr(canvas, 'content_changed'):
+            canvas.content_changed.emit()
+            
+        # Eğer bir sayfaya bağlıysa, sayfayı değişmiş olarak işaretle
+        if canvas._parent_page:
+            canvas._parent_page.mark_as_modified()
+            
+        return True
+    
+    return False
+
 def _get_eraser_bounding_rect(path: List[QPointF], width: float) -> QRectF:
     """Silgi yolunun sınırlayıcı dikdörtgenini hesaplar."""
     if not path:

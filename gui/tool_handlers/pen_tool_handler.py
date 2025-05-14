@@ -92,6 +92,12 @@ def handle_pen_release(canvas: 'DrawingCanvas', pos: QPointF, event):
                      command = EraseCommand(canvas, calculated_changes)
                      canvas.undo_manager.execute(command)
                      logging.debug(f"Temporary EraseCommand created and executed.")
+                     
+                     # Sayfayı değiştirilmiş olarak işaretle ve sinyal gönder
+                     if canvas._parent_page:
+                         canvas._parent_page.mark_as_modified()
+                     if hasattr(canvas, 'content_changed'):
+                         canvas.content_changed.emit()
                  except Exception as e:
                      logging.error(f"Temporary EraseCommand oluşturulurken/çalıştırılırken hata: {e}", exc_info=True)
              else:
@@ -118,10 +124,15 @@ def handle_pen_release(canvas: 'DrawingCanvas', pos: QPointF, event):
             # DrawLineCommand'a canvas referansını doğru şekilde veriyoruz.
             command = DrawLineCommand(canvas, line_data)
             canvas.undo_manager.execute(command)
-            # logging.debug(f"Pen Release: DrawLineCommand executed with {len(final_points)} points.")
+            logging.debug(f"Pen Release: DrawLineCommand executed with {len(final_points)} points.")
+            
+            # Sayfayı değiştirilmiş olarak işaretle ve sinyal gönder
+            if canvas._parent_page:
+                canvas._parent_page.mark_as_modified()
+            if hasattr(canvas, 'content_changed'):
+                canvas.content_changed.emit()
         else:
-            # logging.debug("Pen Release: Line too short, not added to commands.")
-            pass
+            logging.debug("Pen Release: Line too short, not added to commands.")
 
         canvas.drawing = False # Çizim bitti
         canvas.current_line_points = [] # Çizim listesini TEMİZLE

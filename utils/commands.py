@@ -959,3 +959,126 @@ class DeleteItemsCommand(Command):
         logging.debug(f"DeleteItemsCommand.undo: BİTİŞ. shapes id={id(self.canvas.shapes)}, içerik={self.canvas.shapes}")
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
+
+class DrawEditableLineCommand(Command):
+    """Düzenlenebilir Bezier çizgisi çizme işlemini temsil eder."""
+    def __init__(self, canvas: 'DrawingCanvas', 
+                 control_points: List[QPointF], 
+                 color: tuple, 
+                 width: float,
+                 line_style: str = 'solid'):
+        """Başlatıcı.
+
+        Args:
+            canvas: İşlemin uygulanacağı DrawingCanvas örneği.
+            control_points: Bezier eğrisi kontrol noktaları listesi [p0, c1, c2, p1, ...].
+            color: Renk tuple'ı (R, G, B, A -> 0-1 float).
+            width: Çizgi kalınlığı.
+            line_style: Çizgi stili ('solid', 'dashed', vb.).
+        """
+        self.canvas = canvas
+        
+        # Bezier eğrisi verilerini sakla
+        self.line_data = {
+            'tool_type': ToolType.EDITABLE_LINE,
+            'control_points': copy.deepcopy(control_points),
+            'color': color,
+            'width': width,
+            'line_style': line_style
+        }
+
+        self._line_added = False
+        self._added_index = -1
+
+    def execute(self):
+        logging.debug("DrawEditableLineCommand: execute() çağrıldı.")
+        try:
+            if not hasattr(self.canvas, 'shapes') or not isinstance(self.canvas.shapes, list):
+                logging.error("DrawEditableLineCommand: Canvas.shapes bulunamadı veya liste değil.")
+                self._line_added = False
+                return
+
+            # DrawEditableLineCommand verilerini Shape formatına dönüştür
+            shape_data_to_add = [
+                self.line_data['tool_type'],
+                self.line_data['color'],
+                self.line_data['width'],
+                copy.deepcopy(self.line_data['control_points']),  # Tüm kontrol noktaları
+                self.line_data['line_style']
+            ]
+
+            if self._line_added: # Redo durumu
+                if 0 <= self._added_index <= len(self.canvas.shapes):
+                    self.canvas.shapes.insert(self._added_index, shape_data_to_add)
+                else:
+                    self.canvas.shapes.append(shape_data_to_add)
+            elif not self._line_added:
+                self._added_index = len(self.canvas.shapes)
+                self.canvas.shapes.append(shape_data_to_add)
+                self._line_added = True
+
+            self.canvas.update()
+            if hasattr(self.canvas, 'content_changed'):
+                self.canvas.content_changed.emit()
+            if hasattr(self.canvas, 'selection_changed'):
+                self.canvas.selection_changed.emit()
+        except Exception as e:
+            logging.error(f"DrawEditableLineCommand execute hatası: {e}", exc_info=True)
+            self._line_added = False
+            self._added_index = -1
+        logging.debug("DrawEditableLineCommand: execute() tamamlandı.")
+
+    def undo(self):
+        logging.debug("DrawEditableLineCommand.undo: BAŞLANGIÇ.")
+        """Eklenen düzenlenebilir çizgiyi canvas'tan kaldırır."""
+        if not self._line_added or self._added_index < 0:
+            return
+        try:
+            if 0 <= self._added_index < len(self.canvas.shapes):
+                del self.canvas.shapes[self._added_index]
+                self._line_added = False
+                self.canvas.update()
+                if hasattr(self.canvas, 'content_changed'):
+                    self.canvas.content_changed.emit()
+                if hasattr(self.canvas, 'selection_changed'):
+                    self.canvas.selection_changed.emit()
+        except IndexError:
+            logging.error(f"DrawEditableLineCommand undo: Index hatası oluştu. index={self._added_index}, shapes_len={len(self.canvas.shapes)}", exc_info=True)
+        except Exception as e:
+            logging.error(f"DrawEditableLineCommand undo hatası: {e}", exc_info=True)
+            self._line_added = False
+
+# TODO: ResizeItemsCommand, DeleteItemsCommand eklenecek
+
+class UpdateEditableLineCommand:
+    """Düzenlenebilir çizginin kontrol noktalarını güncelleyen komut."""
+    
+    def __init__(self, canvas, shape_index, original_points, new_points):
+        """
+        Args:
+            canvas: Çizim canvas'ı referansı
+            shape_index: Düzenlenen shape'in indeksi
+            original_points: Orijinal kontrol noktaları listesi
+            new_points: Yeni kontrol noktaları listesi
+        """
+        self.canvas = canvas
+        self.shape_index = shape_index
+        self.original_points = original_points.copy()
+        self.new_points = new_points.copy()
+        self.description = "Düzenlenebilir Çizgi Güncelleme"
+    
+    def execute(self):
+        """Komutu uygular: Düzenlenebilir çizginin kontrol noktalarını günceller."""
+        if 0 <= self.shape_index < len(self.canvas.shapes):
+            self.canvas.shapes[self.shape_index][3] = self.new_points.copy()
+            self.canvas.update()
+    
+    def undo(self):
+        """Komutu geri alır: Düzenlenebilir çizginin kontrol noktalarını orijinal haline döndürür."""
+        if 0 <= self.shape_index < len(self.canvas.shapes):
+            self.canvas.shapes[self.shape_index][3] = self.original_points.copy()
+            self.canvas.update()
+    
+    def redo(self):
+        """Komutu yeniden uygular: Düzenlenebilir çizginin kontrol noktalarını tekrar günceller."""
+        self.execute()

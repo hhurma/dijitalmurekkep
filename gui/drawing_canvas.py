@@ -176,6 +176,20 @@ class DrawingCanvas(QWidget):
         self.current_pen_width = 2.0
         self.eraser_width = DEFAULT_ERASER_WIDTH 
         self.pressure = 1.0
+        
+        # --- YENİ: Düzenlenebilir Çizgi Aracı Özellikleri --- #
+        self.current_editable_line_points = []
+        self.active_handle_index = -1
+        self.active_bezier_handle_index = -1
+        self.is_dragging_bezier_handle = False
+        self.bezier_control_points = []  # [p0, c1, c2, p1] formatında kontrol noktaları
+        # --- --- --- --- --- --- --- --- --- --- --- --- --- #
+        
+        # --- YENİ: Kontrol Noktası Seçici Aracı Özellikleri --- #
+        self.hovered_node_index = -1  # Fare üzerindeyken vurgulanan ana nokta indeksi
+        self.hovered_bezier_handle_index = -1  # Fare üzerindeyken vurgulanan kontrol noktası indeksi
+        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- #
+        
         self.setMouseTracking(True)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
         self.resize_threshold_passed = False 
@@ -343,6 +357,77 @@ class DrawingCanvas(QWidget):
                         actual_fill_rgba_tuple = (fill_r, fill_g, fill_b, fill_a) # temporary alpha is always the chosen alpha
                         temp_shape_data.append(actual_fill_rgba_tuple)
                     utils_drawing_helpers.draw_shape(painter, temp_shape_data, self.line_style)
+            # --- YENİ: Düzenlenebilir Çizgi Aracı Çizimi --- #
+            elif self.current_tool == ToolType.EDITABLE_LINE:
+                # Önce kontur noktaları her durumda çizelim (bezier kontrol noktaları olmasa bile)
+                pen = QPen(QColor.fromRgbF(*self.current_color), self.current_pen_width)
+                pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                painter.setPen(pen)
+                
+                # Düz çizgi olarak çiz (her zaman görünür olmalı)
+                if len(self.current_editable_line_points) > 0:
+                    path = QPainterPath()
+                    if len(self.current_editable_line_points) == 1:
+                        # Tek nokta varsa küçük bir daire çiz
+                        painter.drawEllipse(self.current_editable_line_points[0], 2, 2)
+                    else:
+                        # Noktaları birleştiren düz çizgiler çiz
+                        path.moveTo(self.current_editable_line_points[0])
+                        for point in self.current_editable_line_points[1:]:
+                            path.lineTo(point)
+                        painter.drawPath(path)
+                
+                # Daha sonra bezier eğrisi varsa onu çiz
+                if len(self.bezier_control_points) >= 4:
+                    path = QPainterPath()
+                    path.moveTo(self.bezier_control_points[0])  # İlk nokta
+                    
+                    # Tüm bezier segmentlerini çiz
+                    for i in range(0, len(self.bezier_control_points) - 3, 3):
+                        # Eğer bir bezier eğrisi segmenti için yeterli nokta varsa
+                        if i + 3 < len(self.bezier_control_points):
+                            # Her segment: [p0, c1, c2, p1]
+                            # p0 zaten path içindedir, c1, c2 ve p1 ile kubik bezier oluştur
+                            path.cubicTo(
+                                self.bezier_control_points[i + 1],  # c1
+                                self.bezier_control_points[i + 2],  # c2
+                                self.bezier_control_points[i + 3]   # p1
+                            )
+                    
+                    # Eğriyi önceki çizginin üzerine çiz
+                    painter.drawPath(path)
+                
+                # Çizgi üzerindeki ana tutamaçları (handle) çiz
+                for i, point in enumerate(self.current_editable_line_points):
+                    if i == self.active_handle_index:
+                        # Aktif tutamaç farklı renkte
+                        painter.setBrush(QBrush(QColor(255, 0, 0, 180)))
+                    else:
+                        painter.setBrush(QBrush(QColor(0, 120, 255, 180)))
+                    painter.setPen(QPen(QColor(255, 255, 255), 1.5))
+                    painter.drawEllipse(point, HANDLE_SIZE/2, HANDLE_SIZE/2)
+                
+                # Bezier kontrol noktalarını çiz
+                if len(self.bezier_control_points) >= 4:
+                    # Tüm bezier kontrol noktaları için kontrol çizgilerini ve noktaları çiz
+                    for i in range(0, len(self.bezier_control_points) - 3, 3):
+                        # Kontrol çizgilerini çiz (p0->c1 ve c2->p1)
+                        if i + 3 < len(self.bezier_control_points):
+                            painter.setPen(QPen(QColor(120, 120, 120, 150), 1, Qt.PenStyle.DashLine))
+                            painter.drawLine(self.bezier_control_points[i], self.bezier_control_points[i + 1])  # p0->c1
+                            painter.drawLine(self.bezier_control_points[i + 2], self.bezier_control_points[i + 3])  # c2->p1
+                            
+                            # Kontrol noktalarını çiz (c1, c2)
+                            for j in range(1, 3):
+                                ctrl_idx = i + j
+                                if ctrl_idx == self.active_bezier_handle_index:
+                                    painter.setBrush(QBrush(QColor(255, 165, 0, 180)))  # Aktif kontrol noktası turuncu
+                                else:
+                                    painter.setBrush(QBrush(QColor(120, 120, 120, 180)))
+                                
+                                painter.setPen(QPen(QColor(255, 255, 255), 1.5))
+                                painter.drawEllipse(self.bezier_control_points[ctrl_idx], HANDLE_SIZE/3, HANDLE_SIZE/3)
         # Mevcut Geçici İşaretçi Çizgisi
         if len(self.current_temporary_line_points) > 1:
             temp_color = (self.temp_pointer_color.redF(), self.temp_pointer_color.greenF(), 
@@ -458,7 +543,7 @@ class DrawingCanvas(QWidget):
                     else:
                         pen = QPen(thin_color)
                         pen.setWidthF(thin_width)
-                        painter.setPen(pen)
+                    painter.setPen(pen)
                     painter.drawLine(int(x), 0, int(x), h)
                     x += spacing
                     i += 1
@@ -473,13 +558,13 @@ class DrawingCanvas(QWidget):
                     else:
                         pen = QPen(thin_color)
                         pen.setWidthF(thin_width)
-                        painter.setPen(pen)
+                    painter.setPen(pen)
                     painter.drawLine(0, int(y), w, int(y))
                     y += spacing
                     j += 1
                 painter.restore()
         painter.end()
-
+        
         # --- Pointer Tool Glow/Fade-out Trail ---
         if self.current_tool == ToolType.TEMPORARY_POINTER and len(self.pointer_trail_points) > 1:
             for glow in range(8, 0, -1):
@@ -500,6 +585,11 @@ class DrawingCanvas(QWidget):
             pen = QPen(QColor(255, 255, 255, 220), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
             painter.setPen(pen)
             painter.drawPath(path)
+
+        # --- YENİ: Kontrol Noktası Seçici aracı için overlay çizimi --- #
+        from gui.tool_handlers import editable_line_node_selector_handler
+        editable_line_node_selector_handler.draw_node_selector_overlay(self, painter)
+        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
     def screen_to_world(self, screen_pos: QPointF) -> QPointF:
         if self._parent_page:
@@ -657,22 +747,66 @@ class DrawingCanvas(QWidget):
         return combined_bbox
 
     def is_point_on_selection(self, point: QPointF, tolerance: float = 5.0) -> bool:
+        """Verilen noktanın seçili öğelerden birinin üzerinde olup olmadığını kontrol eder."""
+        logging.debug(f"--- is_point_on_selection checking point {point} ---")
         result = False
         for item_type, index in self._selected_item_indices:
-            item_data = None
-            if item_type == 'lines' and 0 <= index < len(self.lines):
-                item_data = self.lines[index]
-            elif item_type == 'shapes' and 0 <= index < len(self.shapes):
-                item_data = self.shapes[index]
+            if item_type == 'images':
+                if self._parent_page and 0 <= index < len(self._parent_page.images):
+                    img_data = self._parent_page.images[index]
+                    rect = img_data.get('rect')
+                    angle = img_data.get('angle', 0.0)
+                    if rect and isinstance(rect, QRectF):
+                        if geometry_helpers.is_point_in_rotated_rect(point, rect, angle):
+                            logging.debug(f"  >>> Point IS considered on selected item (rotated rect check): {item_type}[{index}]")
+                            result = True
+                            break 
+                else:
+                    logging.warning(f"is_point_on_selection: Invalid image index: {index}")
+            else: 
+                item_data = None
+                if item_type == 'lines' and 0 <= index < len(self.lines):
+                    item_data = self.lines[index]
+                elif item_type == 'shapes' and 0 <= index < len(self.shapes):
+                    item_data = self.shapes[index]
+                    # Düzenlenebilir çizgi için kontrol
+                    if item_data[0] == ToolType.EDITABLE_LINE:
+                        # Düzenlenebilir çizgi noktalarını kontrol et
+                        control_points = item_data[3]  # Bezier kontrol noktaları
+                        for i in range(0, len(control_points) - 3, 3):
+                            p0 = control_points[i]
+                            p3 = control_points[i + 3] if i + 3 < len(control_points) else control_points[-1]
+                            
+                            # Çizgi parçası üzerinde nokta var mı kontrol et
+                            line_width = item_data[2]
+                            effective_tolerance = tolerance + line_width / 2.0
+                            if geometry_helpers.is_point_on_line(point, p0, p3, effective_tolerance):
+                                result = True
+                                logging.debug(f"  >>> Point IS on EDITABLE_LINE: {item_type}[{index}], segment between points {i} and {i+3}")
+                                break
 
-            if item_data:
-                bbox = geometry_helpers.get_item_bounding_box(item_data, item_type)
-                if bbox.contains(point):
-                    result = True
-                    break
-            else:
-                break 
+                if item_data:
+                    if not result:  # Yukarıdaki özel kontroller sonucu seçilmediyse standart kontrolleri yap
+                        bbox = geometry_helpers.get_item_bounding_box(item_data, item_type)
+                        logging.debug(f"  is_point_on_selection: Checking selected item {item_type}[{index}] with bbox {bbox}")
+                        if bbox.contains(point):
+                            if item_type == 'lines':
+                                points = item_data[2]
+                                line_width = item_data[1]
+                                effective_tolerance = tolerance + line_width / 2.0 
+                                for j in range(len(points) - 1):
+                                    if geometry_helpers.is_point_on_line(point, points[j], points[j+1], effective_tolerance):
+                                        result = True
+                                        break
+                                if result: break 
+                            else: 
+                                result = True 
+                                break 
+                    if result:
+                         logging.debug(f"  >>> Point IS considered on selected item (bbox or line check): {item_type}[{index}]")
+                         break 
         
+        logging.debug(f"--- is_point_on_selection result: {result} ---")
         return result
 
     def move_selected_items(self, dx: float, dy: float):
@@ -1111,6 +1245,32 @@ class DrawingCanvas(QWidget):
                     return ('shapes', i)
                 else:
                     logging.debug(f"      _get_item_at (Shape as Line): Line {i} NOT matched by is_point_on_line.")
+            elif item_tool_type == ToolType.EDITABLE_LINE:
+                # Düzenlenebilir çizgi için özel kontrol
+                control_points = shape_data[3]  # Kontrol noktaları
+                line_width = shape_data[2]
+                effective_tolerance = tolerance + (line_width / 2.0)
+                
+                # Önce genel sınırlayıcı kutuyu kontrol et - daha hızlı bir ilk kontrol
+                bbox = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
+                if bbox.contains(world_pos):
+                    logging.debug(f"      _get_item_at (EDITABLE_LINE): BBox contains the point. Checking individual segments...")
+                    
+                    # Tüm noktalar arasında doğrusal bağlantıları kontrol et
+                    for j in range(len(control_points) - 1):
+                        p1 = control_points[j]
+                        p2 = control_points[j + 1]
+                        
+                        if geometry_helpers.is_point_on_line(world_pos, p1, p2, effective_tolerance):
+                            logging.debug(f"  >>> _get_item_at: Shape (EDITABLE_LINE) found at index {i} by is_point_on_line segment {j}-{j+1}")
+                            return ('shapes', i)
+                    
+                    # Tüm doğrudan çizgiler kontrol edildi, şekil sınırlayıcı kutu içinde ancak segmentlerde değil
+                    # Yine de seçilebilir olması için döndürelim
+                    logging.debug(f"  >>> _get_item_at: Shape (EDITABLE_LINE) selected by bounding box at index {i}")
+                    return ('shapes', i)
+                else:
+                    logging.debug(f"      _get_item_at (EDITABLE_LINE): BBox does not contain the point, skipping segment checks.")
             else:
                 bbox = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
                 logging.debug(f"    _get_item_at (Shape as Other): Checking shape {i} (type: {item_tool_type}) with bbox: {bbox}. Point: {world_pos}")
@@ -1129,17 +1289,17 @@ class DrawingCanvas(QWidget):
             contains_bbox = bbox.contains(world_pos)
             logging.debug(f"    [GET_ITEM_AT_DEBUG]   Line {i}: world_pos={world_pos}, bbox_contains_world_pos={contains_bbox}")
             if contains_bbox: 
-                 points = line_data[2]
-                 line_width = line_data[1]
-                 effective_tolerance = tolerance + line_width / 2.0
-                 logging.debug(f"      [GET_ITEM_AT_DEBUG]     Line {i}: Calling is_point_on_line with effective_tolerance={effective_tolerance:.2f}")
-                 for j in range(len(points) - 1):
-                     if geometry_helpers.is_point_on_line(world_pos, points[j], points[j+1], effective_tolerance):
-                         logging.debug(f"  >>> _get_item_at: Line found at index {i} (segment {j}-{j+1} check PASSED)")
-                         return ('lines', i)
-                     else: 
-                         logging.debug(f"      [GET_ITEM_AT_DEBUG]       Line {i}, Segment {j}-{j+1}: is_point_on_line FAILED.")
-                 logging.debug(f"    [GET_ITEM_AT_DEBUG]     Line {i}: BBox contained point, but all segment checks failed.")
+                points = line_data[2]
+                line_width = line_data[1]
+                effective_tolerance = tolerance + line_width / 2.0
+                logging.debug(f"      [GET_ITEM_AT_DEBUG]     Line {i}: Calling is_point_on_line with effective_tolerance={effective_tolerance:.2f}")
+                for j in range(len(points) - 1):
+                    if geometry_helpers.is_point_on_line(world_pos, points[j], points[j+1], effective_tolerance):
+                        logging.debug(f"  >>> _get_item_at: Line found at index {i} (segment {j}-{j+1} check PASSED)")
+                        return ('lines', i)
+                    else: 
+                        logging.debug(f"      [GET_ITEM_AT_DEBUG]       Line {i}, Segment {j}-{j+1}: is_point_on_line FAILED.")
+                logging.debug(f"    [GET_ITEM_AT_DEBUG]     Line {i}: BBox contained point, but all segment checks failed.")
         
         logging.debug("--- _get_item_at: No item found. ---")
         return None
@@ -1212,55 +1372,6 @@ class DrawingCanvas(QWidget):
         """Widget yeniden boyutlandırıldığında çağrılır."""
         super().resizeEvent(event)
         logging.info(f"DrawingCanvas yeniden boyutlandırıldı: Genişlik={self.width()}px, Yükseklik={self.height()}px")
-
-    # --- YENİ: is_point_on_selection güncellendi ---
-    def is_point_on_selection(self, point: QPointF, tolerance: float = 5.0) -> bool:
-        """Verilen noktanın seçili öğelerden birinin üzerinde olup olmadığını kontrol eder."""
-        logging.debug(f"--- is_point_on_selection checking point {point} ---")
-        result = False
-        for item_type, index in self._selected_item_indices:
-            if item_type == 'images':
-                if self._parent_page and 0 <= index < len(self._parent_page.images):
-                    img_data = self._parent_page.images[index]
-                    rect = img_data.get('rect')
-                    angle = img_data.get('angle', 0.0)
-                    if rect and isinstance(rect, QRectF):
-                        if geometry_helpers.is_point_in_rotated_rect(point, rect, angle):
-                            logging.debug(f"  >>> Point IS considered on selected item (rotated rect check): {item_type}[{index}]")
-                            result = True
-                            break 
-                else:
-                    logging.warning(f"is_point_on_selection: Invalid image index: {index}")
-            else: 
-                item_data = None
-                if item_type == 'lines' and 0 <= index < len(self.lines):
-                    item_data = self.lines[index]
-                elif item_type == 'shapes' and 0 <= index < len(self.shapes):
-                    item_data = self.shapes[index]
-
-                if item_data:
-                    bbox = geometry_helpers.get_item_bounding_box(item_data, item_type)
-                    logging.debug(f"  is_point_on_selection: Checking selected item {item_type}[{index}] with bbox {bbox}")
-                    if bbox.contains(point):
-                        if item_type == 'lines':
-                            points = item_data[2]
-                            line_width = item_data[1]
-                            effective_tolerance = tolerance + line_width / 2.0 
-                            for j in range(len(points) - 1):
-                                if geometry_helpers.is_point_on_line(point, points[j], points[j+1], effective_tolerance):
-                                    result = True
-                                    break
-                            if result: break 
-                        else: 
-                            result = True 
-                            break 
-                    if result:
-                         logging.debug(f"  >>> Point IS considered on selected item (bbox or line check): {item_type}[{index}]")
-                         break 
-        
-        logging.debug(f"--- is_point_on_selection result: {result} ---")
-        return result
-    # --- --- --- --- --- --- --- --- --- --- --- --- ---
 
     def set_page_background_pixmap(self, pixmap: QPixmap, image_path: str | None = None):
         """Sayfaya özel bir arka plan pixmap'i (örn. PDF sayfasından) ayarlar."""
@@ -1571,3 +1682,4 @@ class DrawingCanvas(QWidget):
         if self.current_tool == ToolType.TEMPORARY_POINTER and event.button() == Qt.MouseButton.LeftButton:
             pass  # Çizim bitince iz fade-out ile silinecek
         super().mouseReleaseEvent(event)
+

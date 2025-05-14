@@ -19,6 +19,12 @@ class ToolType(Enum):
     TEMPORARY_POINTER = auto()
     # --- YENİ: Resim Seçim Aracı --- #
     IMAGE_SELECTOR = auto()
+    # --- YENİ: Düzenlenebilir Çizgi Aracı --- #
+    EDITABLE_LINE = auto()
+    # --- YENİ: Düzenlenebilir Çizgi Düzenleme Aracı --- #
+    EDITABLE_LINE_EDITOR = auto()
+    # --- YENİ: Düzenlenebilir Çizgi Kontrol Noktası Seçici --- #
+    EDITABLE_LINE_NODE_SELECTOR = auto()
     # --- --- --- --- --- --- --- --- -- #
 
 class Orientation(Enum):

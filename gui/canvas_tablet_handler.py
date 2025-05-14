@@ -18,6 +18,8 @@ from .tool_handlers import shape_tool_handler # YENİ: Shape tool handler import
 from .tool_handlers import selector_tool_handler # YENİ: Selector tool handler importu
 from .tool_handlers import eraser_tool_handler # YENİ: Eraser tool handler importu
 from .tool_handlers import temporary_pointer_tool_handler # YENİ: Temporary Pointer tool handler importu
+from .tool_handlers import editable_line_tool_handler # YENİ: Editable Line tool handler importu
+from .tool_handlers import editable_line_node_selector_handler # YENİ: Kontrol Noktası Seçici importu
 from utils.selection_helpers import adjust_corner_for_aspect_ratio
 
 if TYPE_CHECKING:
@@ -326,385 +328,183 @@ def handle_tablet_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEve
     Tablet basma olayını yönetir.
     """
     # logging.debug(f"--- CanvasTabletHandler.handle_tablet_press --- Tool: {canvas.current_tool}, World Pos: {pos}") # Log eklendi
+    action_performed = False
 
+    # --- RESİM SEÇME ARACI İÇİN BASKI --- #
     if canvas.current_tool == ToolType.IMAGE_SELECTOR:
-        if not canvas._parent_page or not canvas._parent_page.main_window:
-            logging.error("IMAGE_SELECTOR Press: MainWindow referansı alınamadı.")
-            return
-
-        canvas.grabbed_handle_type = None
-        clicked_item_info = canvas._get_item_at(pos) # Güncellenmiş _get_item_at kullanımı
-        
-        # --- Seçili bir öğe var mı ve bu öğe bir resim mi kontrol et ---
-        single_selected_image_index = -1
-        current_selected_rect = QRectF()
-        current_selected_angle = 0.0
-
-        if len(canvas.selected_item_indices) == 1 and canvas.selected_item_indices[0][0] == 'images':
-            single_selected_image_index = canvas.selected_item_indices[0][1]
-            if 0 <= single_selected_image_index < len(canvas._parent_page.images):
-                img_data = canvas._parent_page.images[single_selected_image_index]
-                current_selected_rect = QRectF(img_data.get('rect', QRectF()))
-                current_selected_angle = img_data.get('angle', 0.0)
-                # Orijinal state'leri SADECE işlem başladığında kaydetmek için hazırlık
-                canvas.original_resize_states = canvas._get_current_selection_states(canvas._parent_page)
-            else:
-                single_selected_image_index = -1 # Geçersiz index
-                canvas.original_resize_states = []
-        else:
-            canvas.original_resize_states = []
-
-        # --- Tutamaç Kontrolü (SADECE TEK BİR RESİM SEÇİLİYSE) ---
-        if single_selected_image_index != -1 and not current_selected_rect.isNull():
-            screen_pos = canvas.world_to_screen(pos) # Tutamaçlar ekran koordinatında
-            zoom = canvas._parent_page.zoom_level
-            # get_handle_at_rotated_point dünya koordinatları ile çalışıyorsa screen_pos yerine pos gönderilmeli
-            # Eğer get_handle_at_rotated_point ekran koordinatları bekliyorsa, world_to_screen dönüşümü doğru.
-            # Mevcut selection_helpers.get_handle_at_rotated_point ekran koordinatları bekliyor.
-            canvas.grabbed_handle_type = selection_helpers.get_handle_at_rotated_point(
-                screen_pos,
-                current_selected_rect, # Dünya koordinatındaki rect
-                current_selected_angle,
-                zoom,
-                canvas.world_to_screen # Bu fonksiyonun kendisi değil, bir map fonksiyonu gibi kullanılmamalı.
-                                      # Bunun yerine canvas.world_to_screen(point) şeklinde kullanılmalı.
-                                      # Ancak get_handle_at_rotated_point bunu zaten içermeli.
-                                      # Şimdilik bu parametreyi kaldırıyorum, helper kendi içinde yapsın.
-            )
-            # logging.debug(f"  Handle check on selected image {single_selected_image_index}: rect={current_selected_rect}, angle={current_selected_angle}, screen_pos={screen_pos}, zoom={zoom} -> handle_type={canvas.grabbed_handle_type}") # Log eklendi
-
-        # --- Eylemi Belirle ---
-        if canvas.grabbed_handle_type == 'rotate':
-            if not canvas.original_resize_states: # State alınmamışsa işlem yapma
-                logging.warning("Döndürme başlatılamadı: original_resize_states eksik.")
-                return
-            logging.debug("Döndürme tutamacı yakalandı. Döndürme başlıyor.")
-            canvas.rotating_selection = True
-            canvas.resizing_selection = False
-            canvas.moving_selection = False
-            canvas.selecting = False
-            canvas.resize_threshold_passed = False
-            
-            # original_resize_states zaten press başında alındı.
-            # Buradaki state'in 'rect' ve 'angle' içerdiğinden emin olmalıyız.
-            img_state_for_rotation = canvas.original_resize_states[0]
-            canvas.rotation_center_world = QRectF(img_state_for_rotation.get('rect')).center() # Press anındaki merkez
-            # original_angle_at_press original_resize_states içinde zaten var.
-            canvas.rotation_start_pos_world = pos # Mouse'un dünya konumu
-            QApplication.setOverrideCursor(selection_helpers.get_resize_cursor('rotate'))
-            canvas.update()
-            return
-
-        elif canvas.grabbed_handle_type: # Boyutlandırma tutamacı
-            if not canvas.original_resize_states:
-                logging.warning("Boyutlandırma başlatılamadı: original_resize_states eksik.")
-                return
-            logging.debug(f"Boyutlandırma tutamacı yakalandı: {canvas.grabbed_handle_type}. Boyutlandırma başlıyor.")
-            canvas.resizing_selection = True
-            canvas.rotating_selection = False
-            canvas.moving_selection = False
-            canvas.selecting = False
-            canvas.resize_threshold_passed = False
-            
-            # original_resize_states zaten press başında alındı.
-            # Buradaki state'in 'rect' ve 'angle' içerdiğinden emin olmalıyız.
-            img_state_for_resize = canvas.original_resize_states[0]
-            canvas.resize_original_bbox = QRectF(img_state_for_resize.get('rect')) # Press anındaki rect
-            # original_angle_for_resize original_resize_states içinde zaten var.
-            canvas.resize_start_pos = pos # Mouse'un dünya konumu
-            QApplication.setOverrideCursor(selection_helpers.get_resize_cursor(canvas.grabbed_handle_type))
-            canvas.update()
-            return
-
-        # --- Tutamaç Yoksa, Resim Üzerine Tıklama veya Boş Alana Tıklama ---
-        is_clicked_item_selected = (clicked_item_info is not None and
-                                    len(canvas.selected_item_indices) == 1 and
-                                    clicked_item_info == canvas.selected_item_indices[0])
-
-        if clicked_item_info and is_clicked_item_selected: # Seçili olan resme tekrar tıklandı (taşıma)
-            item_type, item_idx = clicked_item_info
-            if item_type == 'images': # Sadece resimler taşınabilir
-                if not canvas.original_resize_states: # State alınmamışsa (seçim yeni yapıldıysa vs)
-                    canvas.original_resize_states = canvas._get_current_selection_states(canvas._parent_page)
-
-                if not canvas.original_resize_states: # Hala state yoksa işlem yapma
-                     logging.warning("Taşıma başlatılamadı: original_resize_states alınamadı.")
-                     return
-
-                # logging.debug(f"Seçili resme ({clicked_item_info}) tıklandı. Taşıma başlıyor.")
-                canvas.moving_selection = True
-                canvas.resizing_selection = False
-                canvas.rotating_selection = False
-                canvas.selecting = False
-                canvas.resize_threshold_passed = False
-                
-                img_state_for_move = canvas.original_resize_states[0] # Tek resim seçili varsayımı
-                canvas.move_start_rect = QRectF(img_state_for_move.get('rect'))
-                canvas.move_start_pos = pos
-                canvas.move_original_states = canvas.original_resize_states # Taşıma komutu için de bu state'i kullanalım
-                QApplication.setOverrideCursor(Qt.CursorShape.SizeAllCursor)
-                canvas.update()
-                return
-        
-        elif clicked_item_info: # Yeni bir resme tıklandı veya seçim yoktu bir resme tıklandı
-            item_type, item_idx = clicked_item_info
+        # İmaj seçme modunda, resimleri seçebilir/taşıyabiliriz
+        item_at_click = canvas._get_item_at(pos)
+        if item_at_click:
+            item_type, index = item_at_click
             if item_type == 'images':
-                logging.debug(f"Yeni/farklı bir resme ({clicked_item_info}) tıklandı. Seçim güncelleniyor.")
-                canvas.selected_item_indices = [(item_type, item_idx)]
-                # Yeni seçilen resim için state'leri al
-                canvas.original_resize_states = canvas._get_current_selection_states(canvas._parent_page)
-                # Taşıma için de hazırlık yapabiliriz, kullanıcı sürüklerse diye
-                if canvas.original_resize_states:
-                    img_state_for_potential_move = canvas.original_resize_states[0]
-                    canvas.move_start_rect = QRectF(img_state_for_potential_move.get('rect'))
-                    canvas.move_start_pos = pos
-                    # moving_selection henüz True değil, kullanıcı sürüklerse True olacak (move event'inde)
-                canvas.update()
-                # Burada handle_canvas_click çağırmaya gerek yok, seçimi doğrudan yaptık.
-                return 
-            else: # Tıklanan öğe resim değil (çizgi, şekil vs)
-                # Bu durumu ana canvas_handler.handle_canvas_click yönlendirebilir veya burada yönetebiliriz.
-                # Şimdilik resim dışı tıklamaları ana handler'a bırakalım (varsa).
-                # Ancak IMAGE_SELECTOR modunda olduğumuz için, resim dışı bir öğeye tıklama
-                # genellikle seçimi temizlemeli veya hiçbir şey yapmamalı.
-                logging.debug(f"Resim olmayan bir öğeye tıklandı: {clicked_item_info}. Seçim temizleniyor.")
-                if canvas.selected_item_indices: # Eğer bir resim seçiliyse
-                    canvas.selected_item_indices = []
-                    canvas.original_resize_states = []
-                    canvas.update()
-                return
-
-
-        else: # Boş alana tıklandı
-            logging.debug("Boş alana tıklandı. Mevcut resim seçimi kaldırılıyor.")
-            if canvas.selected_item_indices: # Eğer bir resim seçiliyse
-                canvas.selected_item_indices = []
-                canvas.original_resize_states = []
-                canvas.update()
-            return
-            
-    elif canvas.current_tool == ToolType.SELECTOR:
-        # --- SEÇİCİ (SELECTOR) için seçim başlatma --- #
-        selector_tool_handler.handle_selector_press(canvas, pos, event)
-        return
-
-    # Diğer araçlar için press eventleri (PEN, SHAPE, SELECTOR vb.)
+                # Resmi seç
+                canvas.selected_item_indices = [(item_type, index)]
+                canvas.move_start_point = pos
+                canvas.last_move_pos = pos
+                canvas.selection_changed.emit()
+                # logging.debug(f"Resim seçildi: Image #{index}")
+                canvas.moving_selection = True
+                QApplication.setOverrideCursor(Qt.CursorShape.SizeAllCursor)
+                action_performed = True
+    
+    # --- KALEM ARACI İÇİN BASKI --- #
     elif canvas.current_tool == ToolType.PEN:
-        logging.debug("[canvas_tablet_handler] PEN aracı için handle_pen_press çağrılıyor.")
         pen_tool_handler.handle_pen_press(canvas, pos, event)
+        action_performed = True
+    
+    # --- ŞEKİL ARAÇLARI İÇİN BASKI --- #
     elif canvas.current_tool in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE]:
-        from gui.tool_handlers import shape_tool_handler
         shape_tool_handler.handle_shape_press(canvas, pos)
-    elif canvas.current_tool == ToolType.ERASER:
-        eraser_tool_handler.handle_eraser_press(canvas, pos)
-        return
-    elif canvas.current_tool == ToolType.LASER_POINTER:
-        # Lazer işaretçi: sadece pozisyonu güncelle ve update et
-        canvas.laser_pointer_active = True
-        canvas.last_cursor_pos_screen = canvas.world_to_screen(pos)  # Ekran koordinatına çevir
-        canvas.update()
-        return
-    elif canvas.current_tool == ToolType.TEMPORARY_POINTER:
-        temporary_pointer_tool_handler.handle_temporary_drawing_press(canvas, pos, event)
-        canvas.update()
-        return
+        action_performed = True
+    
+    # --- SEÇİM ARACI İÇİN BASKI --- #
+    elif canvas.current_tool == ToolType.SELECTOR:
+        selector_tool_handler.handle_selector_press(canvas, pos, event)
+        action_performed = True
 
-# handle_tablet_move ve handle_tablet_release fonksiyonları da benzer şekilde güncellenmeli.
-# Bu örnek sadece handle_tablet_press'e odaklandı.
+    # --- SİLGİ ARACI İÇİN BASKI --- #
+    elif canvas.current_tool == ToolType.ERASER:
+        # Silgi işlemini başlat
+        canvas.erasing = True
+        canvas.drawing = False
+        canvas.current_eraser_path = [pos]
+        canvas.erased_this_stroke = []  # Bu silgi vuruşuyla silinen öğeler
+        
+        # Tablet kaleminin yan düğmesi basılı mı kontrol et (geçici silme modu)
+        stylus_button_pressed = event.buttons() & (Qt.MouseButton.MiddleButton | Qt.MouseButton.RightButton)
+        canvas.temporary_erasing = stylus_button_pressed
+        # logging.debug(f"Silgi basma: TemporaryErasing={canvas.temporary_erasing}")
+        
+        action_performed = True
+    # --- LAZER İŞARETÇİ ARACI İÇİN BASKI --- #
+    elif canvas.current_tool == ToolType.LASER_POINTER:
+        canvas.laser_pointer_active = True
+        canvas.last_cursor_pos_screen = event.position()
+        action_performed = True
+    # --- GEÇİCİ İŞARETÇİ ARACI İÇİN BASKI --- #
+    elif canvas.current_tool == ToolType.TEMPORARY_POINTER:
+        canvas.temporary_drawing_active = True
+        canvas.current_temporary_line_points = [(pos, 0.0)]  # İlk nokta, zaman değeri için placeholder
+        action_performed = True
+    # --- DÜZENLENEBİLİR ÇİZGİ ARACI İÇİN BASKI --- #
+    elif canvas.current_tool == ToolType.EDITABLE_LINE:
+        editable_line_tool_handler.handle_editable_line_press(canvas, pos, event)
+        action_performed = True
+    # --- DÜZENLENEBİLİR ÇİZGİ DÜZENLEME ARACI İÇİN BASKI --- #
+    elif canvas.current_tool == ToolType.EDITABLE_LINE_EDITOR:
+        editable_line_tool_handler.handle_editable_line_editor_press(canvas, pos, event)
+        action_performed = True
+    # --- DÜZENLENEBİLİR ÇİZGİ KONTROL NOKTASI SEÇİCİ ARACI İÇİN BASKI --- #
+    elif canvas.current_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR:
+        editable_line_node_selector_handler.handle_node_selector_press(canvas, pos, event)
+        action_performed = True
+        
+    if not action_performed:
+        logging.warning(f"handle_tablet_press: İşlem gerçekleştirilmedi! Araç: {canvas.current_tool}")
+        event.ignore()
+    else:
+        canvas.update()  # Çizimi güncelle
+        event.accept()
 
 def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
     """
     DrawingCanvas._handle_tablet_move metodunun taşınmış halidir.
     Tablet hareket olayını yönetir.
     """
-    updated = False
-    # logging.debug(f"--- CanvasTabletHandler.handle_tablet_move --- Tool: {canvas.current_tool}, World Pos: {pos}, Resizing: {canvas.resizing_selection}, Moving: {canvas.moving_selection}, Rotating: {canvas.rotating_selection}") # Log eklendi
+    # logging.debug(f"--- CanvasTabletHandler.handle_tablet_move --- Tool: {canvas.current_tool}, World Pos: {pos}")
+    action_performed = False
 
-    if canvas.current_tool == ToolType.IMAGE_SELECTOR:
-        # --- Eşik Kontrolü (Taşıma, Boyutlandırma, Döndürme için ortak) ---
-        if not canvas.resize_threshold_passed:
-            start_action_pos = QPointF()
-            if canvas.moving_selection and not canvas.move_start_pos.isNull():
-                start_action_pos = canvas.move_start_pos
-            elif canvas.resizing_selection and not canvas.resize_start_pos.isNull():
-                start_action_pos = canvas.resize_start_pos
-            elif canvas.rotating_selection and not canvas.rotation_start_pos_world.isNull():
-                start_action_pos = canvas.rotation_start_pos_world
+    # --- RESİM SEÇME ARACI İÇİN HAREKET --- #
+    if canvas.current_tool == ToolType.IMAGE_SELECTOR and canvas.moving_selection:
+        if canvas._parent_page and canvas.selected_item_indices:
+            # Kaydırma miktarını hesapla
+            dx = pos.x() - canvas.last_move_pos.x()
+            dy = pos.y() - canvas.last_move_pos.y()
             
-            if not start_action_pos.isNull():
-                if (pos - start_action_pos).manhattanLength() > canvas.RESIZE_MOVE_THRESHOLD:
-                    canvas.resize_threshold_passed = True
-                    # logging.debug(f"    Threshold PASSED for action starting at {start_action_pos}.") # Log eklendi
-            else:
-                # Başlangıç pozisyonu yoksa (hata durumu), eşik geçilemez.
-                # logging.debug("    Threshold check SKIPPED: No valid start_action_pos.") # Log eklendi
-                pass # Bir şey yapma, threshold geçilmemiş sayılır
-
-        if not canvas.resize_threshold_passed:
-            # logging.debug("    Movement below threshold, returning.") # Log eklendi
-            return # Eşik geçilmediyse hiçbir işlem yapma
-
-        # --- Taşıma --- #
-        if canvas.moving_selection:
-            if hasattr(canvas, 'move_start_rect') and not canvas.move_start_rect.isNull() and \
-               hasattr(canvas, 'move_start_pos') and not canvas.move_start_pos.isNull() and \
-               canvas.selected_item_indices and len(canvas.selected_item_indices) == 1 and \
-               canvas.selected_item_indices[0][0] == 'images':
-                img_index = canvas.selected_item_indices[0][1]
-                if canvas._parent_page and 0 <= img_index < len(canvas._parent_page.images):
-                    img_data_ref = canvas._parent_page.images[img_index]
-                    dosya_yolu = img_data_ref.get('path', None)
-                    if dosya_yolu:
-                        # Yeni konumu hesapla (taşıma başlangıcına göre)
-                        dx = pos.x() - canvas.move_start_pos.x()
-                        dy = pos.y() - canvas.move_start_pos.y()
-                        yeni_x = int(canvas.move_start_rect.x() + dx)
-                        yeni_y = int(canvas.move_start_rect.y() + dy)
-                        try:
-                            from handlers import resim_islem_handler
-                            sonuc = resim_islem_handler.handle_move_image(dosya_yolu, yeni_x, yeni_y)
-                            # Sadece handler'dan dönen yeni konumu uygula
-                            img_data_ref['rect'].moveTo(yeni_x, yeni_y)
-                            updated = True
-                        except Exception as e:
-                            logging.error(f"Resim handler'a taşıma aktarılırken hata: {e}")
-            else:
-                pass  # ... mevcut kod ...
-
-        # --- Boyutlandırma --- #
-        elif canvas.resizing_selection:
-            if canvas.grabbed_handle_type and \
-               hasattr(canvas, 'resize_original_bbox') and not canvas.resize_original_bbox.isNull() and \
-               canvas.original_resize_states and len(canvas.original_resize_states) == 1 and \
-               canvas.selected_item_indices and len(canvas.selected_item_indices) == 1 and \
-               canvas.selected_item_indices[0][0] == 'images':
-                img_index = canvas.selected_item_indices[0][1]
-                original_state = canvas.original_resize_states[0]
-                original_angle = original_state.get('angle', 0.0)
-                aspect_ratio_locked_for_this_op = not (QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier)
-                min_dimension = 10.0
-                new_bbox_world = QRectF()
-                if canvas.grabbed_handle_type in ['top-left', 'top-right', 'bottom-right', 'bottom-left'] and aspect_ratio_locked_for_this_op:
-                    new_bbox_world = calculate_rotated_bbox_aspect_locked(
-                        canvas.resize_original_bbox,
-                        original_angle,
-                        pos,
-                        canvas.grabbed_handle_type,
-                        min_dimension
-                    )
-                else:
-                    new_bbox_world = calculate_rotated_bbox_from_handle(
-                        canvas.resize_original_bbox,
-                        original_angle,
-                        pos,
-                        canvas.grabbed_handle_type,
-                        aspect_ratio_locked_for_this_op,
-                        min_dimension
-                    )
-                if canvas._parent_page and 0 <= img_index < len(canvas._parent_page.images):
-                    img_data_ref = canvas._parent_page.images[img_index]
-                    if not new_bbox_world.isNull() and new_bbox_world.isValid():
-                        dosya_yolu = img_data_ref.get('path')
-                        yeni_genislik = int(new_bbox_world.width())
-                        yeni_yukseklik = int(new_bbox_world.height())
-                        yeni_x = int(new_bbox_world.x())
-                        yeni_y = int(new_bbox_world.y())
-                        from handlers import resim_islem_handler
-                        sonuc = resim_islem_handler.handle_resize_image(dosya_yolu, yeni_genislik, yeni_yukseklik)
-                        img_data_ref['rect'].setRect(yeni_x, yeni_y, sonuc['yeni_genislik'], sonuc['yeni_yukseklik'])
-                        # --- YENİ: Pixmap'i yeniden ölçekle ---
-                        if 'original_pixmap_for_scaling' in img_data_ref:
-                            new_pixmap = img_data_ref['original_pixmap_for_scaling'].scaled(
-                                sonuc['yeni_genislik'], sonuc['yeni_yukseklik'],
-                                Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation
-                            )
-                            img_data_ref['pixmap'] = new_pixmap
-                            if 'pixmap_item' in img_data_ref and img_data_ref['pixmap_item']:
-                                img_data_ref['pixmap_item'].setPixmap(new_pixmap)
-                                img_data_ref['pixmap_item'].setPos(QPointF(yeni_x, yeni_y))
-                        updated = True
-                    else:
-                        pass
-            else:
-                pass
-
-        # --- Döndürme --- #
-        elif canvas.rotating_selection:
-            if hasattr(canvas, 'rotation_center_world') and not canvas.rotation_center_world.isNull() and \
-               hasattr(canvas, 'rotation_start_pos_world') and not canvas.rotation_start_pos_world.isNull() and \
-               canvas.original_resize_states and len(canvas.original_resize_states) == 1 and \
-               canvas.selected_item_indices and len(canvas.selected_item_indices) == 1 and \
-               canvas.selected_item_indices[0][0] == 'images':
-
-                img_index = canvas.selected_item_indices[0][1]
-                original_state_for_rotation = canvas.original_resize_states[0]
-                original_angle_at_press = original_state_for_rotation.get('angle', 0.0)
-
-                vec_start = canvas.rotation_start_pos_world - canvas.rotation_center_world
-                vec_current = pos - canvas.rotation_center_world
-                angle_start_rad = math.atan2(vec_start.y(), vec_start.x())
-                angle_current_rad = math.atan2(vec_current.y(), vec_current.x())
-                delta_angle_rad = angle_current_rad - angle_start_rad
-                delta_angle_deg = math.degrees(delta_angle_rad)
-                new_angle = original_angle_at_press + delta_angle_deg
-                if canvas._parent_page and 0 <= img_index < len(canvas._parent_page.images):
-                    img_data_ref = canvas._parent_page.images[img_index]
-                    dosya_yolu = img_data_ref.get('path')
-                    from handlers import resim_islem_handler
-                    sonuc = resim_islem_handler.handle_rotate_image(dosya_yolu, new_angle)
-                    img_data_ref['angle'] = sonuc['aci']
-                    if 'pixmap_item' in img_data_ref and img_data_ref['pixmap_item']:
-                        img_data_ref['pixmap_item'].setRotation(sonuc['aci'])
-                    updated = True
-            else:
-                pass
-
-        if updated:
-            canvas.update()
-        return # IMAGE_SELECTOR modundaysa diğer modlara geçme
+            for item_type, index in canvas.selected_item_indices:
+                if item_type == 'images' and index < len(canvas._parent_page.images):
+                    # Resmi kaydır
+                    rect = canvas._parent_page.images[index]['rect']
+                    rect.translate(dx, dy)
             
+            canvas.last_move_pos = pos
+            action_performed = True
+    
+    # --- KALEM ARACI İÇİN HAREKET --- #
+    elif canvas.current_tool == ToolType.PEN:
+        pen_tool_handler.handle_pen_move(canvas, pos, event)
+        action_performed = True
+    
+    # --- ŞEKİL ARAÇLARI İÇİN HAREKET --- #
+    elif canvas.current_tool in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE]:
+        shape_tool_handler.handle_shape_move(canvas, pos)
+        action_performed = True
+
+    # --- SEÇİM ARACI İÇİN HAREKET --- #
     elif canvas.current_tool == ToolType.SELECTOR:
-        # --- SEÇİCİ (SELECTOR) için seçim ve sürükleme --- #
         if canvas.selecting:
+            # Dikdörtgen seçim yapılıyor
             selector_tool_handler.handle_selector_rect_select_move(canvas, pos, event)
-            return
+            action_performed = True
         elif canvas.moving_selection:
+            # Seçili öğeler taşınıyor
             selector_tool_handler.handle_selector_move_selection(canvas, pos, event)
-            return
+            action_performed = True
         elif canvas.resizing_selection:
+            # Seçili öğelerin boyutu değiştiriliyor
             selector_tool_handler.handle_selector_resize_move(canvas, pos, event)
-            return
+            action_performed = True
+        elif canvas.rotating_selection:
+            # Seçili öğeler döndürülüyor
+            pass
+            # Bu özellik için rotating_selection logicini implement et
+        
+    # --- SİLGİ ARACI İÇİN HAREKET --- #
+    elif canvas.current_tool == ToolType.ERASER and canvas.erasing:
+        # Silgi yoluna yeni nokta ekle
+        canvas.current_eraser_path.append(pos)
+        canvas.pressure = event.pressure()  # Baskı değerini güncelle
+        
+        # Silme işlemi yap
+        from utils import erasing_helpers
+        erasing_helpers.erase_at_position(canvas, pos, canvas.eraser_width)
+        
+        action_performed = True
 
-    # --- KALEM, ŞEKİL, SEÇİCİ, SİLGİ, GEÇİCİ İŞARETÇİ için olay yönlendirme --- #
-    # (Bu kısım değişmedi, aynı kalabilir)
-    elif canvas.drawing:
-        if canvas.current_tool == ToolType.PEN:
-            pen_tool_handler.handle_pen_move(canvas, pos)
-            updated = True
-        elif canvas.current_tool in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE]:
-            shape_tool_handler.handle_shape_move(canvas, pos)
-            updated = True
-    elif canvas.current_tool == ToolType.ERASER:
-        eraser_tool_handler.handle_eraser_move(canvas, pos)
-        return
+    # --- LAZER İŞARETÇİ ARACI İÇİN HAREKET --- #
+    elif canvas.current_tool == ToolType.LASER_POINTER:
+        canvas.last_cursor_pos_screen = event.position()
+        action_performed = True
 
-    if updated:
-        canvas.update()
-    # --- LAZER POINTER GERÇEK ZAMANLI GÜNCELLEME ---
-    if canvas.current_tool == ToolType.LASER_POINTER:
-        canvas.laser_pointer_active = True
-        canvas.last_cursor_pos_screen = canvas.world_to_screen(pos)
-        canvas.update()
-        return
-
-    # --- GEÇİCİ POINTER GERÇEK ZAMANLI GÜNCELLEME ---
-    if canvas.current_tool == ToolType.TEMPORARY_POINTER:
-        temporary_pointer_tool_handler.handle_temporary_drawing_move(canvas, pos, event)
-        canvas.update()
-        return
+    # --- GEÇİCİ İŞARETÇİ ARACI İÇİN HAREKET --- #
+    elif canvas.current_tool == ToolType.TEMPORARY_POINTER and canvas.temporary_drawing_active:
+        # Geçici işaretçi çizgisine yeni nokta ekle
+        import time
+        current_time = time.time()
+        canvas.current_temporary_line_points.append((pos, current_time))
+        action_performed = True
+    
+    # --- DÜZENLENEBİLİR ÇİZGİ ARACI İÇİN HAREKET --- #
+    elif canvas.current_tool == ToolType.EDITABLE_LINE:
+        editable_line_tool_handler.handle_editable_line_move(canvas, pos, event)
+        action_performed = True
+    # --- DÜZENLENEBİLİR ÇİZGİ DÜZENLEME ARACI İÇİN HAREKET --- #
+    elif canvas.current_tool == ToolType.EDITABLE_LINE_EDITOR:
+        editable_line_tool_handler.handle_editable_line_editor_move(canvas, pos, event)
+        action_performed = True
+    # --- DÜZENLENEBİLİR ÇİZGİ KONTROL NOKTASI SEÇİCİ ARACI İÇİN HAREKET --- #
+    elif canvas.current_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR:
+        editable_line_node_selector_handler.handle_node_selector_move(canvas, pos, event)
+        action_performed = True
+        
+    if not action_performed:
+        # logging.debug(f"handle_tablet_move: İşlem gerçekleştirilmedi! Araç: {canvas.current_tool}")
+        event.ignore()
+    else:
+        canvas.update()  # Çizimi güncelle
+        event.accept()
 
 def handle_tablet_release(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
-    # logging.debug(f"[canvas_tablet_handler] handle_tablet_release çağrıldı. Tool={canvas.current_tool}")
     """
     DrawingCanvas._handle_tablet_release metodunun taşınmış halidir.
     Tablet bırakma olayını yönetir.
@@ -714,136 +514,138 @@ def handle_tablet_release(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
     action_performed = False
 
     if canvas.current_tool == ToolType.IMAGE_SELECTOR:
-        # --- Taşıma Bitişi --- #
+        # --- Taşıma logicini tamamla ---
         if canvas.moving_selection:
-            # logging.debug("  Finalizing Move Operation.") # Log eklendi
-            if canvas.resize_threshold_passed and canvas.move_original_states and \
-               canvas.selected_item_indices and len(canvas.selected_item_indices) == 1:
-                item_type, item_idx = canvas.selected_item_indices[0]
-                if item_type == 'images' and canvas._parent_page and 0 <= item_idx < len(canvas._parent_page.images):
-                    final_img_data = canvas._parent_page.images[item_idx]
-                    dosya_yolu = final_img_data.get('path', None)
-                    if dosya_yolu:
-                        yeni_x = int(final_img_data['rect'].x())
-                        yeni_y = int(final_img_data['rect'].y())
-                        try:
-                            from handlers import resim_islem_handler
-                            sonuc = resim_islem_handler.handle_move_image(dosya_yolu, yeni_x, yeni_y)
-                            # Sadece handler'dan dönen yeni konumu uygula
-                            final_img_data['rect'].moveTo(yeni_x, yeni_y)
-                            action_performed = True
-                        except Exception as e:
-                            logging.error(f"Resim handler'a taşıma aktarılırken hata: {e}")
-                    # Eski MoveItemsCommand ve state güncellemeleri images için çalışmayacak
-                else:
-                    # Eski kod: sadece images dışı için çalışsın
-                    # (MoveItemsCommand ve state güncellemeleri burada kalabilir)
-                    pass
+            # Seçim taşımasını bitir
             canvas.moving_selection = False
-            canvas.move_original_states.clear()
-            if hasattr(canvas, 'move_start_rect'): canvas.move_start_rect = QRectF()
-            if hasattr(canvas, 'move_start_pos'): canvas.move_start_pos = QPointF()
-
-        # --- Boyutlandırma Bitişi --- #
-        elif canvas.resizing_selection:
-            if canvas.resize_threshold_passed and canvas.grabbed_handle_type and \
-               canvas.original_resize_states and len(canvas.original_resize_states) == 1 and \
-               canvas.selected_item_indices and len(canvas.selected_item_indices) == 1:
-                item_type, item_idx = canvas.selected_item_indices[0]
-                if item_type == 'images' and canvas._parent_page and 0 <= item_idx < len(canvas._parent_page.images):
-                    final_img_data = canvas._parent_page.images[item_idx]
-                    dosya_yolu = final_img_data.get('path')
-                    yeni_genislik = int(final_img_data['rect'].width())
-                    yeni_yukseklik = int(final_img_data['rect'].height())
-                    yeni_x = int(final_img_data['rect'].x())
-                    yeni_y = int(final_img_data['rect'].y())
-                    from handlers import resim_islem_handler
-                    sonuc = resim_islem_handler.handle_resize_image(dosya_yolu, yeni_genislik, yeni_yukseklik)
-                    final_img_data['rect'].setRect(yeni_x, yeni_y, sonuc['yeni_genislik'], sonuc['yeni_yukseklik'])
-                    # --- YENİ: Pixmap'i yeniden ölçekle ---
-                    if 'original_pixmap_for_scaling' in final_img_data:
-                        new_pixmap = final_img_data['original_pixmap_for_scaling'].scaled(
-                            sonuc['yeni_genislik'], sonuc['yeni_yukseklik'],
-                            Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation
-                        )
-                        final_img_data['pixmap'] = new_pixmap
-                        if 'pixmap_item' in final_img_data and final_img_data['pixmap_item']:
-                            final_img_data['pixmap_item'].setPixmap(new_pixmap)
-                            final_img_data['pixmap_item'].setPos(QPointF(yeni_x, yeni_y))
-                    action_performed = True
-                # Eski ResizeItemsCommand ve state güncellemeleri images için çalışmayacak
-            canvas.resizing_selection = False
-            canvas.grabbed_handle_type = None
-            canvas.original_resize_states.clear()
-            if hasattr(canvas, 'resize_original_bbox'): canvas.resize_original_bbox = QRectF()
-            if hasattr(canvas, 'resize_start_pos'): canvas.resize_start_pos = QPointF()
-
-        # --- Döndürme Bitişi --- #
-        elif canvas.rotating_selection:
-            if canvas.resize_threshold_passed and \
-               canvas.original_resize_states and len(canvas.original_resize_states) == 1 and \
-               canvas.selected_item_indices and len(canvas.selected_item_indices) == 1:
-
-                item_type, item_idx = canvas.selected_item_indices[0]
-                if item_type == 'images' and canvas._parent_page and 0 <= item_idx < len(canvas._parent_page.images):
-                    final_img_data = canvas._parent_page.images[item_idx]
-                    dosya_yolu = final_img_data.get('path')
-                    final_angle = final_img_data.get('angle', 0.0)
-                    from handlers import resim_islem_handler
-                    sonuc = resim_islem_handler.handle_rotate_image(dosya_yolu, final_angle)
-                    final_img_data['angle'] = sonuc['aci']
-                    if 'pixmap_item' in final_img_data and final_img_data['pixmap_item']:
-                        final_img_data['pixmap_item'].setRotation(sonuc['aci'])
-                    action_performed = True
-            canvas.rotating_selection = False
-            canvas.original_resize_states.clear()
-            if hasattr(canvas, 'rotation_center_world'): canvas.rotation_center_world = QPointF()
-            if hasattr(canvas, 'rotation_start_pos_world'): canvas.rotation_start_pos_world = QPointF()
-
-        # Ortak sıfırlamalar
-        canvas.resize_threshold_passed = False
-        QApplication.restoreOverrideCursor()
-        if action_performed or canvas.current_tool == ToolType.IMAGE_SELECTOR: # Bir işlem yapıldıysa veya hala resim modundaysa update et
-            canvas.update()
-        return # IMAGE_SELECTOR modundaysa diğer modlara geçme
-
-    elif canvas.current_tool == ToolType.SELECTOR:
-        # --- SEÇİCİ (SELECTOR) için bırakma --- #
-        if canvas.selecting:
-            selector_tool_handler.handle_selector_select_release(canvas, pos, event)
-            return
-        elif canvas.moving_selection:
-            selector_tool_handler.handle_selector_move_selection_release(canvas, pos, event)
-            return
-        elif canvas.resizing_selection:
-            selector_tool_handler.handle_selector_resize_release(canvas, pos, event)
-            return
-    elif canvas.current_tool == ToolType.ERASER:
-        eraser_tool_handler.handle_eraser_release(canvas, pos)
-        return
-    elif canvas.current_tool == ToolType.LASER_POINTER:
-        # Lazer işaretçi: bırakınca pozisyonu sıfırla ve update et
-        canvas.laser_pointer_active = False
-        canvas.last_cursor_pos_screen = QPointF()
-        canvas.update()
-        return
-    elif canvas.current_tool == ToolType.TEMPORARY_POINTER:
-        temporary_pointer_tool_handler.handle_temporary_drawing_release(canvas, pos, event)
-        return
-    # --- KALEM, ŞEKİL, SEÇİCİ, SİLGİ için olay yönlendirme --- #
-    # (Bu kısım değişmedi, aynı kalabilir)
-    active_operation = canvas.drawing or canvas.erasing or \
-                       (canvas.moving_selection and canvas.current_tool == ToolType.SELECTOR) or \
-                       (canvas.resizing_selection and canvas.current_tool == ToolType.SELECTOR) or \
-                       canvas.selecting
-    # ... (Diğer tool handler çağrıları ve genel durum sıfırlama)
-
-    if canvas.current_tool == ToolType.PEN:
-        logging.debug("[canvas_tablet_handler] PEN aracı için handle_pen_release çağrılıyor.")
+            QApplication.restoreOverrideCursor()
+            if canvas._parent_page:
+                canvas._parent_page.mark_as_modified()
+            action_performed = True
+    
+    # --- KALEM ARACI İÇİN BIRAKMA --- #
+    elif canvas.current_tool == ToolType.PEN:
         pen_tool_handler.handle_pen_release(canvas, pos, event)
-        return
-
+        action_performed = True
+    
+    # --- ŞEKİL ARAÇLARI İÇİN BIRAKMA --- #
     elif canvas.current_tool in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE]:
-        from gui.tool_handlers import shape_tool_handler
         shape_tool_handler.handle_shape_release(canvas, pos)
-        return
+        action_performed = True
+    
+    # --- SEÇİM ARACI İÇİN BIRAKMA --- #
+    elif canvas.current_tool == ToolType.SELECTOR:
+        if canvas.selecting:
+            # Dikdörtgen seçimini bitir
+            selector_tool_handler.handle_selector_select_release(canvas, pos, event)
+            action_performed = True
+        elif canvas.moving_selection:
+            # Seçim taşımayı bitir
+            selector_tool_handler.handle_selector_move_selection_release(canvas, pos, event)
+            action_performed = True
+        elif canvas.resizing_selection:
+            # Seçili öğelerin boyutunu değiştirmeyi bitir
+            selector_tool_handler.handle_selector_resize_release(canvas, pos, event)
+            action_performed = True
+        elif canvas.rotating_selection:
+            # Seçili öğeleri döndürmeyi bitir
+            pass
+            # Bu özellik için rotation bitirme logicini implement et
+
+    # --- SİLGİ ARACI İÇİN BIRAKMA --- #
+    elif canvas.current_tool == ToolType.ERASER and canvas.erasing:
+        if canvas.temporary_erasing and canvas.current_eraser_path:
+            # Geçici silme modu - silinen yolları eski haline getir
+            # logging.debug("Silgi bırakma: Geçici silme modu, erased_this_stroke temizleniyor.")
+            canvas.temporary_erasing = False # Geçici silmeyi bitir
+        else:
+            # Normal silme - silinen yolları silgi komutu ile kalıcı olarak sil
+            from utils.commands import EraseCommand
+            from utils.erasing_helpers import EraseChanges
+            
+            if canvas.erased_this_stroke and len(canvas.erased_this_stroke) > 0:
+                changes = EraseChanges(canvas.erased_this_stroke)
+                command = EraseCommand(canvas, changes)
+                canvas.undo_manager.execute(command)
+                # logging.debug(f"Silgi bırakma: EraseCommand executed with {len(canvas.erased_this_stroke)} items.")
+                if canvas._parent_page:
+                    canvas._parent_page.mark_as_modified()
+        
+        canvas.erased_this_stroke = []
+        canvas.current_eraser_path = []
+        canvas.erasing = False
+        action_performed = True
+    
+    # --- LAZER İŞARETÇİ ARACI İÇİN BIRAKMA --- #
+    elif canvas.current_tool == ToolType.LASER_POINTER:
+        canvas.laser_pointer_active = False
+        action_performed = True
+
+    # --- GEÇİCİ İŞARETÇİ ARACI İÇİN BIRAKMA --- #
+    elif canvas.current_tool == ToolType.TEMPORARY_POINTER and canvas.temporary_drawing_active:
+        # --- YENİ: Pointer Çizgisini Finalize Et --- #
+        import time
+        current_time = time.time()
+        canvas.current_temporary_line_points.append((pos, current_time))
+        
+        # Geçici çizgiyi tamamla ve temporary_lines listesine ekle (süresi dolunca silinecek)
+        if len(canvas.current_temporary_line_points) > 1:
+            # Noktaları ve renk/kalınlık bilgisini sakla
+            points_copy = canvas.current_temporary_line_points.copy()
+            color_tuple = (canvas.temp_pointer_color.redF(), canvas.temp_pointer_color.greenF(), 
+                          canvas.temp_pointer_color.blueF(), canvas.temp_pointer_color.alphaF())
+            start_time = current_time
+            
+            # Son kaydedilen geçici çizgiyi sil
+            if hasattr(canvas, 'temporary_lines'):
+                canvas.temporary_lines.append([points_copy, color_tuple, canvas.temp_pointer_width, start_time, False])
+            
+            canvas.current_temporary_line_points = []
+        
+        canvas.temporary_drawing_active = False
+        action_performed = True
+    
+    # --- DÜZENLENEBİLİR ÇİZGİ ARACI İÇİN BIRAKMA --- #
+    elif canvas.current_tool == ToolType.EDITABLE_LINE:
+        editable_line_tool_handler.handle_editable_line_release(canvas, pos, event)
+        action_performed = True
+    # --- DÜZENLENEBİLİR ÇİZGİ DÜZENLEME ARACI İÇİN BIRAKMA --- #
+    elif canvas.current_tool == ToolType.EDITABLE_LINE_EDITOR:
+        editable_line_tool_handler.handle_editable_line_editor_release(canvas, pos, event)
+        action_performed = True
+    # --- DÜZENLENEBİLİR ÇİZGİ KONTROL NOKTASI SEÇİCİ ARACI İÇİN BIRAKMA --- #
+    elif canvas.current_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR:
+        editable_line_node_selector_handler.handle_node_selector_release(canvas, pos, event)
+        action_performed = True
+    
+    if not action_performed:
+        # logging.debug(f"handle_tablet_release: İşlem gerçekleştirilmedi! Araç: {canvas.current_tool}")
+        event.ignore()
+    else:
+        canvas.update()  # Çizimi güncelle
+        event.accept()
+
+# YARDIMCI FONKSİYON: Basit yol eğrisi oluşturur
+def create_path_from_points(points):
+    """Basit bir QPainterPath oluşturur (Kalem aracı için)."""
+    from PyQt6.QtGui import QPainterPath
+    
+    if not points or len(points) < 2:
+        return None
+    
+    path = QPainterPath()
+    path.moveTo(points[0])
+    
+    for p in points[1:]:
+        path.lineTo(p)
+    
+    return path
+
+# --- Canvas Util Fonksiyonları --- #
+
+def get_pen_pressure(event: QTabletEvent, min_width: float, max_width: float) -> float:
+    """Tablet baskısına göre kalem genişliğini hesaplar."""
+    pressure = event.pressure()
+    if pressure < 0.01:  # Çok küçük değerleri filtrele
+        pressure = 0.01
+    return min_width + pressure * (max_width - min_width)

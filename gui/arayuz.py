@@ -334,6 +334,15 @@ class MainWindow(QMainWindow):
         self.line_tool_action.triggered.connect(lambda: tool_handler.handle_set_active_tool(self.page_manager, ToolType.LINE))
         self.tool_actions.addAction(self.line_tool_action)
 
+        # Düzenlenebilir Çizgi Aracı
+        self.editable_line_tool_action = QAction(self)
+        self.editable_line_tool_action.setIcon(qta.icon('fa5s.pen-fancy'))
+        self.editable_line_tool_action.setText("Düzenlenebilir Çizgi")
+        self.editable_line_tool_action.setToolTip("Düzenlenebilir Çizgi Aracı")
+        self.editable_line_tool_action.setCheckable(True)
+        self.editable_line_tool_action.triggered.connect(lambda: tool_handler.handle_set_active_tool(self.page_manager, ToolType.EDITABLE_LINE))
+        self.tool_actions.addAction(self.editable_line_tool_action)
+
         self.rect_tool_action = QAction(self)
         self.rect_tool_action.setIcon(qta.icon('fa5s.square'))
         self.rect_tool_action.setText("Dikdörtgen")
@@ -518,6 +527,15 @@ class MainWindow(QMainWindow):
         self.delete_shape_from_pool_action.setStatusTip("Havuzdan şekil grubunu sil")
         self.delete_shape_from_pool_action.triggered.connect(lambda: shape_pool_handler.handle_delete_shape_from_pool(self.page_manager, self))
 
+        # Düzenlenebilir Çizgi Kontrol Noktası Seçici aracı
+        self.node_selector_tool_action = QAction(self)
+        self.node_selector_tool_action.setIcon(qta.icon('fa5s.bezier-curve'))
+        self.node_selector_tool_action.setText("Kontrol Noktası Seçici")
+        self.node_selector_tool_action.setToolTip("Düzenlenebilir Çizgi Kontrol Noktası Seçici")
+        self.node_selector_tool_action.setCheckable(True)
+        self.node_selector_tool_action.triggered.connect(lambda: tool_handler.handle_set_active_tool(self.page_manager, ToolType.EDITABLE_LINE_NODE_SELECTOR))
+        self.tool_actions.addAction(self.node_selector_tool_action)
+
     def _create_toolbar(self):
         """Toolbar'ı oluşturur ve actionları ekler."""
         toolbar = self.addToolBar("Ana Araçlar")
@@ -532,16 +550,16 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
 
         # Araç Seçimi (Selector eklendi)
-        toolbar.addAction(self.pen_tool_action)
-        toolbar.addAction(self.line_tool_action)
-        toolbar.addAction(self.rect_tool_action)
-        toolbar.addAction(self.circle_tool_action)
-        toolbar.addAction(self.select_tool_action)
-        toolbar.addAction(self.eraser_tool_action)
-        # --- YENİ: İşaretçi Butonları --- #
-        toolbar.addAction(self.laser_pointer_action)
-        toolbar.addAction(self.temporary_pointer_action)
-        # --- --- --- --- --- --- --- -- #
+        toolbar.addAction(self.select_tool_action)  # Seçim aracını ekle
+        toolbar.addAction(self.pen_tool_action)     # Kalem aracını ekle
+        toolbar.addAction(self.line_tool_action)    # Çizgi aracını ekle
+        toolbar.addAction(self.rect_tool_action)    # Dikdörtgen aracını ekle
+        toolbar.addAction(self.circle_tool_action)  # Daire aracını ekle
+        toolbar.addAction(self.eraser_tool_action)  # Silgi aracını ekle
+        toolbar.addAction(self.laser_pointer_action)  # Lazer İşaretçi aracını ekle
+        toolbar.addAction(self.temporary_pointer_action)  # Geçici İşaretçi aracını ekle
+        toolbar.addAction(self.editable_line_tool_action)  # Düzenlenebilir Çizgi aracını ekle
+        toolbar.addAction(self.node_selector_tool_action)  # Kontrol Noktası Seçici aracını ekle
         toolbar.addSeparator()
 
         # --- YENİ: Hızlı Renk Butonları ve Layout Widget --- #
@@ -680,14 +698,16 @@ class MainWindow(QMainWindow):
         tool_menu = menu_bar.addMenu("A&raçlar")
         tool_menu.addAction(self.pen_tool_action)
         tool_menu.addAction(self.line_tool_action)
+        tool_menu.addAction(self.editable_line_tool_action)  # Düzenlenebilir Çizgi aracını ekle
         tool_menu.addAction(self.rect_tool_action)
         tool_menu.addAction(self.circle_tool_action)
         tool_menu.addAction(self.select_tool_action)
         tool_menu.addAction(self.eraser_tool_action)
-        # --- YENİ: İşaretçi Menü Öğeleri --- #
         tool_menu.addSeparator()
         tool_menu.addAction(self.laser_pointer_action)
         tool_menu.addAction(self.temporary_pointer_action)
+        tool_menu.addAction(self.editable_line_tool_action)  # Düzenlenebilir Çizgi aracını ekle
+        tool_menu.addAction(self.node_selector_tool_action)  # Kontrol Noktası Seçici aracını ekle
         # --- --- --- --- --- --- --- --- -- #
 
         # --- Ayarlar Menüsü --- # YENİ

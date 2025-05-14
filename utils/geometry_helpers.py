@@ -61,70 +61,47 @@ def get_item_bounding_box(item_data: List[Any], item_type: str) -> QRectF:
 
     return QRectF(QPointF(min_x, min_y), QPointF(max_x, max_y))
 
-def is_point_on_line(point: QPointF, p1: QPointF, p2: QPointF, tolerance: float = 5.0) -> bool:
-    """Bir noktanın belirli bir toleransla bir doğru parçası üzerinde olup olmadığını kontrol eder."""
-    # YENİ LOGLAR
-    logging.debug(f"[IS_POINT_ON_LINE_DEBUG] Checking point {point} against line ({p1} to {p2}) with tolerance {tolerance:.2f}")
-    dx = p2.x() - p1.x()
-    dy = p2.y() - p1.y()
-    logging.debug(f"[IS_POINT_ON_LINE_DEBUG] dx={dx:.4f}, dy={dy:.4f}")
-
-    # 1. Eğer çizgi çok kısaysa (neredeyse bir nokta)
-    if abs(dx) < 1e-6 and abs(dy) < 1e-6:
-        logging.debug("[IS_POINT_ON_LINE_DEBUG] Path: Line is a point.")
-        return (point - p1).manhattanLength() < tolerance
-
-    min_x_line, max_x_line = min(p1.x(), p2.x()), max(p1.x(), p2.x())
-    min_y_line, max_y_line = min(p1.y(), p2.y()), max(p1.y(), p2.y())
+def is_point_on_line(point, line_start, line_end, tolerance=5.0):
+    """
+    Bir noktanın çizgi üzerinde olup olmadığını kontrol eder.
     
-    epsilon_hv = 1e-4 # Yatay/Dikey için tolerans
-
-    # 2. Neredeyse Dikey Çizgi Kontrolü
-    if abs(dx) < epsilon_hv:
-        logging.debug("[IS_POINT_ON_LINE_DEBUG] Path: Checking for nearly vertical line.")
-        is_x_close = abs(point.x() - p1.x()) < tolerance
-        is_y_in_range = (min_y_line - tolerance <= point.y() <= max_y_line + tolerance)
-        logging.debug(f"[IS_POINT_ON_LINE_DEBUG]   Vertical: is_x_close={is_x_close} (target_x={p1.x():.2f}, point_x={point.x():.2f}), is_y_in_range={is_y_in_range}")
-        if is_x_close and is_y_in_range:
-            logging.debug("[IS_POINT_ON_LINE_DEBUG]   Vertical: Match!")
-            return True
-
-    # 3. Neredeyse Yatay Çizgi Kontrolü
-    if abs(dy) < epsilon_hv: 
-        logging.debug("[IS_POINT_ON_LINE_DEBUG] Path: Checking for nearly horizontal line.")
-        is_y_close = abs(point.y() - p1.y()) < tolerance
-        is_x_in_range = (min_x_line - tolerance <= point.x() <= max_x_line + tolerance)
-        logging.debug(f"[IS_POINT_ON_LINE_DEBUG]   Horizontal: is_y_close={is_y_close} (target_y={p1.y():.2f}, point_y={point.y():.2f}), is_x_in_range={is_x_in_range}")
-        if is_y_close and is_x_in_range:
-            logging.debug("[IS_POINT_ON_LINE_DEBUG]   Horizontal: Match!")
-            return True
-
-    # 4. Genel Durum: Sınırlayıcı Kutu ve Dik Uzaklık
-    logging.debug("[IS_POINT_ON_LINE_DEBUG] Path: General case (bounding box and perpendicular distance).")
-    if not (min_x_line - tolerance <= point.x() <= max_x_line + tolerance and
-            min_y_line - tolerance <= point.y() <= max_y_line + tolerance):
-        logging.debug("[IS_POINT_ON_LINE_DEBUG]   General: Outside bounding box.")
-        return False 
-
-    line_len_sq = dx * dx + dy * dy
-    if line_len_sq < 1e-12: 
-        logging.debug("[IS_POINT_ON_LINE_DEBUG]   General: Line length too small (already checked, but for safety).")
-        return (point - p1).manhattanLength() < tolerance
-
-    t = ((point.x() - p1.x()) * dx + (point.y() - p1.y()) * dy) / line_len_sq
-    logging.debug(f"[IS_POINT_ON_LINE_DEBUG]   General: t = {t:.4f}")
-
-    if t < 0: 
-        closest_p = p1
-    elif t > 1: 
-        closest_p = p2
-    else: 
-        closest_p = p1 + t * QPointF(dx, dy)
-
-    dist_sq = (point.x() - closest_p.x())**2 + (point.y() - closest_p.y())**2
-    result = dist_sq < tolerance * tolerance
-    logging.debug(f"[IS_POINT_ON_LINE_DEBUG]   General: closest_p={closest_p}, dist_sq={dist_sq:.4f}, tolerance_sq={tolerance*tolerance:.4f}, result={result}")
-    return result
+    Args:
+        point (QPointF): Kontrol edilecek nokta
+        line_start (QPointF): Çizginin başlangıç noktası
+        line_end (QPointF): Çizginin bitiş noktası
+        tolerance (float): Tolerans değeri (piksel cinsinden)
+        
+    Returns:
+        bool: Nokta çizgi üzerinde ise True, değilse False
+    """
+    # Çizgi uzunluğunu hesapla
+    line_length = (line_end - line_start).manhattanLength()
+    
+    # Çizgi sıfır uzunluğunda ise, sadece başlangıç noktasına olan uzaklığı kontrol et
+    if line_length < 1.0:
+        return (point - line_start).manhattanLength() <= tolerance
+    
+    # Vektör hesaplamaları
+    v = line_end - line_start
+    w = point - line_start
+    
+    # Nokta çizginin uzantısında mı kontrol et
+    c1 = QPointF.dotProduct(w, v)
+    if c1 <= 0:
+        # Başlangıç noktasına daha yakın
+        return (point - line_start).manhattanLength() <= tolerance
+    
+    c2 = QPointF.dotProduct(v, v)
+    if c2 <= c1:
+        # Bitiş noktasına daha yakın
+        return (point - line_end).manhattanLength() <= tolerance
+    
+    # Çizgiye olan en kısa mesafeyi hesapla
+    b = c1 / c2
+    pb = line_start + b * v
+    
+    # Mesafeyi kontrol et
+    return (point - pb).manhattanLength() <= tolerance
 
 # --- YENİ: Noktadan Doğru Parçasına Uzaklığın Karesi ---
 def point_segment_distance_sq(p: QPointF, a: QPointF, b: QPointF) -> float:
@@ -302,12 +279,7 @@ def calculate_new_bbox_aspect_ratio(original_bbox: QRectF, handle_type: str, cur
         # İmlecin çapa noktasına göre hangi eksende daha fazla hareket ettiğine bakarak
         # hangi boyutu öncelikli alacağımıza karar verebiliriz.
         # Alternatif olarak, her iki potansiyel oranı hesaplayıp orijinaline yakın olanı seçebiliriz.
-        # Şimdilik, daha basit bir yaklaşım: Genişliğe göre oranı koru.
-        # TODO: Daha iyi bir köşe boyutlandırma mantığı gerekebilir.
-        width_from_height = target_height * original_aspect_ratio
-        height_from_width = target_width / original_aspect_ratio
-        
-        # Genişlikteki değişim oranı ile yükseklikteki değişim oranını karşılaştır.
+        # Şimdilik, daha basit bir yaklaşım: Genişlikteki değişim oranı ile yükseklikteki değişim oranını karşılaştır.
         # Hangi eksendeki değişim daha büyükse, o ekseni baz al.
         original_width = original_bbox.width()
         original_height = original_bbox.height()
@@ -317,11 +289,11 @@ def calculate_new_bbox_aspect_ratio(original_bbox: QRectF, handle_type: str, cur
 
         if delta_x_ratio >= delta_y_ratio:
              new_width = target_width
-             new_height = height_from_width
+             new_height = new_width / original_aspect_ratio
              # logging.debug(f"Corner resize: Using width ({new_width:.1f}) to determine height ({new_height:.1f})")
         else:
              new_height = target_height
-             new_width = width_from_height
+             new_width = new_height * original_aspect_ratio
              # logging.debug(f"Corner resize: Using height ({new_height:.1f}) to determine width ({new_width:.1f})")
 
     # 4. Yeni bbox'ı çapa noktası ve boyutlara göre oluştur
