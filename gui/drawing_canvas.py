@@ -634,6 +634,9 @@ class DrawingCanvas(QWidget):
             logging.debug(f"--- is_point_on_selection result: {result} ---")
             return result
 
+        # Taşıma için toleransı artır - özellikle tablet kalemi ile taşımak daha kolay olsun
+        effective_tolerance = tolerance * 3.0  # Toleransı 3 kat artır
+
         try:
             for item_type, index in self.selected_item_indices:
                 if item_type == 'lines' and 0 <= index < len(self.lines):
@@ -643,26 +646,74 @@ class DrawingCanvas(QWidget):
                     if len(item_data) > 2 and isinstance(item_data[2], list):
                         points = item_data[2]
                         line_width = item_data[1]
-                        effective_tolerance = tolerance + line_width / 2.0
                         
-                        # Her çizgi parçası için kontrol
-                        for i in range(len(points) - 1):
-                            p1, p2 = points[i], points[i+1]
-                            if geometry_helpers.is_point_on_line(point, p1, p2, effective_tolerance):
-                                result = True
-                                logging.debug(f"  >>> Point IS on line: {item_type}[{index}], segment between points {i} and {i+1}")
-                                break
-                
+                        # Çizginin bounding box'ını hesapla
+                        bbox = geometry_helpers.get_item_bounding_box(item_data, 'lines')
+                        # Tolerans ile genişletilmiş bbox kontrolü
+                        extended_bbox = bbox.adjusted(-effective_tolerance, -effective_tolerance, 
+                                                     effective_tolerance, effective_tolerance)
+                        
+                        # Önce bbox kontrolü yap (daha hızlı)
+                        if extended_bbox.contains(point):
+                            # Bbox içindeyse, segment kontrolü yap
+                            for i in range(len(points) - 1):
+                                p1, p2 = points[i], points[i+1]
+                                if geometry_helpers.is_point_on_line(point, p1, p2, effective_tolerance):
+                                    result = True
+                                    logging.debug(f"  >>> Point IS on line: {item_type}[{index}], segment between points {i} and {i+1}")
+                                    break
+            
                 elif item_type == 'shapes' and 0 <= index < len(self.shapes):
                     shape_data = self.shapes[index]
                     tool_type = shape_data[0]
 
+                    # Şeklin bounding box'ını hesapla
+                    bbox = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
+                    # Tolerans ile genişletilmiş bbox kontrolü
+                    extended_bbox = bbox.adjusted(-effective_tolerance, -effective_tolerance, 
+                                                 effective_tolerance, effective_tolerance)
+                    
+                    # RECTANGLE ve CIRCLE için özel içinde olma kontrolü
+                    if tool_type == ToolType.RECTANGLE or tool_type == ToolType.CIRCLE:
+                        # Dikdörtgen/daire verilerini çıkar
+                        p1 = shape_data[3]
+                        p2 = shape_data[4]
+                        rect = QRectF(p1, p2).normalized()  # Normalleştirilmiş dikdörtgen
+                        
+                        # Daire için noktanın merkeze uzaklığını kontrol et
+                        if tool_type == ToolType.CIRCLE:
+                            center = rect.center()
+                            rx = rect.width() / 2.0
+                            ry = rect.height() / 2.0
+                            
+                            # Elips içinde mi kontrolü (x^2/a^2 + y^2/b^2 <= 1)
+                            if rx > 0 and ry > 0:
+                                dx = (point.x() - center.x()) / rx
+                                dy = (point.y() - center.y()) / ry
+                                distance_normalized = dx*dx + dy*dy
+                                
+                                # Elips içinde veya yakınında mı?
+                                is_in_or_near_circle = distance_normalized <= 1.0 + (effective_tolerance / min(rx, ry))
+                                if is_in_or_near_circle:
+                                    result = True
+                                    logging.debug(f"  >>> Point IS in or near CIRCLE: {item_type}[{index}]")
+                                    break
+                        # Dikdörtgen için genişletilmiş dikdörtgen içinde mi kontrolü
+                        elif extended_bbox.contains(point):
+                            result = True
+                            logging.debug(f"  >>> Point IS in RECTANGLE: {item_type}[{index}]")
+                            break
+                    # Önce genişletilmiş bbox ile hızlı kontrol
+                    elif extended_bbox.contains(point):
+                        result = True
+                        logging.debug(f"  >>> Point IS on shape's extended bbox: {item_type}[{index}], type={tool_type}")
+                        break
+                    
                     # PATH şekli için özel kontrol
-                    if tool_type == ToolType.PATH:
+                    if tool_type == ToolType.PATH and not result:
                         if isinstance(shape_data[3], list):
                             points = shape_data[3]
                             line_width = shape_data[2]
-                            effective_tolerance = tolerance + line_width / 2.0
                             
                             # PATH'in her parçası için kontrol
                             for i in range(len(points) - 1):
@@ -671,66 +722,13 @@ class DrawingCanvas(QWidget):
                                     result = True
                                     logging.debug(f"  >>> Point IS on PATH: {item_type}[{index}], segment between points {i} and {i+1}")
                                     break
-                    # Düzgün şekiller için (dikdörtgen, oval, vb.)
-                    elif tool_type in [ToolType.RECTANGLE, ToolType.ELLIPSE, ToolType.CIRCLE]:
-                        p1 = shape_data[3]
-                        p2 = shape_data[4]
-                        
-                        # Dikdörtgen sınırlayıcı kutu kontrolü
-                        rect = QRectF(
-                            min(p1.x(), p2.x()),
-                            min(p1.y(), p2.y()),
-                            abs(p2.x() - p1.x()),
-                            abs(p2.y() - p1.y())
-                        )
-                        
-                        # Nokta dikdörtgenin içinde veya kenarında mı?
-                        if rect.contains(point) or rect.adjusted(-tolerance, -tolerance, tolerance, tolerance).contains(point):
-                            result = True
-                            logging.debug(f"  >>> Point IS on shape: {item_type}[{index}], type={tool_type}")
-                            break
+                
+                # Düzgün şekiller için diğer kontroller
+                # (toleransı artırdık ve bbox kontrolü ile çakışmaları ele aldık, bu yüzden diğer kontrollere gerek yok)
                     
-                    # Düz çizgi için
-                    elif tool_type == ToolType.LINE:
-                        p1 = shape_data[3]
-                        p2 = shape_data[4]
-                        line_width = shape_data[2]
-                        effective_tolerance = tolerance + line_width / 2.0
-                        
-                        if geometry_helpers.is_point_on_line(point, p1, p2, effective_tolerance):
-                            result = True
-                            logging.debug(f"  >>> Point IS on shape line: {item_type}[{index}]")
-                            break
-
-                    # Düzenlenebilir çizgi (EDITABLE_LINE) için
-                    elif tool_type == ToolType.EDITABLE_LINE:
-                        control_points = shape_data[3]
-                        if not control_points or len(control_points) < 2:
-                            continue
-                        
-                        line_width = shape_data[2]
-                        effective_tolerance = tolerance + line_width / 2.0
-                        
-                        # Her bir eğri segmenti için kontrol
-                        for i in range(len(control_points) - 1):
-                            p1, p2 = control_points[i], control_points[i+1]
-                            if geometry_helpers.is_point_on_line(point, p1, p2, effective_tolerance):
-                                result = True
-                                logging.debug(f"  >>> Point IS on editable line: {item_type}[{index}], segment between points {i} and {i+1}")
-                                break
-                    
-                    # Bilinmeyen/diğer şekil tipleri için en azından bounding box kontrolü yap
-                    else:
-                        # Eğer shape_data yapısı yeterli veri içeriyorsa bounding box kontrolü yap
-                        bbox = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
-                        if not bbox.isNull() and bbox.contains(point):
-                            result = True
-                            logging.debug(f"  >>> Point IS on unknown shape type: {item_type}[{index}], type={tool_type}")
-                            break
-                            
         except Exception as e:
             logging.error(f"Error in is_point_on_selection: {e}")
-                            
+                        
         logging.debug(f"--- is_point_on_selection result: {result} ---")
         return result
 

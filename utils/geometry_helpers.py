@@ -121,46 +121,26 @@ def get_item_bounding_box(item_data, item_type: str) -> QRectF:
     return QRectF()
 
 def is_point_on_line(point, line_start, line_end, tolerance=5.0):
-    """
-    Bir noktanın çizgi üzerinde olup olmadığını kontrol eder.
+    """Bir noktanın çizgi üzerinde olup olmadığını kontrol eder.
     
     Args:
         point (QPointF): Kontrol edilecek nokta
         line_start (QPointF): Çizginin başlangıç noktası
         line_end (QPointF): Çizginin bitiş noktası
-        tolerance (float): Tolerans değeri (piksel cinsinden)
-        
+        tolerance (float): Mesafe toleransı. Varsayılan değer 5.0 pixeldir.
+    
     Returns:
-        bool: Nokta çizgi üzerinde ise True, değilse False
+        bool: Nokta çizgi üzerindeyse True, değilse False
     """
-    # Çizgi uzunluğunu hesapla
-    line_length = (line_end - line_start).manhattanLength()
+    # Nokta ile çizgi arasındaki mesafenin karesini hesapla
+    # Eğer mesafe kare, tolerans karesinden küçükse, nokta çizgi üzerindedir
+    # Hesaplama, çizgiye olan projeksiyon hesabı ile yapılır
+    distance_sq = point_segment_distance_sq(point, line_start, line_end)
     
-    # Çizgi sıfır uzunluğunda ise, sadece başlangıç noktasına olan uzaklığı kontrol et
-    if line_length < 1.0:
-        return (point - line_start).manhattanLength() <= tolerance
+    # YENİ: Taşıma işlemleri için daha geniş tolerans
+    effective_tolerance = tolerance * 2.5  # Toleransı 2.5 kat artır
     
-    # Vektör hesaplamaları
-    v = line_end - line_start
-    w = point - line_start
-    
-    # Nokta çizginin uzantısında mı kontrol et
-    c1 = QPointF.dotProduct(w, v)
-    if c1 <= 0:
-        # Başlangıç noktasına daha yakın
-        return (point - line_start).manhattanLength() <= tolerance
-    
-    c2 = QPointF.dotProduct(v, v)
-    if c2 <= c1:
-        # Bitiş noktasına daha yakın
-        return (point - line_end).manhattanLength() <= tolerance
-    
-    # Çizgiye olan en kısa mesafeyi hesapla
-    b = c1 / c2
-    pb = line_start + b * v
-    
-    # Mesafeyi kontrol et
-    return (point - pb).manhattanLength() <= tolerance
+    return distance_sq <= effective_tolerance * effective_tolerance
 
 # --- YENİ: Noktadan Doğru Parçasına Uzaklığın Karesi ---
 def point_segment_distance_sq(p: QPointF, a: QPointF, b: QPointF) -> float:
@@ -289,31 +269,43 @@ def move_items_by(lines: List[List[Any]],
             elif item_type == 'shapes':
                 if 0 <= index < len(shapes):
                     shape_data = shapes[index] # [type, color, width, p1, p2]
+                    
+                    # Önce şekil tipini al
+                    if len(shape_data) == 0:
+                        logging.error(f"Shape {index} has empty data, skipping move")
+                        continue
+                        
                     shape_type = shape_data[0]
+                    logging.debug(f"Moving shape {index} (type: {shape_type}) by ({dx}, {dy})")
                     
                     if shape_type == ToolType.EDITABLE_LINE:
                         # Düzenlenebilir çizgi için tüm kontrol noktalarını taşı
                         if isinstance(shape_data[3], list):
                             shape_data[3] = [p + delta for p in shape_data[3]]
                             logging.debug(f"EDITABLE_LINE {index} moved by ({dx}, {dy})")
-                    elif shape_type == ToolType.PATH:
-                        # PATH için noktaları taşı
-                        if isinstance(shape_data[3], list):
-                            shape_data[3] = [p + delta for p in shape_data[3]]
-                            logging.debug(f"PATH {index} moved by ({dx}, {dy})")
                     elif shape_type in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE]:
                         # Standart şekiller için p1 ve p2'yi taşı
                         if len(shape_data) > 4:
-                            shape_data[3] = shape_data[3] + delta # p1
-                            shape_data[4] = shape_data[4] + delta # p2
-                            logging.debug(f"Shape {index} (type: {shape_type}) moved by ({dx}, {dy})")
+                            # Orijinal değerler
+                            old_p1 = QPointF(shape_data[3])
+                            old_p2 = QPointF(shape_data[4])
+                            
+                            # Yeni değerler
+                            shape_data[3] = old_p1 + delta # p1
+                            shape_data[4] = old_p2 + delta # p2
+                            
+                            logging.debug(f"Shape {index} (type: {shape_type}) moved from ({old_p1.x():.1f}, {old_p1.y():.1f})-({old_p2.x():.1f}, {old_p2.y():.1f}) to ({shape_data[3].x():.1f}, {shape_data[3].y():.1f})-({shape_data[4].x():.1f}, {shape_data[4].y():.1f})")
                     else:
                         # Diğer şekiller (bilinmeyen türler) için genel yaklaşım
                         # Eğer p1 ve p2 pozisyonları varsa onları taşı
                         if len(shape_data) > 4:
-                            shape_data[3] = shape_data[3] + delta # p1
-                            shape_data[4] = shape_data[4] + delta # p2
-                            logging.debug(f"Unknown shape {index} (type: {shape_type}) moved by ({dx}, {dy})")
+                            old_p1 = QPointF(shape_data[3])
+                            old_p2 = QPointF(shape_data[4])
+                            
+                            shape_data[3] = old_p1 + delta # p1
+                            shape_data[4] = old_p2 + delta # p2
+                            
+                            logging.debug(f"Unknown shape {index} (type: {shape_type}) moved from ({old_p1.x():.1f}, {old_p1.y():.1f})-({old_p2.x():.1f}, {old_p2.y():.1f}) to ({shape_data[3].x():.1f}, {shape_data[3].y():.1f})-({shape_data[4].x():.1f}, {shape_data[4].y():.1f})")
             elif item_type == 'images':
                 # Canvas'ta images listesi mevcut ise
                 canvas = None

@@ -23,7 +23,7 @@ def handle_selector_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
     logging.debug(f"[selector_tool_handler] handle_selector_press: shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
     screen_pos = event.position() 
     canvas.grabbed_handle_type = None
-    click_tolerance = 5.0 
+    click_tolerance = 10.0  # Toleransı artır
     click_rect = QRectF(screen_pos.x() - click_tolerance, 
                        screen_pos.y() - click_tolerance, 
                        click_tolerance * 2, 
@@ -43,48 +43,50 @@ def handle_selector_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
                 break
             
     if not canvas.grabbed_handle_type:
-        point_on_selection = canvas.is_point_on_selection(pos)
-        logging.debug(f"Selector Press: No handle grabbed. Checking point on selection (World Pos: {pos.x():.1f}, {pos.y():.1f})... Result: {point_on_selection}")
+        # Eğer zaten seçilmiş öğeler varsa, önce bunları kontrol et
+        if canvas.selected_item_indices:
+            # Önceki seçim üzerinde mi kontrol et
+            point_on_selection = canvas.is_point_on_selection(pos, tolerance=10.0)  # Toleransı artır
+            logging.debug(f"Selector Press: Checking if point is on existing selection... Result: {point_on_selection}")
+            
+            if point_on_selection:
+                # Seçili nesneyi taşıma moduna geç
+                canvas.moving_selection = True
+                canvas.drawing = False
+                canvas.resizing_selection = False
+                canvas.selecting = False
+                canvas.move_start_point = QPointF(pos)  # QPointF olarak bir kopya oluştur
+                canvas.last_move_pos = QPointF(pos)     # QPointF olarak bir kopya oluştur
+                canvas.move_original_states = canvas._get_current_selection_states(canvas._parent_page)
+                logging.debug(f"Moving selection started. Move start point: {canvas.move_start_point}, Last move pos: {canvas.last_move_pos}")
+                QApplication.setOverrideCursor(Qt.CursorShape.SizeAllCursor)
+                canvas.update()
+                return
         
-        # Points listesini manuel olarak kontrol edelim (is_point_on_selection'ın doğru çalışıp çalışmadığını görmek için)
-        if not point_on_selection and canvas.selected_item_indices:
-            for item_type, index in canvas.selected_item_indices:
-                if item_type == 'lines' and 0 <= index < len(canvas.lines):
-                    line_data = canvas.lines[index]
-                    if len(line_data) > 2 and isinstance(line_data[2], list):
-                        points = line_data[2]
-                        logging.debug(f"Manuel kontrol line[{index}]: points={points[:3]}...{points[-3:]}")
-                elif item_type == 'shapes' and 0 <= index < len(canvas.shapes):
-                    shape_data = canvas.shapes[index]
-                    tool_type = shape_data[0]
-                    if tool_type == ToolType.RECTANGLE:
-                        p1 = shape_data[3]
-                        p2 = shape_data[4]
-                        rect = QRectF(p1, p2).normalized()
-                        if rect.contains(pos):
-                            point_on_selection = True
-                            logging.debug(f"  Manuel kontrol: Nokta dikdörtgen içinde: {item_type}[{index}]")
-                    elif tool_type == ToolType.CIRCLE:
-                        p1 = shape_data[3]
-                        p2 = shape_data[4]
-                        center = QPointF((p1.x() + p2.x()) / 2, (p1.y() + p2.y()) / 2)
-                        radius = max(abs(p2.x() - p1.x()), abs(p2.y() - p1.y())) / 2
-                        distance = math.sqrt((pos.x() - center.x())**2 + (pos.y() - center.y())**2)
-                        if distance <= radius:
-                            point_on_selection = True
-                            logging.debug(f"  Manuel kontrol: Nokta daire içinde: {item_type}[{index}]")
-        
-        if point_on_selection:
+        # Seçili nesne yoksa veya seçilmiş olmayan bir yere tıklandıysa
+        # Yeni bir nesne seçmeyi dene
+        item_at_click = canvas._get_item_at(pos, tolerance=10.0)  # Toleransı artır
+        if item_at_click:
+            # Ctrl basılı değilse mevcut seçimi temizle
+            if not (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+                canvas.selected_item_indices.clear()
+            
+            # Yeni seçilen öğeyi ekle
+            canvas.selected_item_indices.append(item_at_click)
+            canvas.selection_changed.emit()
+            
+            # Hemen taşıma moduna geç
             canvas.moving_selection = True
             canvas.drawing = False
-            canvas.resizing_selection = False
+            canvas.resizing_selection = False 
             canvas.selecting = False
-            canvas.move_start_point = QPointF(pos)  # QPointF olarak bir kopya oluştur
-            canvas.last_move_pos = QPointF(pos)     # QPointF olarak bir kopya oluştur
+            canvas.move_start_point = QPointF(pos)
+            canvas.last_move_pos = QPointF(pos)
             canvas.move_original_states = canvas._get_current_selection_states(canvas._parent_page)
-            logging.debug(f"Moving selection started. Move start point: {canvas.move_start_point}, Last move pos: {canvas.last_move_pos}")
+            logging.debug(f"New item selected and moving started. Item: {item_at_click}")
             QApplication.setOverrideCursor(Qt.CursorShape.SizeAllCursor)
         else:
+            # Boş bir alana tıklandı - yeni bir seçim dikdörtgeni başlat
             if not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
                 logging.debug("Clearing previous selection.")
                 canvas.selected_item_indices.clear()
