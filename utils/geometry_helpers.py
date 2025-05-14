@@ -14,52 +14,111 @@ LineDataType = List[Any] # [color_tuple, width_float, List[QPointF]]
 ShapeDataType = List[Any] # [ToolType_enum, color_tuple, width_float, QPointF, QPointF, ...]
 ItemRef = Tuple[str, int] # ('lines', index) veya ('shapes', index)
 
-def get_item_bounding_box(item_data: List[Any], item_type: str) -> QRectF:
-    """Verilen çizgi veya şekil verisi için sınırlayıcı dikdörtgeni hesaplar."""
-    min_x, min_y = math.inf, math.inf
-    max_x, max_y = -math.inf, -math.inf
-
-    if item_type == 'lines' and len(item_data) >= 3:
-        points: List[QPointF] = item_data[2]
-        if not points:
-            return QRectF() # Boş rect
-        for p in points:
-            min_x = min(min_x, p.x())
-            min_y = min(min_y, p.y())
-            max_x = max(max_x, p.x())
-            max_y = max(max_y, p.y())
-        # YENİ LOG
-        # logging.debug(f"[BBOX_DEBUG] Line: p1={points[0] if points else 'N/A'}, p2={points[-1] if points else 'N/A'}, min_x={min_x:.2f}, min_y={min_y:.2f}, max_x={max_x:.2f}, max_y={max_y:.2f}, rect_width={max_x-min_x:.2f}, rect_height={max_y-min_y:.2f}")
-
-    elif item_type == 'shapes' and len(item_data) >= 5:
-        tool_type: ToolType = item_data[0]
-        p1: QPointF = item_data[3]
-        p2: QPointF = item_data[4]
-
-        if tool_type == ToolType.LINE:
-            min_x = min(p1.x(), p2.x())
-            min_y = min(p1.y(), p2.y())
-            max_x = max(p1.x(), p2.x())
-            max_y = max(p1.y(), p2.y())
-        elif tool_type == ToolType.RECTANGLE:
-            min_x = min(p1.x(), p2.x())
-            min_y = min(p1.y(), p2.y())
-            max_x = max(p1.x(), p2.x())
-            max_y = max(p1.y(), p2.y())
-        elif tool_type == ToolType.CIRCLE:
-            center_x = (p1.x() + p2.x()) / 2
-            center_y = (p1.y() + p2.y()) / 2
-            radius = abs(p1.x() - p2.x()) / 2
-            min_x = center_x - radius
-            min_y = center_y - radius
-            max_x = center_x + radius
-            max_y = center_y + radius
+def get_item_bounding_box(item_data, item_type: str) -> QRectF:
+    """Verilen öğe için sınırlayıcı kutuyu hesaplar."""
+    if item_type == 'lines':
+        # Lines: [color_tuple, width_float, List[QPointF], Optional[line_style_str]]
+        points = item_data[2]
+        if len(points) < 2:
+            return QRectF() 
+        
+        min_x = min(p.x() for p in points)
+        max_x = max(p.x() for p in points)
+        min_y = min(p.y() for p in points)
+        max_y = max(p.y() for p in points)
+        
+        # Çizginin kalınlığını da hesaba kat
+        line_width = item_data[1]
+        min_x -= line_width/2
+        min_y -= line_width/2
+        max_x += line_width/2
+        max_y += line_width/2
+        
+        return QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
+    
+    elif item_type == 'editable_lines':
+        # Düzenlenebilir çizgiler: [ToolType.EDITABLE_LINE, color_tuple, width_float, points_list, line_style]
+        # veya normal çizgiler için: [color_tuple, width_float, points_list, line_style]
+        
+        # Düzenlenebilir çizginin noktalarını al
+        if isinstance(item_data[0], ToolType):
+            # Düzenlenebilir çizgi formatı: [ToolType.EDITABLE_LINE, color, width, points, line_style]
+            points = item_data[3]
+            line_width = item_data[2]
         else:
+            # Normal çizgi formatı: [color, width, points, line_style]
+            points = item_data[2]
+            line_width = item_data[1]
+        
+        if not points or len(points) < 2:
             return QRectF()
-    else:
-        return QRectF()
-
-    return QRectF(QPointF(min_x, min_y), QPointF(max_x, max_y))
+        
+        # Noktaların sınırlarını hesapla
+        min_x = min(p.x() for p in points)
+        max_x = max(p.x() for p in points)
+        min_y = min(p.y() for p in points)
+        max_y = max(p.y() for p in points)
+        
+        # Çizginin kalınlığını da hesaba kat
+        min_x -= line_width/2
+        min_y -= line_width/2
+        max_x += line_width/2
+        max_y += line_width/2
+        
+        return QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
+    
+    elif item_type == 'shapes':
+        # Şekil verisi: [ToolType, color, width, ...]
+        if len(item_data) < 5:
+            return QRectF()
+        
+        tool_type = item_data[0]
+        
+        if tool_type == ToolType.EDITABLE_LINE:
+            # Düzenlenebilir çizgi için özel işlem
+            # [ToolType.EDITABLE_LINE, color, width, control_points, line_style]
+            control_points = item_data[3]
+            line_width = item_data[2]
+            
+            if not control_points or len(control_points) < 2:
+                return QRectF()
+            
+            # Kontrol noktalarının sınırlarını hesapla
+            min_x = min(p.x() for p in control_points)
+            max_x = max(p.x() for p in control_points)
+            min_y = min(p.y() for p in control_points)
+            max_y = max(p.y() for p in control_points)
+            
+            # Çizginin kalınlığını da hesaba kat
+            min_x -= line_width/2
+            min_y -= line_width/2
+            max_x += line_width/2
+            max_y += line_width/2
+            
+            return QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
+            
+        elif tool_type in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE]:
+            # Standart şekiller: [ToolType, color, width, p1, p2, ...]
+            p1 = item_data[3]
+            p2 = item_data[4]
+            line_width = item_data[2]
+            
+            # p1 ve p2'den sınırlayıcı kutuyu hesapla
+            min_x = min(p1.x(), p2.x())
+            max_x = max(p1.x(), p2.x())
+            min_y = min(p1.y(), p2.y())
+            max_y = max(p1.y(), p2.y())
+            
+            # Çizginin kalınlığını da hesaba kat
+            min_x -= line_width/2
+            min_y -= line_width/2
+            max_x += line_width/2
+            max_y += line_width/2
+            
+            return QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
+    
+    # Diğer türler için boş bir dikdörtgen döndür
+    return QRectF()
 
 def is_point_on_line(point, line_start, line_end, tolerance=5.0):
     """
@@ -215,6 +274,8 @@ def move_items_by(lines: List[List[Any]],
                   dx: float, 
                   dy: float):
     """Verilen öğe listelerindeki seçili öğeleri dx, dy kadar taşır (yerinde değiştirir)."""
+    from gui.enums import ToolType  # ToolType'ı bu fonksiyonun içinde import et
+    
     delta = QPointF(dx, dy)
     for item_type, index in selected_indices:
         try:
@@ -222,13 +283,57 @@ def move_items_by(lines: List[List[Any]],
                 if 0 <= index < len(lines):
                     line_data = lines[index] # [color, width, points_list]
                     if len(line_data) > 2 and isinstance(line_data[2], list):
+                        # Çizginin tüm noktalarını taşı
                         lines[index][2] = [p + delta for p in line_data[2]]
+                        logging.debug(f"Line {index} moved by ({dx}, {dy})")
             elif item_type == 'shapes':
                 if 0 <= index < len(shapes):
                     shape_data = shapes[index] # [type, color, width, p1, p2]
-                    if len(shape_data) > 4:
-                        shapes[index][3] = shape_data[3] + delta # p1
-                        shapes[index][4] = shape_data[4] + delta # p2
+                    shape_type = shape_data[0]
+                    
+                    if shape_type == ToolType.EDITABLE_LINE:
+                        # Düzenlenebilir çizgi için tüm kontrol noktalarını taşı
+                        if isinstance(shape_data[3], list):
+                            shape_data[3] = [p + delta for p in shape_data[3]]
+                            logging.debug(f"EDITABLE_LINE {index} moved by ({dx}, {dy})")
+                    elif shape_type == ToolType.PATH:
+                        # PATH için noktaları taşı
+                        if isinstance(shape_data[3], list):
+                            shape_data[3] = [p + delta for p in shape_data[3]]
+                            logging.debug(f"PATH {index} moved by ({dx}, {dy})")
+                    elif shape_type in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE]:
+                        # Standart şekiller için p1 ve p2'yi taşı
+                        if len(shape_data) > 4:
+                            shape_data[3] = shape_data[3] + delta # p1
+                            shape_data[4] = shape_data[4] + delta # p2
+                            logging.debug(f"Shape {index} (type: {shape_type}) moved by ({dx}, {dy})")
+                    else:
+                        # Diğer şekiller (bilinmeyen türler) için genel yaklaşım
+                        # Eğer p1 ve p2 pozisyonları varsa onları taşı
+                        if len(shape_data) > 4:
+                            shape_data[3] = shape_data[3] + delta # p1
+                            shape_data[4] = shape_data[4] + delta # p2
+                            logging.debug(f"Unknown shape {index} (type: {shape_type}) moved by ({dx}, {dy})")
+            elif item_type == 'images':
+                # Canvas'ta images listesi mevcut ise
+                canvas = None
+                for selected_type, selected_idx in selected_indices:
+                    if selected_type == 'shapes' or selected_type == 'lines':
+                        try:
+                            canvas = lines[0][0].parent() if lines and len(lines) > 0 else None
+                            if not canvas and shapes and len(shapes) > 0:
+                                canvas = shapes[0][0].parent()
+                            break
+                        except Exception:
+                            pass
+                
+                if canvas and hasattr(canvas, '_parent_page') and canvas._parent_page and hasattr(canvas._parent_page, 'images'):
+                    if 0 <= index < len(canvas._parent_page.images):
+                        img_data = canvas._parent_page.images[index]
+                        if 'rect' in img_data and isinstance(img_data['rect'], QRectF):
+                            # Resmin dikdörtgenini taşı
+                            img_data['rect'].translate(delta)
+                            logging.debug(f"Image {index} moved by ({dx}, {dy})")
         except Exception as e:
             logging.error(f"move_items_by hatası ({item_type}[{index}]): {e}", exc_info=True)
 

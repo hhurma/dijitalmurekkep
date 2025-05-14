@@ -4,12 +4,13 @@ Bu fonksiyonlar genellikle DrawingCanvas.paintEvent() içinden çağrılır.
 """
 import logging
 from typing import TYPE_CHECKING
+import math
 
-from PyQt6.QtGui import QPainter, QPen, QBrush, QColor, QCursor, QPainterPath
+from PyQt6.QtGui import QPainter, QPen, QBrush, QColor, QCursor, QPainterPath, QPolygonF
 from PyQt6.QtCore import Qt, QPointF, QRectF
 from PyQt6.QtWidgets import QGraphicsPixmapItem
 
-from utils import selection_helpers # selection_helpers ve geometry_helpers gerekebilir
+from utils import selection_helpers, geometry_helpers # selection_helpers ve geometry_helpers gerekebilir
 # from utils import geometry_helpers # _draw_selection_overlay içinde kullanılıyor
 # from gui.enums import ToolType # _draw_items içinde kullanılıyor
 # from .drawing_canvas import rgba_to_qcolor # _draw_items içinde kullanılıyor
@@ -103,66 +104,86 @@ def draw_items(canvas: 'DrawingCanvas', painter: QPainter):
 def draw_selection_overlay(canvas: 'DrawingCanvas', painter: QPainter):
     # logging.debug(f"[canvas_drawing_helpers] draw_selection_overlay: selected_item_indices={canvas.selected_item_indices}, current_handles={canvas.current_handles}")
     from gui.enums import ToolType
-    canvas.current_handles.clear()
-    if not canvas.selected_item_indices or not canvas._parent_page:
+    
+    # Seçili öğe yoksa hemen çık
+    if not canvas.selected_item_indices:
+        canvas.current_handles.clear()
         return
-
+        
+    painter.save()
+    # İmleç koordinat hesaplamada kullanılabilecek ekran dönüşüm metodları
     is_image_selection = False
-    is_mixed_selection = False
-    first_item_type = canvas.selected_item_indices[0][0]
-
-    if first_item_type == 'images':
-        is_image_selection = all(item[0] == 'images' for item in canvas.selected_item_indices)
-    else:
-        is_image_selection = False
-        is_mixed_selection = any(item[0] == 'images' for item in canvas.selected_item_indices)
-
-    if is_mixed_selection or (is_image_selection and len(canvas.selected_item_indices) > 1):
-        return
-
-    if is_image_selection and len(canvas.selected_item_indices) == 1:
-        img_index = canvas.selected_item_indices[0][1]
-        if 0 <= img_index < len(canvas._parent_page.images):
-            img_data = canvas._parent_page.images[img_index]
-            current_rect = img_data.get('rect', QRectF())
-            current_angle = img_data.get('angle', 0.0)
-            zoom = canvas._parent_page.zoom_level
-            if not current_rect.isNull():
-                selection_helpers.draw_rotated_selection_frame(painter, current_rect, current_angle, zoom)
-                rotated_corners = selection_helpers.get_rotated_corners(current_rect, current_angle)
-                handle_positions_world = {
-                    'top-left': rotated_corners[0], 'top-right': rotated_corners[1],
-                    'bottom-right': rotated_corners[2], 'bottom-left': rotated_corners[3],
-                    'middle-top': (rotated_corners[0] + rotated_corners[1]) / 2.0,
-                    'middle-right': (rotated_corners[1] + rotated_corners[2]) / 2.0,
-                    'middle-bottom': (rotated_corners[2] + rotated_corners[3]) / 2.0,
-                    'middle-left': (rotated_corners[3] + rotated_corners[0]) / 2.0,
-                }
-                bottom_mid_point_world = handle_positions_world['middle-bottom']
-                center_world = current_rect.center()
-                rotation_handle_offset_world = selection_helpers.ROTATION_HANDLE_OFFSET / zoom if zoom > 0 else selection_helpers.ROTATION_HANDLE_OFFSET
-                vec_center_to_bottom = bottom_mid_point_world - center_world
-                if vec_center_to_bottom.manhattanLength() > 1e-6:
-                    vec_center_to_bottom = vec_center_to_bottom * (1 + rotation_handle_offset_world / vec_center_to_bottom.manhattanLength())
-                rotation_handle_center_world = center_world + vec_center_to_bottom
-                handle_positions_world['rotate'] = rotation_handle_center_world
+    
+    # İlk önce görüntüleri kontrol et (daha basit durum)
+    if canvas.selected_item_indices[0][0] == 'images' and canvas._parent_page:
+        index = canvas.selected_item_indices[0][1]
+        if 0 <= index < len(canvas._parent_page.images):
+            is_image_selection = True
+            img_data = canvas._parent_page.images[index]
+            rect = img_data.get('rect')
+            angle = img_data.get('angle', 0.0)
+            if rect and isinstance(rect, QRectF):
+                # Gelen görüntü için kutu çizme
+                # Kutuyu çevreleyen bir dikdörtgen çiz
+                transformed_rect_poly = selection_helpers.get_rotated_rect_polygon(rect, angle)
+                screen_poly = QPolygonF([canvas.world_to_screen(p) for p in transformed_rect_poly])
+                painter.setPen(QPen(QColor(0, 0, 255, 200), 1, Qt.PenStyle.DashLine))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawPolygon(screen_poly)
+                
+                # Tutamaçları çiz, birden fazla görüntü seçiliyse, kenar tutamaçlarını atla
                 handle_size_screen = selection_helpers.HANDLE_SIZE
                 half_handle_screen = handle_size_screen / 2.0
-                for handle_type, center_w in handle_positions_world.items(): # center_world -> center_w
-                    center_screen = canvas.world_to_screen(center_w)
-                    current_handle_size_screen = handle_size_screen
-                    if handle_type == 'rotate':
-                        current_handle_size_screen *= selection_helpers.ROTATION_HANDLE_SIZE_FACTOR
-                    current_half_handle_screen = current_handle_size_screen / 2.0
-                    handle_rect_screen = QRectF(
-                        center_screen.x() - current_half_handle_screen, 
-                        center_screen.y() - current_half_handle_screen,
-                        current_handle_size_screen, 
-                        current_handle_size_screen
-                    )
-                    canvas.current_handles[handle_type] = handle_rect_screen
-        else:
-            logging.warning(f"_draw_selection_overlay: Geçersiz resim indeksi: {img_index}")
+                
+                if len(canvas.selected_item_indices) == 1:
+                    # Yeniden boyutlandırma için - 8 tutamaç
+                    handle_positions_world = selection_helpers.calculate_handle_positions_for_rotated_rect(rect, angle)
+                    
+                    handle_pen = QPen(Qt.GlobalColor.black)
+                    handle_pen.setWidth(2)
+                    handle_pen.setCosmetic(True)
+                    
+                    painter.setPen(handle_pen)
+                    painter.setBrush(QBrush(QColor(0, 120, 255, 180)))
+                    
+                    for handle_type, center_world in handle_positions_world.items():
+                        center_screen = canvas.world_to_screen(center_world)
+                        handle_rect = QRectF(center_screen.x() - half_handle_screen, center_screen.y() - half_handle_screen, handle_size_screen, handle_size_screen)
+                        painter.drawRect(handle_rect)
+                        canvas.current_handles[handle_type] = handle_rect
+                
+                # Döndürme tutamacı ekle (merkez üstünde, kenarlardan uzakta)
+                if len(canvas.selected_item_indices) == 1:
+                    top_center_world = QPointF(rect.center().x(), rect.top() - rect.height() * 0.2)
+                    if angle != 0:
+                        # Açıyı radyana çevir
+                        angle_rad = math.radians(angle)
+                        # Merkezi al
+                        rect_center = rect.center()
+                        # Rotasyon matrisi uygula
+                        dx = top_center_world.x() - rect_center.x()
+                        dy = top_center_world.y() - rect_center.y()
+                        rotated_x = dx * math.cos(angle_rad) - dy * math.sin(angle_rad)
+                        rotated_y = dx * math.sin(angle_rad) + dy * math.cos(angle_rad)
+                        # Döndürülmüş noktayı hesapla
+                        top_center_world = QPointF(rect_center.x() + rotated_x, rect_center.y() + rotated_y)
+                    
+                    top_center_screen = canvas.world_to_screen(top_center_world)
+                    center_screen = canvas.world_to_screen(rect.center())
+                    
+                    # Merkez ile döndürme tutamacı arasına çizgi çiz
+                    painter.setPen(QPen(QColor(0, 0, 0, 150), 1, Qt.PenStyle.DashLine))
+                    painter.drawLine(center_screen, top_center_screen)
+                    
+                    # Döndürme tutamacını çiz
+                    handle_pen.setColor(QColor(0, 0, 0, 150))
+                    painter.setPen(handle_pen)
+                    handle_brush = QBrush(QColor(255, 100, 100, 150))
+                    painter.setBrush(handle_brush)
+                    
+                    rotation_handle_rect = QRectF(top_center_screen.x() - half_handle_screen, top_center_screen.y() - half_handle_screen, handle_size_screen, handle_size_screen)
+                    painter.drawEllipse(rotation_handle_rect)
+                    canvas.current_handles['rotation'] = rotation_handle_rect
     elif not is_image_selection:
         # --- DÜZ ÇİZGİ (LINE) için özel tutamaç --- #
         if len(canvas.selected_item_indices) == 1 and canvas.selected_item_indices[0][0] == 'shapes':
@@ -193,6 +214,56 @@ def draw_selection_overlay(canvas: 'DrawingCanvas', painter: QPainter):
                 
                 # --- YENİ: Düzenlenebilir Çizgi (EDITABLE_LINE) için özel tutamaç --- #
                 elif tool_type == ToolType.EDITABLE_LINE:
+                    # Düzenlenebilir çizgi tutamaçlarını sadece EDITABLE_LINE_NODE_SELECTOR aracı seçiliyse göster,
+                    # aksi takdirde sadece normal seçim çerçevesini göster
+                    if canvas.current_tool != ToolType.EDITABLE_LINE_NODE_SELECTOR:
+                        # Sadece etrafında bir çerçeve göster
+                        control_points = shape_data[3]
+                        if not control_points or len(control_points) < 1:
+                            return
+                        
+                        # Çizginin sınırlayıcı kutusunu hesapla ve çiz
+                        bbox = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
+                        if not bbox.isNull():
+                            painter.setPen(QPen(QColor(0, 0, 255, 150), 1, Qt.PenStyle.DashLine))
+                            painter.setBrush(Qt.BrushStyle.NoBrush)
+                            bbox_rect_screen = QRectF(
+                                canvas.world_to_screen(bbox.topLeft()),
+                                canvas.world_to_screen(bbox.bottomRight())
+                            )
+                            painter.drawRect(bbox_rect_screen)
+                            
+                            # Boyutlandırma için standart tutamaçları göster
+                            handle_size_screen = selection_helpers.HANDLE_SIZE
+                            half_handle_screen = handle_size_screen / 2.0
+                            
+                            # Dünya koordinatlarındaki 8 tutamaç pozisyonu
+                            handle_positions_world = {
+                                'top-left': bbox.topLeft(),
+                                'top-right': bbox.topRight(),
+                                'bottom-left': bbox.bottomLeft(),
+                                'bottom-right': bbox.bottomRight(),
+                                'middle-top': QPointF(bbox.center().x(), bbox.top()),
+                                'middle-bottom': QPointF(bbox.center().x(), bbox.bottom()),
+                                'middle-left': QPointF(bbox.left(), bbox.center().y()),
+                                'middle-right': QPointF(bbox.right(), bbox.center().y())
+                            }
+                            
+                            # Tutamaçları çiz
+                            handle_pen = QPen(Qt.GlobalColor.black)
+                            handle_pen.setWidth(2)
+                            handle_pen.setCosmetic(True)
+                            painter.setPen(handle_pen)
+                            painter.setBrush(QBrush(QColor(0, 120, 255, 180)))
+                            
+                            for handle_type, center_world in handle_positions_world.items():
+                                center_screen = canvas.world_to_screen(center_world)
+                                handle_rect = QRectF(center_screen.x() - half_handle_screen, center_screen.y() - half_handle_screen, handle_size_screen, handle_size_screen)
+                                painter.drawRect(handle_rect)
+                                canvas.current_handles[handle_type] = handle_rect
+                        return
+                    
+                    # EDITABLE_LINE_NODE_SELECTOR aracı seçiliyse kontrol noktalarını göster
                     control_points = shape_data[3]  # Bezier kontrol noktaları
                     if not control_points or len(control_points) < 4:
                         return
@@ -225,106 +296,139 @@ def draw_selection_overlay(canvas: 'DrawingCanvas', painter: QPainter):
                     
                     # Şimdi kontrol noktalarını çizelim
                     handle_pen = QPen(Qt.GlobalColor.black)
+                    handle_pen.setWidth(1)
                     handle_pen.setCosmetic(True)
                     
+                    # Ana noktaları çiz (P0, P3, P6, ...)
                     for i in range(0, len(control_points), 3):
-                        # Ana noktalar (kubik bezier eğrilerinin uç noktaları)
                         if i < len(control_points):
                             p_screen = canvas.world_to_screen(control_points[i])
                             
-                            # Ana nokta tutamaçlarını çiz (mavi)
+                            # Ana nokta
                             painter.setPen(handle_pen)
-                            painter.setBrush(QBrush(QColor(0, 100, 255, 128)))  # Mavi
+                            painter.setBrush(QBrush(QColor(0, 120, 255, 180)))
                             
                             handle_rect = QRectF(
-                                p_screen.x() - half_handle_screen,
-                                p_screen.y() - half_handle_screen,
-                                handle_size_screen,
+                                p_screen.x() - half_handle_screen, 
+                                p_screen.y() - half_handle_screen, 
+                                handle_size_screen, 
                                 handle_size_screen
                             )
+                            
+                            # Ana nokta kare şeklinde
                             painter.drawRect(handle_rect)
                             
-                            # Tutamaç bilgisini canvas'a kaydet
-                            handle_key = f"main_{i}"
-                            canvas.current_handles[handle_key] = handle_rect
+                            # Handle'ı kaydet
+                            handle_name = f"main_{i}"
+                            canvas.current_handles[handle_name] = handle_rect
+                    
+                    # Kontrol noktalarına çizgiler ve kontrol noktaları
+                    handle_pen.setColor(QColor(120, 120, 120, 150))
+                    handle_pen.setStyle(Qt.PenStyle.DashLine)
+                    painter.setPen(handle_pen)
+                    
+                    # Kontrol noktalarını çiz ve kontrol çizgilerini çiz
+                    for i in range(0, len(control_points) - 3, 3):
+                        # P0 -> C1 (kontrol noktası 1)
+                        p0 = canvas.world_to_screen(control_points[i])
+                        c1 = canvas.world_to_screen(control_points[i + 1])
+                        painter.drawLine(p0, c1)
                         
-                        # Bezier kontrol noktaları (ara noktalar)
-                        # İlk kontrol noktası (C1)
-                        if i + 1 < len(control_points):
-                            # Kontrol çizgisini çiz
-                            if i < len(control_points):
-                                p0_screen = canvas.world_to_screen(control_points[i])
-                                c1_screen = canvas.world_to_screen(control_points[i + 1])
-                                painter.setPen(QPen(QColor(0, 200, 0, 100), 1, Qt.PenStyle.DashLine))
-                                painter.drawLine(p0_screen, c1_screen)
-                            
-                            # Kontrol noktası tutamacını çiz (yeşil)
-                            c1_screen = canvas.world_to_screen(control_points[i + 1])
-                            painter.setPen(handle_pen)
-                            painter.setBrush(QBrush(QColor(0, 200, 0, 128)))  # Yeşil
-                            
-                            handle_rect = QRectF(
-                                c1_screen.x() - half_bezier_handle_screen,
-                                c1_screen.y() - half_bezier_handle_screen,
-                                bezier_handle_size_screen,
-                                bezier_handle_size_screen
-                            )
-                            painter.drawEllipse(handle_rect)
-                            
-                            # Tutamaç bilgisini canvas'a kaydet
-                            handle_key = f"control1_{i+1}"
-                            canvas.current_handles[handle_key] = handle_rect
+                        # C2 -> P3 (kontrol noktası 2 -> sonraki ana nokta)
+                        c2 = canvas.world_to_screen(control_points[i + 2])
+                        p3 = canvas.world_to_screen(control_points[i + 3])
+                        painter.drawLine(c2, p3)
                         
-                        # İkinci kontrol noktası (C2)
-                        if i + 2 < len(control_points):
-                            # Kontrol çizgisini çiz
-                            if i + 3 < len(control_points):
-                                p3_screen = canvas.world_to_screen(control_points[i + 3])
-                                c2_screen = canvas.world_to_screen(control_points[i + 2])
-                                painter.setPen(QPen(QColor(200, 0, 0, 100), 1, Qt.PenStyle.DashLine))
-                                painter.drawLine(p3_screen, c2_screen)
-                            
-                            # Kontrol noktası tutamacını çiz (kırmızı)
-                            c2_screen = canvas.world_to_screen(control_points[i + 2])
-                            painter.setPen(handle_pen)
-                            painter.setBrush(QBrush(QColor(200, 0, 0, 128)))  # Kırmızı
-                            
-                            handle_rect = QRectF(
-                                c2_screen.x() - half_bezier_handle_screen,
-                                c2_screen.y() - half_bezier_handle_screen,
-                                bezier_handle_size_screen,
-                                bezier_handle_size_screen
-                            )
-                            painter.drawEllipse(handle_rect)
-                            
-                            # Tutamaç bilgisini canvas'a kaydet
-                            handle_key = f"control2_{i+2}"
-                            canvas.current_handles[handle_key] = handle_rect
+                        # Kontrol noktaları (C1, C2) - farklı şekil veya renkte
+                        for j in range(1, 3):
+                            ctrl_index = i + j
+                            if ctrl_index < len(control_points):
+                                ctrl_screen = canvas.world_to_screen(control_points[ctrl_index])
+                                
+                                # Kontrol noktaları için farklı stil
+                                painter.setPen(QPen(Qt.GlobalColor.black, 1))
+                                painter.setBrush(QBrush(QColor(200, 200, 200, 150)))
+                                
+                                handle_rect = QRectF(
+                                    ctrl_screen.x() - half_bezier_handle_screen,
+                                    ctrl_screen.y() - half_bezier_handle_screen,
+                                    bezier_handle_size_screen,
+                                    bezier_handle_size_screen
+                                )
+                                
+                                # Kontrol noktaları yuvarlak
+                                painter.drawEllipse(handle_rect)
+                                
+                                # Handle'ı kaydet (j=1 için control1, j=2 için control2)
+                                handle_name = f"control{j}_{ctrl_index}"
+                                canvas.current_handles[handle_name] = handle_rect
                     
                     painter.restore()
-                    return  # Diğer seçim kutuları ve tutamaçlar çizilmesin
-        # --- Diğer şekiller için klasik seçim kutusu ve tutamaçlar --- #
-        combined_bbox_world = canvas._get_combined_bbox([])
-        if not combined_bbox_world.isNull():
-            zoom = canvas._parent_page.zoom_level
-            selection_helpers.draw_standard_selection_frame(painter, combined_bbox_world, zoom)
-            handle_positions_world = {
-                'top-left': combined_bbox_world.topLeft(), 'top-right': combined_bbox_world.topRight(),
-                'bottom-left': combined_bbox_world.bottomLeft(), 'bottom-right': combined_bbox_world.bottomRight(),
-                'middle-left': QPointF(combined_bbox_world.left(), combined_bbox_world.center().y()),
-                'middle-right': QPointF(combined_bbox_world.right(), combined_bbox_world.center().y()),
-                'middle-top': QPointF(combined_bbox_world.center().x(), combined_bbox_world.top()),
-                'middle-bottom': QPointF(combined_bbox_world.center().x(), combined_bbox_world.bottom())
-            }
-            handle_size_screen = selection_helpers.HANDLE_SIZE
-            half_handle_screen = handle_size_screen / 2.0
-            for handle_type, center_w in handle_positions_world.items():
-                center_screen = canvas.world_to_screen(center_w)
-                handle_rect_screen = QRectF(
-                    center_screen.x() - half_handle_screen, center_screen.y() - half_handle_screen,
-                    handle_size_screen, handle_size_screen
-                )
-                canvas.current_handles[handle_type] = handle_rect_screen
+                    return
+                
+        # --- Standart seçim kutusu ve tutamaçlar --- #
+        # Shape'lerin sınırlayıcı kutusunu hesapla
+        bbox = QRectF()
+        for item_type, index in canvas.selected_item_indices:
+            try:
+                if item_type == 'lines' and 0 <= index < len(canvas.lines):
+                    line_data = canvas.lines[index]
+                    item_bbox = geometry_helpers.get_item_bounding_box(line_data, 'lines')
+                elif item_type == 'shapes' and 0 <= index < len(canvas.shapes):
+                    shape_data = canvas.shapes[index]
+                    item_bbox = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
+                elif item_type == 'editable_lines' and 0 <= index < len(canvas.editable_lines):
+                    editable_line_data = canvas.editable_lines[index]
+                    item_bbox = geometry_helpers.get_item_bounding_box(editable_line_data, 'editable_lines')
+                else:
+                    continue
+                
+                if bbox.isNull():
+                    bbox = item_bbox
+                else:
+                    bbox = bbox.united(item_bbox)
+            except Exception as e:
+                logging.warning(f"Sınırlayıcı kutu hesaplanırken hata: {e}")
+                
+        if not bbox.isNull():
+            # Seçim kutusunu çiz
+            bbox_screen = QRectF(canvas.world_to_screen(bbox.topLeft()), 
+                                canvas.world_to_screen(bbox.bottomRight()))
+            painter.setPen(QPen(QColor(0, 0, 255, 150), 1, Qt.PenStyle.DashLine))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(bbox_screen)
+            
+            # Tutamaçları hesapla ve çiz
+            if len(canvas.selected_item_indices) > 0:
+                handle_size_screen = selection_helpers.HANDLE_SIZE
+                half_handle_screen = handle_size_screen / 2.0
+                
+                # Dünya koordinatlarındaki 8 tutamaç pozisyonu
+                handle_positions_world = {
+                    'top-left': bbox.topLeft(),
+                    'top-right': bbox.topRight(),
+                    'bottom-left': bbox.bottomLeft(),
+                    'bottom-right': bbox.bottomRight(),
+                    'middle-top': QPointF(bbox.center().x(), bbox.top()),
+                    'middle-bottom': QPointF(bbox.center().x(), bbox.bottom()),
+                    'middle-left': QPointF(bbox.left(), bbox.center().y()),
+                    'middle-right': QPointF(bbox.right(), bbox.center().y())
+                }
+                
+                # Tutamaçları çiz
+                handle_pen = QPen(Qt.GlobalColor.black)
+                handle_pen.setWidth(2)
+                handle_pen.setCosmetic(True)
+                painter.setPen(handle_pen)
+                painter.setBrush(QBrush(QColor(0, 120, 255, 180)))
+                
+                for handle_type, center_world in handle_positions_world.items():
+                    center_screen = canvas.world_to_screen(center_world)
+                    handle_rect = QRectF(center_screen.x() - half_handle_screen, center_screen.y() - half_handle_screen, handle_size_screen, handle_size_screen)
+                    painter.drawRect(handle_rect)
+                    canvas.current_handles[handle_type] = handle_rect
+    
+    painter.restore()
 
 def draw_selection_rectangle(canvas: 'DrawingCanvas', painter: QPainter):
     logging.debug(f"[canvas_drawing_helpers] draw_selection_rectangle: shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")

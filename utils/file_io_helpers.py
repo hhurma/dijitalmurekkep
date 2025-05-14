@@ -74,106 +74,151 @@ def _deserialize_image(image_dict: Dict[str, Any]) -> Dict[str, Any] | None:
 
 def _serialize_item(item_data: List[Any]) -> Dict[str, Any]:
     """Tek bir çizgi veya şekil verisini JSON uyumlu sözlüğe dönüştürür."""
+    if not item_data or len(item_data) < 3:
+        logging.warning(f"Serileştirme için eksik veri: {item_data}")
+        return None
+    
     item_type = 'line' if not isinstance(item_data[0], ToolType) else 'shape'
     
     if item_type == 'line':
         # Line: [color_tuple, width_float, List[QPointF], Optional[line_style_str]]
-        if len(item_data) >= 3:
+        serialized = {
+            'type': 'line',
+            'color': list(item_data[0]),
+            'width': item_data[1],
+            'points': [_point_to_list(p) for p in item_data[2]]
+        }
+        # YENİ: Çizgi stilini ekle (varsa)
+        if len(item_data) >= 4 and item_data[3] is not None:
+            serialized['line_style'] = item_data[3]
+        return serialized
+    else:
+        # Shape: [ToolType, color_tuple, width_float, p1, p2, ...]
+        tool_type = item_data[0]
+        
+        # YENİ: Düzenlenebilir çizgileri özel olarak işle
+        if tool_type == ToolType.EDITABLE_LINE:
+            # Düzenlenebilir çizgiler için özel format kullan
             serialized = {
-                'type': 'line',
-                'color': list(item_data[0]),
-                'width': item_data[1],
-                'points': [_point_to_list(p) for p in item_data[2]]
+                'type': 'editable_line',
+                'color': list(item_data[1]),
+                'width': item_data[2],
+                'points': [_point_to_list(p) for p in item_data[3]]
             }
-            # YENİ: Çizgi stilini ekle (varsa)
-            if len(item_data) >= 4 and item_data[3] is not None:
-                serialized['line_style'] = item_data[3]
+            # Çizgi stilini ekle (varsa)
+            if len(item_data) >= 5 and item_data[4] is not None:
+                serialized['line_style'] = item_data[4]
             return serialized
         else:
-             logging.warning(f"Geçersiz çizgi verisi formatı: {item_data}")
-             return {} # Boş sözlük döndür
-    elif item_type == 'shape':
-        # Shape: [ToolType_enum, color_tuple, width, p1, p2, Optional[line_style_str], Optional[fill_rgba_tuple]]
-        if len(item_data) >= 5:
-             serialized = {
-                 'type': 'shape',
-                 'tool': item_data[0].name,
-                 'color': list(item_data[1]),
-                 'width': item_data[2],
-                 'p1': _point_to_list(item_data[3]),
-                 'p2': _point_to_list(item_data[4]),
-             }
-             # YENİ: Çizgi stilini ekle (varsa)
-             if len(item_data) >= 6 and item_data[5] is not None:
-                 serialized['line_style'] = item_data[5]
-             # YENİ: Dolgu rengini ekle (varsa)
-             if len(item_data) >= 7 and item_data[6] is not None:
-                 serialized['fill_rgba'] = list(item_data[6]) # Tuple'ı listeye çevir
-             return serialized
-        else:
-            logging.warning(f"Geçersiz şekil verisi formatı: {item_data}")
-            return {}
-    else:
-         logging.warning(f"Bilinmeyen öğe tipi: {item_data}")
-         return {}
+            # Standart şekiller için
+            serialized = {
+                'type': 'shape',
+                'tool_type': tool_type.name,
+                'color': list(item_data[1]),
+                'width': item_data[2],
+                'p1': _point_to_list(item_data[3]),
+                'p2': _point_to_list(item_data[4])
+            }
+            
+            # İsteğe bağlı ekstra parametreler
+            if len(item_data) >= 6 and item_data[5] is not None:
+                serialized['line_style'] = item_data[5]
+                
+            if len(item_data) >= 7 and item_data[6] is not None:
+                serialized['fill_rgba'] = list(item_data[6]) if item_data[6] else None
+                
+            return serialized
 
 def _deserialize_item(item_dict: Dict[str, Any]) -> List[Any] | None:
-    """JSON uyumlu sözlükten çizgi veya şekil verisi listesini oluşturur."""
+    """JSON uyumlu sözlüğü çizgi veya şekil verisine dönüştürür."""
+    if not item_dict:
+        return None
+
     item_type = item_dict.get('type')
-    
-    try:
-        if item_type == 'line':
-            points = [_list_to_point(p_list) for p_list in item_dict.get('points', [])]
-            deserialized = [
-                tuple(item_dict['color']),
-                item_dict['width'],
-                points
-            ]
-            # YENİ: Çizgi stilini ekle (varsa)
-            line_style = item_dict.get('line_style')
-            if line_style:
-                deserialized.append(line_style)
-            return deserialized
-        elif item_type == 'shape':
-            tool_name = item_dict.get('tool')
-            if not tool_name: return None
-            try:
-                tool_enum = ToolType[tool_name]
-            except KeyError:
-                logging.warning(f"Bilinmeyen araç tipi adı: {tool_name}")
-                return None
-                
-            deserialized = [
-                tool_enum,
-                tuple(item_dict['color']),
-                item_dict['width'],
-                _list_to_point(item_dict['p1']),
-                _list_to_point(item_dict['p2'])
-            ]
-            # YENİ: Çizgi stilini ekle (varsa)
-            line_style = item_dict.get('line_style')
-            if line_style:
-                deserialized.append(line_style)
-            else: # Stil yoksa da listeyi tamamlamak için None ekleyebiliriz
-                if len(deserialized) == 5: # Eğer sadece ilk 5 eleman varsa
-                    deserialized.append('solid') # Varsayılan stil
-            
-            # YENİ: Dolgu rengini ekle (varsa)
-            fill_rgba_list = item_dict.get('fill_rgba')
-            if fill_rgba_list:
-                # Eğer line_style yoksa, önce onu ekle
-                if len(deserialized) == 5:
-                     deserialized.append('solid') # Varsayılan stil
-                deserialized.append(tuple(fill_rgba_list)) # Listeyi tuple'a çevir
-            # Eğer dolgu yoksa ve stil varsa (len 6), None eklemeye gerek yok, draw_shape None kabul eder.
-            # Eğer dolgu yoksa ve stil de yoksa (len 5), yukarıda stil eklendi, yine None eklemeye gerek yok.
-            
-            return deserialized
-        else:
-            logging.warning(f"Sözlükten öğe oluşturulurken bilinmeyen tip: {item_type}")
+    if item_type == 'line':
+        # Renk, genişlik ve noktaları çıkar
+        color = item_dict.get('color')
+        width = item_dict.get('width')
+        points_list = item_dict.get('points')
+        
+        if color is None or width is None or points_list is None:
+            logging.warning(f"Çizgi verisinde zorunlu alanlar eksik: {item_dict}")
             return None
-    except Exception as e:
-        logging.error(f"Öğe deserialize edilirken hata ({item_dict}): {e}", exc_info=True)
+        
+        # Çizgi stilini al (varsa, yoksa None)
+        line_style = item_dict.get('line_style')
+            
+        # Noktaları QPointF'e dönüştür
+        points = [_list_to_point(p) for p in points_list]
+        
+        # Çizgi listesi döndür: [color_tuple, width_float, List[QPointF], Optional[line_style_str]]
+        result = [tuple(color), width, points]
+        if line_style is not None:
+            result.append(line_style)
+        
+        return result
+    
+    elif item_type == 'shape':
+        # Şekil verilerini çıkar
+        tool_type_str = item_dict.get('tool_type')
+        color = item_dict.get('color')
+        width = item_dict.get('width')
+        p1_list = item_dict.get('p1')
+        p2_list = item_dict.get('p2')
+        
+        if not all([tool_type_str, color, width, p1_list, p2_list]):
+            logging.warning(f"Şekil verisinde zorunlu alanlar eksik: {item_dict}")
+            return None
+        
+        # ToolType'a dönüştür
+        try:
+            tool_type = ToolType[tool_type_str]
+        except (KeyError, ValueError):
+            logging.warning(f"Geçersiz ToolType: {tool_type_str}")
+            return None
+        
+        # QPointF'e dönüştür
+        p1 = _list_to_point(p1_list)
+        p2 = _list_to_point(p2_list)
+        
+        # İsteğe bağlı parametreler
+        line_style = item_dict.get('line_style')
+        fill_rgba = item_dict.get('fill_rgba')
+        
+        # Şekil listesi: [ToolType, color_tuple, width_float, p1, p2, Optional[line_style_str], Optional[fill_rgba_tuple]]
+        result = [tool_type, tuple(color), width, p1, p2]
+        
+        if line_style is not None:
+            result.append(line_style)
+        elif fill_rgba is not None or 'fill_rgba' in item_dict:
+            result.append(None)  # line_style yok ama fill_rgba var
+            
+        if fill_rgba is not None:
+            result.append(tuple(fill_rgba))
+            
+        return result
+    
+    elif item_type == 'editable_line':
+        # Düzenlenebilir çizgiyi deserialize et
+        color = item_dict.get('color')
+        width = item_dict.get('width')
+        points_list = item_dict.get('points')
+        
+        if color is None or width is None or points_list is None:
+            logging.warning(f"Düzenlenebilir çizgi verisinde zorunlu alanlar eksik: {item_dict}")
+            return None
+        
+        # Çizgi stilini al (varsa, yoksa 'solid')
+        line_style = item_dict.get('line_style', 'solid')
+            
+        # Noktaları QPointF'e dönüştür
+        points = [_list_to_point(p) for p in points_list]
+        
+        # Düzenlenebilir çizgi formatı döndür: [ToolType.EDITABLE_LINE, color_tuple, width_float, List[QPointF], line_style_str]
+        return [ToolType.EDITABLE_LINE, tuple(color), width, points, line_style]
+    
+    else:
+        logging.warning(f"Bilinmeyen öğe türü: {item_type}")
         return None
 
 # --- Ana Kaydet/Yükle Fonksiyonları ---

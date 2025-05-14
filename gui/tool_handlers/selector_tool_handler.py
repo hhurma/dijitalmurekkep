@@ -4,6 +4,7 @@ Seçici (Selector) aracı için tablet olaylarını yöneten yardımcı fonksiyo
 import logging
 from typing import TYPE_CHECKING, List, Tuple, Any
 import copy
+import math
 
 from PyQt6.QtCore import Qt, QPointF, QRectF
 from PyQt6.QtGui import QTabletEvent
@@ -44,15 +45,44 @@ def handle_selector_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
     if not canvas.grabbed_handle_type:
         point_on_selection = canvas.is_point_on_selection(pos)
         logging.debug(f"Selector Press: No handle grabbed. Checking point on selection (World Pos: {pos.x():.1f}, {pos.y():.1f})... Result: {point_on_selection}")
+        
+        # Points listesini manuel olarak kontrol edelim (is_point_on_selection'ın doğru çalışıp çalışmadığını görmek için)
+        if not point_on_selection and canvas.selected_item_indices:
+            for item_type, index in canvas.selected_item_indices:
+                if item_type == 'lines' and 0 <= index < len(canvas.lines):
+                    line_data = canvas.lines[index]
+                    if len(line_data) > 2 and isinstance(line_data[2], list):
+                        points = line_data[2]
+                        logging.debug(f"Manuel kontrol line[{index}]: points={points[:3]}...{points[-3:]}")
+                elif item_type == 'shapes' and 0 <= index < len(canvas.shapes):
+                    shape_data = canvas.shapes[index]
+                    tool_type = shape_data[0]
+                    if tool_type == ToolType.RECTANGLE:
+                        p1 = shape_data[3]
+                        p2 = shape_data[4]
+                        rect = QRectF(p1, p2).normalized()
+                        if rect.contains(pos):
+                            point_on_selection = True
+                            logging.debug(f"  Manuel kontrol: Nokta dikdörtgen içinde: {item_type}[{index}]")
+                    elif tool_type == ToolType.CIRCLE:
+                        p1 = shape_data[3]
+                        p2 = shape_data[4]
+                        center = QPointF((p1.x() + p2.x()) / 2, (p1.y() + p2.y()) / 2)
+                        radius = max(abs(p2.x() - p1.x()), abs(p2.y() - p1.y())) / 2
+                        distance = math.sqrt((pos.x() - center.x())**2 + (pos.y() - center.y())**2)
+                        if distance <= radius:
+                            point_on_selection = True
+                            logging.debug(f"  Manuel kontrol: Nokta daire içinde: {item_type}[{index}]")
+        
         if point_on_selection:
             canvas.moving_selection = True
             canvas.drawing = False
             canvas.resizing_selection = False
             canvas.selecting = False
-            canvas.move_start_point = pos
-            canvas.last_move_pos = pos
+            canvas.move_start_point = QPointF(pos)  # QPointF olarak bir kopya oluştur
+            canvas.last_move_pos = QPointF(pos)     # QPointF olarak bir kopya oluştur
             canvas.move_original_states = canvas._get_current_selection_states(canvas._parent_page)
-            logging.debug(f"Moving selection started, start world pos: {pos}")
+            logging.debug(f"Moving selection started. Move start point: {canvas.move_start_point}, Last move pos: {canvas.last_move_pos}")
             QApplication.setOverrideCursor(Qt.CursorShape.SizeAllCursor)
         else:
             if not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
@@ -88,35 +118,37 @@ def handle_selector_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
 def handle_selector_move_selection(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
     """Seçili öğelerin (çizim/şekil) taşınmasını yönetir."""
     logging.debug(f"[selector_tool_handler] handle_selector_move_selection: shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
-    if not canvas.move_start_point.isNull():
+    
+    # Taşıma modunda olduğumuzdan ve başlangıç noktasının geçerli olduğundan emin olalım
+    if canvas.moving_selection and not canvas.move_start_point.isNull() and not canvas.last_move_pos.isNull():
+        # Pozisyon farkını hesapla
         dx = pos.x() - canvas.last_move_pos.x()
         dy = pos.y() - canvas.last_move_pos.y()
-        log_msg = f"Selector Move Selection: World Pos=({pos.x():.1f},{pos.y():.1f}), dx={dx:.2f}, dy={dy:.2f}"
-        if canvas.selected_item_indices:
-            item_type, index = canvas.selected_item_indices[0]
-            try:
-                item_list = getattr(canvas, item_type)
-                if 0 <= index < len(item_list):
-                    points_data = item_list[index][2 if item_type == 'lines' else 3]
-                    first_point = points_data[0] if isinstance(points_data, list) and points_data else (points_data if isinstance(points_data, QPointF) else None)
-                    if first_point: log_msg += f" | Before move: First item's p1=({first_point.x():.1f},{first_point.y():.1f})"
-            except Exception: pass
+        
+        log_msg = f"Selector Move Selection: World Pos=({pos.x():.1f},{pos.y():.1f}), "
+        log_msg += f"Delta=({dx:.1f},{dy:.1f}), Items={canvas.selected_item_indices}"
         logging.debug(log_msg)
-        if dx != 0 or dy != 0:
-            geometry_helpers.move_items_by(canvas.lines, canvas.shapes, canvas.selected_item_indices, dx, dy)
-            log_msg_after = "  After move:"
-            if canvas.selected_item_indices:
-                item_type, index = canvas.selected_item_indices[0]
-                try:
-                    item_list = getattr(canvas, item_type)
-                    if 0 <= index < len(item_list):
-                        points_data = item_list[index][2 if item_type == 'lines' else 3]
-                        first_point = points_data[0] if isinstance(points_data, list) and points_data else (points_data if isinstance(points_data, QPointF) else None)
-                        if first_point: log_msg_after += f" First item's p1=({first_point.x():.1f},{first_point.y():.1f})"
-                except Exception: pass
-            logging.debug(log_msg_after)
-            canvas.last_move_pos = pos
-            canvas.update()
+        
+        # Seçili öğeleri taşı
+        if (abs(dx) > 0.01 or abs(dy) > 0.01) and canvas.selected_item_indices:  # Çok küçük hareketleri ve boş seçimleri filtrele
+            try:
+                from utils.geometry_helpers import move_items_by
+                move_items_by(canvas.lines, canvas.shapes, canvas.selected_item_indices, dx, dy)
+                canvas.update()
+                canvas.content_changed.emit()
+            except Exception as e:
+                logging.error(f"Taşıma sırasında hata: {e}", exc_info=True)
+        
+        # Son pozisyonu güncelle
+        canvas.last_move_pos = QPointF(pos)
+    elif canvas.moving_selection:
+        # moving_selection doğru ama move_start_point veya last_move_pos null ise hatayı düzelt
+        if canvas.move_start_point.isNull():
+            logging.warning("Taşıma sırasında move_start_point null! Şimdi düzeltiliyor.")
+            canvas.move_start_point = QPointF(pos)
+        if canvas.last_move_pos.isNull():
+            logging.warning("Taşıma sırasında last_move_pos null! Şimdi düzeltiliyor.")
+            canvas.last_move_pos = QPointF(pos)
 
 def handle_selector_rect_select_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
     """Dikdörtgen ile seçim yaparkenki hareketi yönetir."""
@@ -131,14 +163,17 @@ def handle_selector_resize_move(canvas: 'DrawingCanvas', pos: QPointF, event: QT
     if (
         len(canvas.selected_item_indices) == 1 and
         canvas.selected_item_indices[0][0] == 'shapes' and
-        canvas.grabbed_handle_type
+        canvas.grabbed_handle_type and
+        (canvas.grabbed_handle_type.startswith('main_') or 
+         canvas.grabbed_handle_type.startswith('control1_') or 
+         canvas.grabbed_handle_type.startswith('control2_')) and
+        canvas.current_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR
     ):
         shape_index = canvas.selected_item_indices[0][1]
         if 0 <= shape_index < len(canvas.shapes):
             shape_data = canvas.shapes[shape_index]
             tool_type = shape_data[0]
             
-            # Düzenlenebilir çizgi işlemi
             if tool_type == ToolType.EDITABLE_LINE:
                 # Bezier kontrol noktaları
                 control_points = shape_data[3]
@@ -441,48 +476,38 @@ def handle_selector_select_release(canvas: 'DrawingCanvas', pos: QPointF, event:
         line_bbox = geometry_helpers.get_item_bounding_box(line_data, 'lines')
         if not line_bbox.isNull() and selection_world_rect.intersects(line_bbox):
             newly_selected.append(('lines', i))
+    
     for i, shape_data in enumerate(canvas.shapes):
-        shape_bbox = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
-        intersects_result = False
-        manual_intersects = False # Yeni değişken
-        if not shape_bbox.isNull():
-            intersects_result = selection_world_rect.intersects(shape_bbox)
-            
-            # --- Manuel kesişim kontrolü ---
-            sel_left = selection_world_rect.left()
-            sel_right = selection_world_rect.right()
-            sel_top = selection_world_rect.top()
-            sel_bottom = selection_world_rect.bottom()
-
-            item_left = shape_bbox.left()
-            item_right = shape_bbox.right()
-            item_top = shape_bbox.top()
-            item_bottom = shape_bbox.bottom()
-
-            # Genişlik veya yükseklik sıfır olsa bile bu kontrol çalışmalı
-            x_overlap = (item_left <= sel_right) and (item_right >= sel_left)
-            y_overlap = (item_top <= sel_bottom) and (item_bottom >= sel_top)
-            manual_intersects = x_overlap and y_overlap
-            # --- --- --- --- --- --- --- --- ---
-
-        logging.debug(f"  Checking shape {i} (type: {shape_data[0]}): BBox={shape_bbox}, SelRect={selection_world_rect}, QtIntersects={intersects_result}, ManualIntersects={manual_intersects}")
+        # Şekil için sınırlayıcı kutuyu hesapla
+        bbox = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
         
-        # if not shape_bbox.isNull() and selection_world_rect.intersects(shape_bbox): # ESKİ KONTROL
-        if not shape_bbox.isNull() and manual_intersects: # YENİ KONTROL
-             newly_selected.append(('shapes', i))
-    shift_pressed = event.modifiers() & Qt.KeyboardModifier.ShiftModifier
-    if shift_pressed:
-        for item_type, index in newly_selected:
-            if (item_type, index) in canvas.selected_item_indices:
-                canvas.selected_item_indices.remove((item_type, index))
-            else:
-                canvas.selected_item_indices.append((item_type, index))
-    else:
-        canvas.selected_item_indices = newly_selected
-    logging.debug(f"Selection updated: {len(canvas.selected_item_indices)} items selected.")
-    QApplication.restoreOverrideCursor()
-    canvas.drawing = False
+        # Sınırlayıcı kutu seçim kutusuyla kesişiyorsa şekli seç
+        if bbox.isNull():
+            continue
+        
+        if selection_world_rect.intersects(bbox):
+            logging.debug(f"  SHAPE {i} (type: {shape_data[0]}): BBox={bbox}, SelRect={selection_world_rect}, QtIntersects={selection_world_rect.intersects(bbox)}")
+            
+            # Tüm şekilleri normal şekilde seç, EdiatbleLine şekilleri için özel işlem yapma
+            newly_selected.append(('shapes', i))
+    
+    # YENİ: Düzenlenebilir çizgileri kontrol et
+    for i, editable_line_data in enumerate(canvas.editable_lines):
+        editable_line_bbox = geometry_helpers.get_item_bounding_box(editable_line_data, 'editable_lines')
+        if not editable_line_bbox.isNull() and selection_world_rect.intersects(editable_line_bbox):
+            newly_selected.append(('editable_lines', i))
+    
+    # Yeni seçimleri ayarla
+    if newly_selected:
+        canvas._selected_item_indices = newly_selected
+        canvas.update()
+        logging.debug(f"Selection updated: {len(newly_selected)} items selected.")
+    
     canvas.selecting = False
+    
+    # Her durumda işaret olarak seçimi bırak
+    canvas.selecting = False
+    canvas.drawing = False
     canvas.drawing_shape = False # Şekil çizim moduyla ilgili bayrakları da sıfırla
     canvas.shape_start_point = QPointF()
     canvas.shape_end_point = QPointF()

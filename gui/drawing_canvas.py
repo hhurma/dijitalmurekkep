@@ -140,7 +140,15 @@ class DrawingCanvas(QWidget):
         self.setPalette(palette)
         
         self.undo_manager = undo_manager
-        self._parent_page: 'Page' | None = None
+        self._parent_page = parent
+        self.shapes = []
+        self.lines = []
+        # YENİ: Düzenlenebilir çizgiler için ayrı bir depo
+        self.editable_lines = []
+        self._selected_item_indices = []
+        self.current_handles = {}
+        self.hovered_handle = None
+        self.current_resize_handle = None
         self.drawing = False
         self.drawing_shape = False
         self.moving_selection = False
@@ -159,16 +167,12 @@ class DrawingCanvas(QWidget):
         self.rotation_center_world = QPointF() 
         self.grabbed_handle_type: str | None = None
         self.resize_original_bbox = QRectF()
-        self.lines: List[List[Any]] = []
-        self.shapes: List[List[Any]] = []
         self.current_line_points: List[QPointF] = []
         self.current_eraser_path: List[QPointF] = [] 
         self.erased_this_stroke: List[Tuple[str, int, Any]] = [] 
         self.shape_start_point = QPointF()
         self.shape_end_point = QPointF()
-        self._selected_item_indices: List[Tuple[str, int]] = []
         self.last_move_pos = QPointF()
-        self.current_handles: dict[str, QRectF] = {}
         self.original_resize_states: List[Any] = [] 
         self.move_original_states: List[Any] = [] 
         self.current_tool = ToolType.PEN
@@ -314,10 +318,13 @@ class DrawingCanvas(QWidget):
     def paintEvent(self, event: QPaintEvent):
         # logging.debug(f"PaintEvent - Grid Ayarları: ThinColor={getattr(self, 'grid_thin_color', 'Yok')}, ThickInterval={getattr(self, 'grid_thick_line_interval', 'Yok')}")
         painter = QPainter(self)
+        
+        # Antialiasing'i her zaman aktif edelim
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        
         # Arka Plan Çizimi
-        if self._has_page_background and self._page_background_pixmap and not self._page_background_pixmap.isNull():
+        if hasattr(self, '_page_background_pixmap') and self._page_background_pixmap and not self._page_background_pixmap.isNull():
             if self._parent_page: # parent_page varsa zoom ve pan bilgilerini al
                 zoom = self._parent_page.zoom_level
                 pan_offset_x = self._parent_page.pan_offset.x()
@@ -327,21 +334,19 @@ class DrawingCanvas(QWidget):
                 target_h = int(self._page_background_pixmap.height() * zoom)
                 
                 # PDF'in sol üst köşesinin canvas üzerinde nereye geleceğini hesapla
-                # Pan ofseti, PDF'in ne kadar kaydırılacağını belirtir.
-                # Pozitif pan_offset_x, PDF'i sola kaydırır (içerik sağa gider)
-                # Pozitif pan_offset_y, PDF'i yukarı kaydırır (içerik aşağı gider)
                 draw_x = -pan_offset_x 
                 draw_y = -pan_offset_y
 
                 target_rect = QRectF(draw_x, draw_y, target_w, target_h)
-                source_rect = QRectF(self._page_background_pixmap.rect()) # QRectF'ye dönüştürüldü
+                source_rect = QRectF(self._page_background_pixmap.rect())
                 painter.drawPixmap(target_rect, self._page_background_pixmap, source_rect)
-            else: # parent_page yoksa (olmamalı ama), normal çiz
-                 painter.drawPixmap(self.rect(), self._page_background_pixmap)
-        elif self._background_pixmap and not self._background_pixmap.isNull():
+            else: # parent_page yoksa, normal çiz
+                painter.drawPixmap(self.rect(), self._page_background_pixmap)
+        elif hasattr(self, '_background_pixmap') and self._background_pixmap and not self._background_pixmap.isNull():
             painter.drawPixmap(self.rect(), self._background_pixmap)
         else:
             painter.fillRect(self.rect(), Qt.GlobalColor.white)
+        
         # Öğeleri Çiz
         canvas_drawing_helpers.draw_items(self, painter)
         # Geçici Çizimler
@@ -357,6 +362,7 @@ class DrawingCanvas(QWidget):
                         actual_fill_rgba_tuple = (fill_r, fill_g, fill_b, fill_a) # temporary alpha is always the chosen alpha
                         temp_shape_data.append(actual_fill_rgba_tuple)
                     utils_drawing_helpers.draw_shape(painter, temp_shape_data, self.line_style)
+            
             # --- YENİ: Düzenlenebilir Çizgi Aracı Çizimi --- #
             elif self.current_tool == ToolType.EDITABLE_LINE:
                 # Önce kontur noktaları her durumda çizelim (bezier kontrol noktaları olmasa bile)
@@ -428,142 +434,13 @@ class DrawingCanvas(QWidget):
                                 
                                 painter.setPen(QPen(QColor(255, 255, 255), 1.5))
                                 painter.drawEllipse(self.bezier_control_points[ctrl_idx], HANDLE_SIZE/3, HANDLE_SIZE/3)
-        # Mevcut Geçici İşaretçi Çizgisi
-        if len(self.current_temporary_line_points) > 1:
-            temp_color = (self.temp_pointer_color.redF(), self.temp_pointer_color.greenF(), 
-                          self.temp_pointer_color.blueF(), self.temp_pointer_color.alphaF())
-            temp_width = self.temp_pointer_width
-            utils_drawing_helpers.draw_temporary_pointer_stroke(painter, 
-                                                           self.current_temporary_line_points, 
-                                                           temp_color, 
-                                                           temp_width, 
-                                                           self.temporary_line_duration,
-                                                           self.temp_glow_width_factor,
-                                                           self.temp_core_width_factor,
-                                                           self.temp_glow_alpha_factor,
-                                                           self.temp_core_alpha_factor)
-        # --- YENİ: finalize edilmiş geçici pointer çizgilerini çiz ---
-        if hasattr(self, 'temporary_lines'):
-            for line in self.temporary_lines:
-                line_points, color_tuple, width = line[0], line[1], line[2]
-                utils_drawing_helpers.draw_temporary_pointer_stroke(
-                    painter,
-                    line_points,
-                    color_tuple,
-                    width,
-                    self.temporary_line_duration,
-                    self.temp_glow_width_factor,
-                    self.temp_core_width_factor,
-                    self.temp_glow_alpha_factor,
-                    self.temp_core_alpha_factor
-                )
-        # Geçici Silgi Yolu
-        if self.erasing and len(self.current_eraser_path) > 1:
-             utils_drawing_helpers.draw_temporary_eraser_path(painter, self.current_eraser_path, self.eraser_width)
-        # Ekran Koordinatlarında Çizilecekler
-        canvas_drawing_helpers.draw_selection_overlay(self, painter)
-        if self.current_tool == ToolType.SELECTOR and self.selecting:
-             canvas_drawing_helpers.draw_selection_rectangle(self, painter)
-        if self.current_tool == ToolType.ERASER and self.underMouse():
-             canvas_drawing_helpers.draw_eraser_preview(self, painter)
-        if self.laser_pointer_active and not self.last_cursor_pos_screen.isNull():
-            painter.save()
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            painter.setPen(Qt.PenStyle.NoPen)
-            center_pos = self.last_cursor_pos_screen
-            base_size = self.laser_pointer_size
-            radius = base_size * 0.8
-            from PyQt6.QtGui import QRadialGradient
-            gradient = QRadialGradient(center_pos, radius)
-            center_color = QColor(self.laser_pointer_color)
-            center_color.setAlpha(220)
-            gradient.setColorAt(0.0, center_color)
-            mid_color = QColor(self.laser_pointer_color)
-            mid_color.setAlpha(100)
-            gradient.setColorAt(0.4, mid_color)
-            outer_color = QColor(self.laser_pointer_color)
-            outer_color.setAlpha(0)
-            gradient.setColorAt(1.0, outer_color)
-            painter.setBrush(QBrush(gradient))
-            painter.drawEllipse(center_pos, radius, radius)
-            painter.restore()
-        # --- YENİ: Grid Overlay (Çizgiler grid'e uysun seçiliyse) --- #
-        grid_show_for_line_tool_only_val = getattr(self, 'grid_show_for_line_tool_only', False)
-        grid_visible_on_snap_val = getattr(self, 'grid_visible_on_snap', True)
-
-        show_grid = self.snap_lines_to_grid and self.grid_spacing_pt > 0
-        if not grid_visible_on_snap_val: # Eğer görünürlük snap'e bağlı değilse (yani her zaman göster veya asla gösterme gibi bir durum)
-            show_grid = False # Ya da bu ayarı farklı bir şekilde mi ele almalıyız? Şimdilik snap'e bağlı değilse göstermiyor.
-                               # TODO: grid_visible_on_snap False ise ne olmalı? Belki de bu ayar "grid_visible" olmalıydı.
-                               # Şimdilik, eğer grid_visible_on_snap False ise, grid gösterilmeyecek.
-
-        if grid_show_for_line_tool_only_val:
-            show_grid = show_grid and self.current_tool == ToolType.LINE
+            # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
         
-        # Önceki show_grid mantığı şuydu: self.snap_lines_to_grid and self.grid_spacing_pt > 0
-        # Ve eğer grid_only_line_tool aktifse: show_grid = show_grid and self.current_tool == ToolType.LINE
-        # Yeni mantıkta grid_visible_on_snap ayarı da var.
-        # Eğer self.snap_lines_to_grid True ise ve grid_visible_on_snap da True ise, o zaman grid gösterilir (ve line tool kontrolü yapılır)
-        # Eğer self.snap_lines_to_grid True ama grid_visible_on_snap False ise, grid gösterilmez.
-
-        if self.snap_lines_to_grid and getattr(self, 'grid_visible_on_snap', CANVAS_DEFAULT_GRID_SETTINGS['grid_visible_on_snap']) and self.grid_spacing_pt > 0:
-            actual_show_grid = True
-            if getattr(self, 'grid_show_for_line_tool_only', CANVAS_DEFAULT_GRID_SETTINGS['grid_show_for_line_tool_only']):
-                if self.current_tool != ToolType.LINE:
-                    actual_show_grid = False
-            
-            if actual_show_grid:
-                painter.save()
-                thick_line_interval = getattr(self, 'grid_thick_line_interval', CANVAS_DEFAULT_GRID_SETTINGS['grid_thick_line_interval'])
-                thin_color_tuple_float = getattr(self, 'grid_thin_color', CANVAS_DEFAULT_GRID_SETTINGS['grid_thin_color']) 
-                thick_color_tuple_float = getattr(self, 'grid_thick_color', CANVAS_DEFAULT_GRID_SETTINGS['grid_thick_color'])
-                thin_width = getattr(self, 'grid_thin_width', CANVAS_DEFAULT_GRID_SETTINGS['grid_thin_width'])
-                thick_width = getattr(self, 'grid_thick_width', CANVAS_DEFAULT_GRID_SETTINGS['grid_thick_width'])
-                
-                def clamp(val, minv, maxv):
-                    return max(minv, min(maxv, val))
-
-                thin_r, thin_g, thin_b = int(thin_color_tuple_float[0]*255), int(thin_color_tuple_float[1]*255), int(thin_color_tuple_float[2]*255)
-                thin_a = clamp(int(round(thin_color_tuple_float[3]*255)), 0, 255) if len(thin_color_tuple_float) > 3 else 100
-                thick_r, thick_g, thick_b = int(thick_color_tuple_float[0]*255), int(thick_color_tuple_float[1]*255), int(thick_color_tuple_float[2]*255)
-                thick_a = clamp(int(round(thick_color_tuple_float[3]*255)), 0, 255) if len(thick_color_tuple_float) > 3 else 150
-
-                thin_color = QColor(thin_r, thin_g, thin_b, thin_a)
-                thick_color = QColor(thick_r, thick_g, thick_b, thick_a)
-                spacing = self.grid_spacing_pt * PT_TO_PX
-                w, h = self.width(), self.height()
-                # Dikey çizgiler
-                x = 0
-                i = 0
-                while x < w:
-                    if i % thick_line_interval == 0:
-                        pen = QPen(thick_color)
-                        pen.setWidthF(thick_width)
-                        painter.setPen(pen)
-                    else:
-                        pen = QPen(thin_color)
-                        pen.setWidthF(thin_width)
-                    painter.setPen(pen)
-                    painter.drawLine(int(x), 0, int(x), h)
-                    x += spacing
-                    i += 1
-                # Yatay çizgiler
-                y = 0
-                j = 0
-                while y < h:
-                    if j % thick_line_interval == 0:
-                        pen = QPen(thick_color)
-                        pen.setWidthF(thick_width)
-                        painter.setPen(pen)
-                    else:
-                        pen = QPen(thin_color)
-                        pen.setWidthF(thin_width)
-                    painter.setPen(pen)
-                    painter.drawLine(0, int(y), w, int(y))
-                    y += spacing
-                    j += 1
-                painter.restore()
-        painter.end()
+        # Seçim overlayı
+        canvas_drawing_helpers.draw_selection_overlay(self, painter)
+        
+        # Seçim dikdörtgeni çiz
+        canvas_drawing_helpers.draw_selection_rectangle(self, painter)
         
         # --- Pointer Tool Glow/Fade-out Trail ---
         if self.current_tool == ToolType.TEMPORARY_POINTER and len(self.pointer_trail_points) > 1:
@@ -587,8 +464,10 @@ class DrawingCanvas(QWidget):
             painter.drawPath(path)
 
         # --- YENİ: Kontrol Noktası Seçici aracı için overlay çizimi --- #
-        from gui.tool_handlers import editable_line_node_selector_handler
-        editable_line_node_selector_handler.draw_node_selector_overlay(self, painter)
+        # Bu kısmı sadece düzenlenebilir çizgi seçim aracı aktifken çağırmalıyız
+        if self.current_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR:
+            from gui.tool_handlers import editable_line_node_selector_handler
+            editable_line_node_selector_handler.draw_node_selector_overlay(self, painter)
         # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
     def screen_to_world(self, screen_pos: QPointF) -> QPointF:
@@ -747,65 +626,111 @@ class DrawingCanvas(QWidget):
         return combined_bbox
 
     def is_point_on_selection(self, point: QPointF, tolerance: float = 5.0) -> bool:
-        """Verilen noktanın seçili öğelerden birinin üzerinde olup olmadığını kontrol eder."""
+        """Verilen noktanın seçili öğe üzerinde olup olmadığını kontrol eder."""
         logging.debug(f"--- is_point_on_selection checking point {point} ---")
         result = False
-        for item_type, index in self._selected_item_indices:
-            if item_type == 'images':
-                if self._parent_page and 0 <= index < len(self._parent_page.images):
-                    img_data = self._parent_page.images[index]
-                    rect = img_data.get('rect')
-                    angle = img_data.get('angle', 0.0)
-                    if rect and isinstance(rect, QRectF):
-                        if geometry_helpers.is_point_in_rotated_rect(point, rect, angle):
-                            logging.debug(f"  >>> Point IS considered on selected item (rotated rect check): {item_type}[{index}]")
-                            result = True
-                            break 
-                else:
-                    logging.warning(f"is_point_on_selection: Invalid image index: {index}")
-            else: 
-                item_data = None
+
+        if not self.selected_item_indices:  # Seçili bir öğe yoksa, noktada bir şey olamaz
+            logging.debug(f"--- is_point_on_selection result: {result} ---")
+            return result
+
+        try:
+            for item_type, index in self.selected_item_indices:
                 if item_type == 'lines' and 0 <= index < len(self.lines):
                     item_data = self.lines[index]
-                elif item_type == 'shapes' and 0 <= index < len(self.shapes):
-                    item_data = self.shapes[index]
-                    # Düzenlenebilir çizgi için kontrol
-                    if item_data[0] == ToolType.EDITABLE_LINE:
-                        # Düzenlenebilir çizgi noktalarını kontrol et
-                        control_points = item_data[3]  # Bezier kontrol noktaları
-                        for i in range(0, len(control_points) - 3, 3):
-                            p0 = control_points[i]
-                            p3 = control_points[i + 3] if i + 3 < len(control_points) else control_points[-1]
-                            
-                            # Çizgi parçası üzerinde nokta var mı kontrol et
-                            line_width = item_data[2]
-                            effective_tolerance = tolerance + line_width / 2.0
-                            if geometry_helpers.is_point_on_line(point, p0, p3, effective_tolerance):
+                    
+                    # Çizgi için çoklu nokta kontrolü
+                    if len(item_data) > 2 and isinstance(item_data[2], list):
+                        points = item_data[2]
+                        line_width = item_data[1]
+                        effective_tolerance = tolerance + line_width / 2.0
+                        
+                        # Her çizgi parçası için kontrol
+                        for i in range(len(points) - 1):
+                            p1, p2 = points[i], points[i+1]
+                            if geometry_helpers.is_point_on_line(point, p1, p2, effective_tolerance):
                                 result = True
-                                logging.debug(f"  >>> Point IS on EDITABLE_LINE: {item_type}[{index}], segment between points {i} and {i+3}")
+                                logging.debug(f"  >>> Point IS on line: {item_type}[{index}], segment between points {i} and {i+1}")
                                 break
+                
+                elif item_type == 'shapes' and 0 <= index < len(self.shapes):
+                    shape_data = self.shapes[index]
+                    tool_type = shape_data[0]
 
-                if item_data:
-                    if not result:  # Yukarıdaki özel kontroller sonucu seçilmediyse standart kontrolleri yap
-                        bbox = geometry_helpers.get_item_bounding_box(item_data, item_type)
-                        logging.debug(f"  is_point_on_selection: Checking selected item {item_type}[{index}] with bbox {bbox}")
-                        if bbox.contains(point):
-                            if item_type == 'lines':
-                                points = item_data[2]
-                                line_width = item_data[1]
-                                effective_tolerance = tolerance + line_width / 2.0 
-                                for j in range(len(points) - 1):
-                                    if geometry_helpers.is_point_on_line(point, points[j], points[j+1], effective_tolerance):
-                                        result = True
-                                        break
-                                if result: break 
-                            else: 
-                                result = True 
-                                break 
-                    if result:
-                         logging.debug(f"  >>> Point IS considered on selected item (bbox or line check): {item_type}[{index}]")
-                         break 
-        
+                    # PATH şekli için özel kontrol
+                    if tool_type == ToolType.PATH:
+                        if isinstance(shape_data[3], list):
+                            points = shape_data[3]
+                            line_width = shape_data[2]
+                            effective_tolerance = tolerance + line_width / 2.0
+                            
+                            # PATH'in her parçası için kontrol
+                            for i in range(len(points) - 1):
+                                p1, p2 = points[i], points[i+1]
+                                if geometry_helpers.is_point_on_line(point, p1, p2, effective_tolerance):
+                                    result = True
+                                    logging.debug(f"  >>> Point IS on PATH: {item_type}[{index}], segment between points {i} and {i+1}")
+                                    break
+                    # Düzgün şekiller için (dikdörtgen, oval, vb.)
+                    elif tool_type in [ToolType.RECTANGLE, ToolType.ELLIPSE, ToolType.CIRCLE]:
+                        p1 = shape_data[3]
+                        p2 = shape_data[4]
+                        
+                        # Dikdörtgen sınırlayıcı kutu kontrolü
+                        rect = QRectF(
+                            min(p1.x(), p2.x()),
+                            min(p1.y(), p2.y()),
+                            abs(p2.x() - p1.x()),
+                            abs(p2.y() - p1.y())
+                        )
+                        
+                        # Nokta dikdörtgenin içinde veya kenarında mı?
+                        if rect.contains(point) or rect.adjusted(-tolerance, -tolerance, tolerance, tolerance).contains(point):
+                            result = True
+                            logging.debug(f"  >>> Point IS on shape: {item_type}[{index}], type={tool_type}")
+                            break
+                    
+                    # Düz çizgi için
+                    elif tool_type == ToolType.LINE:
+                        p1 = shape_data[3]
+                        p2 = shape_data[4]
+                        line_width = shape_data[2]
+                        effective_tolerance = tolerance + line_width / 2.0
+                        
+                        if geometry_helpers.is_point_on_line(point, p1, p2, effective_tolerance):
+                            result = True
+                            logging.debug(f"  >>> Point IS on shape line: {item_type}[{index}]")
+                            break
+
+                    # Düzenlenebilir çizgi (EDITABLE_LINE) için
+                    elif tool_type == ToolType.EDITABLE_LINE:
+                        control_points = shape_data[3]
+                        if not control_points or len(control_points) < 2:
+                            continue
+                        
+                        line_width = shape_data[2]
+                        effective_tolerance = tolerance + line_width / 2.0
+                        
+                        # Her bir eğri segmenti için kontrol
+                        for i in range(len(control_points) - 1):
+                            p1, p2 = control_points[i], control_points[i+1]
+                            if geometry_helpers.is_point_on_line(point, p1, p2, effective_tolerance):
+                                result = True
+                                logging.debug(f"  >>> Point IS on editable line: {item_type}[{index}], segment between points {i} and {i+1}")
+                                break
+                    
+                    # Bilinmeyen/diğer şekil tipleri için en azından bounding box kontrolü yap
+                    else:
+                        # Eğer shape_data yapısı yeterli veri içeriyorsa bounding box kontrolü yap
+                        bbox = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
+                        if not bbox.isNull() and bbox.contains(point):
+                            result = True
+                            logging.debug(f"  >>> Point IS on unknown shape type: {item_type}[{index}], type={tool_type}")
+                            break
+                            
+        except Exception as e:
+            logging.error(f"Error in is_point_on_selection: {e}")
+                            
         logging.debug(f"--- is_point_on_selection result: {result} ---")
         return result
 
@@ -895,6 +820,17 @@ class DrawingCanvas(QWidget):
              self._selected_item_indices.clear()
              self.current_handles.clear()
              self.update() # Ekranı temizle
+             
+        # --- YENİ: Düzenlenebilir çizgi seçim aracından çıkıldıysa seçimi temizle --- #
+        if previous_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR and tool != ToolType.EDITABLE_LINE_NODE_SELECTOR:
+            self._selected_item_indices.clear()
+            self.active_handle_index = -1
+            self.active_bezier_handle_index = -1
+            self.is_dragging_bezier_handle = False
+            self.hovered_node_index = -1
+            self.hovered_bezier_handle_index = -1
+            self.update() # Ekranı temizle
+        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- #
 
         # Silgi moduna girildi veya çıkıldıysa imleci güncelle
         if tool == ToolType.ERASER:

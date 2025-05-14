@@ -432,7 +432,7 @@ def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEven
     
     # --- KALEM ARACI İÇİN HAREKET --- #
     elif canvas.current_tool == ToolType.PEN:
-        pen_tool_handler.handle_pen_move(canvas, pos, event)
+        pen_tool_handler.handle_pen_move(canvas, pos)
         action_performed = True
     
     # --- ŞEKİL ARAÇLARI İÇİN HAREKET --- #
@@ -448,6 +448,7 @@ def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEven
             action_performed = True
         elif canvas.moving_selection:
             # Seçili öğeler taşınıyor
+            logging.debug(f"Canvas Tablet Handler: moving selection. Move start point: {canvas.move_start_point}, isNull: {canvas.move_start_point.isNull()}")
             selector_tool_handler.handle_selector_move_selection(canvas, pos, event)
             action_performed = True
         elif canvas.resizing_selection:
@@ -632,7 +633,7 @@ def create_path_from_points(points):
     
     if not points or len(points) < 2:
         return None
-    
+
     path = QPainterPath()
     path.moveTo(points[0])
     
