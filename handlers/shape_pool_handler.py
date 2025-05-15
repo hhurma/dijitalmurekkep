@@ -3,12 +3,13 @@ import json
 from PyQt6.QtWidgets import (QInputDialog, QMessageBox, QDialog, QVBoxLayout, QListWidget, 
                            QListWidgetItem, QDialogButtonBox, QHBoxLayout, QPushButton, 
                            QLabel, QComboBox, QFormLayout, QGroupBox, QLineEdit)
-from PyQt6.QtCore import QDir, Qt
+from PyQt6.QtCore import QDir, Qt, QPointF
 from utils.file_io_helpers import _serialize_item, _deserialize_item
 import copy
 import logging
 from PyQt6.QtGui import QIcon
 from typing import Dict, List, Tuple, Any, Optional
+import numpy as np
 
 from gui.enums import ToolType
 from utils import file_io_helpers
@@ -56,6 +57,7 @@ def handle_store_shape(page_manager, main_window):
     # Seçili öğeleri topla
     selected_shapes = [i for i in canvas._selected_item_indices if i[0] == 'shapes']
     selected_lines = [i for i in canvas._selected_item_indices if i[0] == 'lines']
+    selected_bspline_strokes = [i for i in getattr(canvas, '_selected_item_indices', []) if i[0] == 'bspline_strokes']
     
     # Düzenlenebilir çizgiler artık 'shapes' içinde EDITABLE_LINE tipi ile saklanıyor
     # Özel bir filtreleme yapmak yerine, shapes içinden EDITABLE_LINE tipindekileri bulalım
@@ -69,7 +71,7 @@ def handle_store_shape(page_manager, main_window):
                 editable_lines_in_shapes.append(shape_idx)
     
     # Burada selected_editable_lines kontrolünü kaldırıyoruz çünkü onlar zaten selected_shapes içinde
-    if not (selected_shapes or selected_lines):
+    if not (selected_shapes or selected_lines or selected_bspline_strokes):
         QMessageBox.warning(main_window, "Uyarı", "Lütfen önce bir şekil seçin.")
         return
     
@@ -211,6 +213,30 @@ def handle_store_shape(page_manager, main_window):
             if serialized_line:
                 serialized_group.append(serialized_line)
     
+    # Seçili B-spline çizgilerini ekle (bspline_strokes)
+    for bspline_idx in selected_bspline_strokes:
+        item_idx = bspline_idx[1]
+        if hasattr(canvas, 'b_spline_strokes') and 0 <= item_idx < len(canvas.b_spline_strokes):
+            stroke_data = copy.deepcopy(canvas.b_spline_strokes[item_idx])
+            # JSON'a uygun hale getir (numpy array'leri listeye çevir)
+            serializable_stroke = {
+                'type': 'bspline',
+                'control_points': [list(map(float, p)) for p in stroke_data.get('control_points', [])],
+                'knots': list(map(float, stroke_data.get('knots', []))) if 'knots' in stroke_data else [],
+                'degree': int(stroke_data.get('degree', 3)),
+                'u': list(map(float, stroke_data.get('u', []))) if 'u' in stroke_data else [],
+                'color': list(map(float, stroke_data.get('color', [0.0, 0.0, 0.0, 1.0]))),
+                'width': float(stroke_data.get('width', 2.0)),
+                'line_style': stroke_data.get('line_style', 'solid')
+            }
+            # Varsa orijinal_points_with_pressure gibi ek alanları da ekle
+            if 'original_points_with_pressure' in stroke_data:
+                serializable_stroke['original_points_with_pressure'] = [
+                    [[float(p.x()), float(p.y())], float(pressure)] if hasattr(p, 'x') and hasattr(p, 'y') else [list(map(float, p)), float(pressure)]
+                    for p, pressure in stroke_data['original_points_with_pressure']
+                ]
+            serialized_group.append(serializable_stroke)
+    
     # Grup olarak kaydet
     pool[category][shape_name] = serialized_group
     
@@ -319,7 +345,8 @@ def handle_load_shape(page_manager, main_window):
                 display_name = {
                     'line': 'Çizgi',
                     'shape': 'Şekil',
-                    'editable_line': 'Düzenlenebilir Çizgi'
+                    'editable_line': 'Düzenlenebilir Çizgi',
+                    'bspline': 'B-spline Çizgi'
                 }.get(item_type, item_type)
                 
                 info_text += f"  - {display_name}: {count} adet<br>"
@@ -426,6 +453,31 @@ def handle_load_shape(page_manager, main_window):
                             logging.debug(f"Düzenlenebilir çizgi yüklendi: {deserialized}")
                             added_count += 1
                     
+                    elif item_type == 'bspline':
+                        # B-spline'ı doğrudan b_spline_strokes'a ekle
+                        bspline_data = {
+                            'control_points': [list(map(float, p)) for p in item_data.get('control_points', [])],
+                            'knots': list(map(float, item_data.get('knots', []))),
+                            'degree': int(item_data.get('degree', 3)),
+                            'u': list(map(float, item_data.get('u', []))),
+                            'color': list(map(float, item_data.get('color', [0.0, 0.0, 0.0, 1.0]))) ,
+                            'width': float(item_data.get('width', 2.0)),
+                            'line_style': item_data.get('line_style', 'solid')
+                        }
+                        if 'original_points_with_pressure' in item_data:
+                            bspline_data['original_points_with_pressure'] = [
+                                (QPointF(p[0], p[1]), float(pressure)) for p, pressure in item_data['original_points_with_pressure']
+                            ]
+                        # B-spline parametrelerini numpy array'e çevir
+                        if 'control_points' in bspline_data:
+                            bspline_data['control_points'] = np.array(bspline_data['control_points'])
+                        if 'knots' in bspline_data:
+                            bspline_data['knots'] = np.array(bspline_data['knots'])
+                        if 'u' in bspline_data:
+                            bspline_data['u'] = np.array(bspline_data['u'])
+                        canvas.b_spline_strokes.append(bspline_data)
+                        logging.debug(f"B-spline yüklendi: {bspline_data}")
+                        added_count += 1
                     else:
                         logging.warning(f"Bilinmeyen öğe türü: {item_type}")
             
@@ -532,7 +584,8 @@ def handle_delete_shape_from_pool(page_manager, main_window):
                 display_name = {
                     'line': 'Çizgi',
                     'shape': 'Şekil', 
-                    'editable_line': 'Düzenlenebilir Çizgi'
+                    'editable_line': 'Düzenlenebilir Çizgi',
+                    'bspline': 'B-spline Çizgi'
                 }.get(item_type, item_type)
                 
                 info_text += f"  - {display_name}: {count} adet<br>"

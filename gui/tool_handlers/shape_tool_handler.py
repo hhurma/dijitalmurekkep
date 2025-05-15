@@ -9,6 +9,7 @@ from PyQt6.QtCore import QPointF
 
 from ..enums import ToolType
 from utils.commands import DrawShapeCommand
+from utils.commands import DrawBsplineCommand
 
 # ToolType, DrawShapeCommand gibi importlar DrawingCanvas'tan veya ilgili modüllerden gelecek.
 # Şimdilik TYPE_CHECKING içinde canvas üzerinden erişilecekler gibi varsayalım.
@@ -146,3 +147,20 @@ def handle_shape_release(canvas: 'DrawingCanvas', pos: QPointF):
     else:
          # logging.debug("Shape Release: drawing_shape was False. No action taken.") # KALDIRILDI
          pass # drawing_shape False ise bir işlem yapılmıyorsa pass eklenebilir 
+
+    # B-Spline (düzenlenebilir çizgi) ile çizim tamamlandıysa, havuza ekle
+    if canvas.current_tool == ToolType.EDITABLE_LINE and hasattr(canvas, 'b_spline_widget'):
+        if hasattr(canvas.b_spline_widget, 'strokes') and canvas.b_spline_widget.strokes:
+            new_stroke_data = canvas.b_spline_widget.strokes[-1]
+            command = DrawBsplineCommand(canvas, new_stroke_data)
+            canvas.undo_manager.execute(command)
+            if canvas._parent_page:
+                canvas._parent_page.mark_as_modified()
+            if hasattr(canvas, 'content_changed'):
+                canvas.content_changed.emit()
+            canvas.drawing = False
+            canvas.drawing_shape = False
+            canvas.shape_start_point = QPointF()
+            canvas.shape_end_point = QPointF()
+            canvas.update()
+            return 
