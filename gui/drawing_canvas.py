@@ -465,6 +465,8 @@ class DrawingCanvas(QWidget):
         
         # Arka planı çiz
         painter.fillRect(self.rect(), rgba_to_qcolor(self.background_color))
+        if self._background_pixmap and not self._background_pixmap.isNull():
+            painter.drawPixmap(0, 0, self._background_pixmap)
 
         # Eğer aktif bir sayfa varsa ve resimler varsa, önce onları çiz
         # Bu kısım page.images üzerinden yönetilecek
@@ -473,6 +475,21 @@ class DrawingCanvas(QWidget):
         # Kalıcı öğeleri çiz (çizgiler, şekiller, eski editable_line'lar)
         # Not: draw_items içinde zaten img_data kontrolü var, yukarıdaki draw_images kaldırılabilir.
         canvas_drawing_helpers.draw_items(self, painter) 
+
+        # --- Geçici (anlık) çizim: Kalem, çizgi, dikdörtgen, daire ---
+        if self.drawing:
+            if self.current_tool == ToolType.PEN:
+                if len(self.current_line_points) > 1:
+                    utils_drawing_helpers.draw_pen_stroke(
+                        painter, self.current_line_points, self.current_color, self.current_pen_width
+                    )
+            elif self.current_tool in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE]:
+                if self.drawing_shape and not self.shape_start_point.isNull() and not self.shape_end_point.isNull():
+                    temp_shape_data = [
+                        self.current_tool, self.current_color, self.current_pen_width,
+                        self.shape_start_point, self.shape_end_point
+                    ]
+                    utils_drawing_helpers.draw_shape(painter, temp_shape_data)
 
         # YENİ: B-Spline çizgilerini ve kontrol noktalarını çiz (DrawingWidget'tan alınan mantıkla)
         if self.current_tool == ToolType.EDITABLE_LINE or self.b_spline_strokes: # Araç seçiliyken veya veri varsa çiz
@@ -1491,6 +1508,18 @@ class DrawingCanvas(QWidget):
                     return ('shapes', i)
                 else:
                     logging.debug(f"      _get_item_at (EDITABLE_LINE): BBox does not contain the point, skipping segment checks.")
+            elif item_tool_type == ToolType.PATH:
+                # PATH için özel kontrol
+                points = shape_data[3] if len(shape_data) > 3 else []
+                line_width = shape_data[2]
+                effective_tolerance = tolerance + (line_width / 2.0)
+                if points and len(points) > 1:
+                    for j in range(len(points) - 1):
+                        p1 = points[j]
+                        p2 = points[j + 1]
+                        if geometry_helpers.is_point_on_line(world_pos, p1, p2, effective_tolerance):
+                            logging.debug(f"  >>> _get_item_at: Shape (PATH) found at index {i} by is_point_on_line segment {j}-{j+1}")
+                            return ('shapes', i)
             else:
                 bbox = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
                 logging.debug(f"    _get_item_at (Shape as Other): Checking shape {i} (type: {item_tool_type}) with bbox: {bbox}. Point: {world_pos}")

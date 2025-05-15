@@ -25,6 +25,8 @@ class ToolType(Enum):
     EDITABLE_LINE_EDITOR = auto()
     # --- YENİ: Düzenlenebilir Çizgi Kontrol Noktası Seçici --- #
     EDITABLE_LINE_NODE_SELECTOR = auto()
+    # --- YENİ: PATH Aracı --- #
+    PATH = auto()
     # --- --- --- --- --- --- --- --- -- #
 
 class Orientation(Enum):

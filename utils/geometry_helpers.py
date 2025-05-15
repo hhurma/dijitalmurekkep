@@ -118,6 +118,22 @@ def get_item_bounding_box(item_data, item_type: str) -> QRectF:
             max_y += line_width/2
             
             return QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
+        
+        elif tool_type == ToolType.PATH:
+            # PATH: [ToolType.PATH, color, width, points, line_style]
+            points = item_data[3]
+            line_width = item_data[2]
+            if not points or len(points) < 2:
+                return QRectF()
+            min_x = min(p.x() for p in points)
+            max_x = max(p.x() for p in points)
+            min_y = min(p.y() for p in points)
+            max_y = max(p.y() for p in points)
+            min_x -= line_width/2
+            min_y -= line_width/2
+            max_x += line_width/2
+            max_y += line_width/2
+            return QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
     
     # Diğer türler için boş bir dikdörtgen döndür
     return QRectF()

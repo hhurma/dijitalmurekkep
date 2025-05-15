@@ -219,10 +219,54 @@ def draw_selection_overlay(canvas: 'DrawingCanvas', painter: QPainter):
         painter.restore() 
         return 
 
+    # --- TEKİL SEÇİM: Çizgi (PEN ile çizilen) veya Şekil (PATH dahil) ---
+    # YENİ YAPI: Önce 'lines' mı 'shapes' mı diye ayır.
+    elif item_type == 'lines': # PEN ile çizilen serbest çizimler (Path'ler)
+        painter.save()
+        if 0 <= item_index < len(canvas.lines):
+            line_data = canvas.lines[item_index]
+            # line_data yapısı: [color_tuple, width_float, List[QPointF], line_style_str]
+            points_world = line_data[2] if len(line_data) > 2 else []
+
+            if not points_world or len(points_world) < 1: # En az 1 nokta olmalı (bbox için 2 daha iyi)
+                painter.restore()
+                return
+
+            # 1. Sınırlayıcı kutuyu (bounding box) çiz
+            bbox_world = geometry_helpers.get_item_bounding_box(line_data, 'lines')
+            if not bbox_world.isNull():
+                screen_top_left = canvas.world_to_screen(bbox_world.topLeft())
+                screen_bottom_right = canvas.world_to_screen(bbox_world.bottomRight())
+                selection_rect_screen = QRectF(screen_top_left, screen_bottom_right).normalized()
+                frame_pen = QPen(QColor(0, 100, 255, 200), 1, Qt.PenStyle.DashLine)
+                frame_pen.setCosmetic(True)
+                painter.setPen(frame_pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(selection_rect_screen)
+
+                # 2. Tutamaçları çiz (sadece bbox köşe ve kenar ortaları)
+                handle_size_screen = selection_helpers.HANDLE_SIZE
+                half_handle_screen = handle_size_screen / 2.0
+                handle_pen = QPen(Qt.GlobalColor.black); handle_pen.setCosmetic(True)
+                handle_brush = QBrush(QColor(0, 100, 255, 128)) # Mavi tutamaçlar
+                painter.setPen(handle_pen); painter.setBrush(handle_brush)
+
+                handle_positions_world = geometry_helpers.get_standard_handle_positions(bbox_world)
+                # canvas.current_handles.clear() # Zaten en başta temizlenmişti.
+                for handle_name, pos_world in handle_positions_world.items():
+                    pos_screen = canvas.world_to_screen(pos_world)
+                    handle_rect_screen = QRectF(
+                        pos_screen.x() - half_handle_screen,
+                        pos_screen.y() - half_handle_screen,
+                        handle_size_screen, handle_size_screen
+                    )
+                    painter.drawRect(handle_rect_screen)
+                    canvas.current_handles[handle_name] = handle_rect_screen # Anahtarlar standart olacak (top_left, bottom_right vb.)
+        painter.restore()
+        return
+
     elif item_type == 'shapes':
         painter.save() 
-        # ... (mevcut shapes bloğu aynı kalır, canvas.current_handles.clear() kendi bloğunun başına alınabilir)
-        # ... (canvas.current_handles.clear() zaten yukarıda yapıldı)
         if 0 <= item_index < len(canvas.shapes):
             shape_data = canvas.shapes[item_index]
             tool_type = shape_data[0]
@@ -235,7 +279,6 @@ def draw_selection_overlay(canvas: 'DrawingCanvas', painter: QPainter):
                 handle_pen = QPen(Qt.GlobalColor.black); handle_pen.setCosmetic(True)
                 handle_brush = QBrush(QColor(0, 100, 255, 128))
                 painter.setPen(handle_pen); painter.setBrush(handle_brush)
-                # canvas.current_handles.clear() # Zaten yukarıda yapıldı
                 for key, center in [('start', start_screen), ('end', end_screen)]:
                     handle_rect = QRectF(center.x() - half_handle_screen, center.y() - half_handle_screen, handle_size_screen, handle_size_screen)
                     painter.drawRect(handle_rect)
@@ -255,14 +298,12 @@ def draw_selection_overlay(canvas: 'DrawingCanvas', painter: QPainter):
                     frame_pen = QPen(QColor(0, 100, 255, 200), 1, Qt.PenStyle.DashLine); frame_pen.setCosmetic(True)
                     painter.setPen(frame_pen); painter.setBrush(Qt.BrushStyle.NoBrush)
                     painter.drawRect(selection_rect_screen)
-                    
                     handle_size_screen = selection_helpers.HANDLE_SIZE
                     half_handle_screen = handle_size_screen / 2.0
                     handle_pen = QPen(Qt.GlobalColor.black); handle_pen.setCosmetic(True)
                     handle_brush = QBrush(QColor(0, 100, 255, 128))
                     painter.setPen(handle_pen); painter.setBrush(handle_brush)
                     handle_positions_world = geometry_helpers.get_standard_handle_positions(bbox_world)
-                    # canvas.current_handles.clear() # Zaten yukarıda yapıldı
                     for handle_name, pos_world in handle_positions_world.items():
                         pos_screen = canvas.world_to_screen(pos_world)
                         handle_rect_screen = QRectF(pos_screen.x() - half_handle_screen, pos_screen.y() - half_handle_screen, handle_size_screen, handle_size_screen)
@@ -270,7 +311,63 @@ def draw_selection_overlay(canvas: 'DrawingCanvas', painter: QPainter):
                         canvas.current_handles[handle_name] = handle_rect_screen
                 painter.restore() 
                 return
-        # Eğer shape_data geçerli değilse veya tool_type eşleşmezse, bu bloktan restore ile çıkılır.
+            elif tool_type in [ToolType.RECTANGLE, ToolType.CIRCLE]:
+                bbox_world = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
+                if not bbox_world.isNull():
+                    screen_top_left = canvas.world_to_screen(bbox_world.topLeft())
+                    screen_bottom_right = canvas.world_to_screen(bbox_world.bottomRight())
+                    selection_rect_screen = QRectF(screen_top_left, screen_bottom_right).normalized()
+                    frame_pen = QPen(QColor(0, 100, 255, 200), 1, Qt.PenStyle.DashLine)
+                    frame_pen.setCosmetic(True)
+                    painter.setPen(frame_pen)
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.drawRect(selection_rect_screen)
+                    # --- Tutamaçları çiz ---
+                    handle_size_screen = selection_helpers.HANDLE_SIZE
+                    half_handle_screen = handle_size_screen / 2.0
+                    handle_pen = QPen(Qt.GlobalColor.black); handle_pen.setCosmetic(True)
+                    handle_brush = QBrush(QColor(0, 100, 255, 128))
+                    painter.setPen(handle_pen); painter.setBrush(handle_brush)
+                    handle_positions_world = geometry_helpers.get_standard_handle_positions(bbox_world)
+                    for handle_name, pos_world in handle_positions_world.items():
+                        pos_screen = canvas.world_to_screen(pos_world)
+                        handle_rect_screen = QRectF(
+                            pos_screen.x() - half_handle_screen,
+                            pos_screen.y() - half_handle_screen,
+                            handle_size_screen, handle_size_screen
+                        )
+                        painter.drawRect(handle_rect_screen)
+                        canvas.current_handles[handle_name] = handle_rect_screen
+            elif tool_type == ToolType.PATH:
+                # PATH için bbox ve tutamaçlar
+                bbox_world = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
+                if not bbox_world.isNull():
+                    screen_top_left = canvas.world_to_screen(bbox_world.topLeft())
+                    screen_bottom_right = canvas.world_to_screen(bbox_world.bottomRight())
+                    selection_rect_screen = QRectF(screen_top_left, screen_bottom_right).normalized()
+                    frame_pen = QPen(QColor(0, 100, 255, 200), 1, Qt.PenStyle.DashLine)
+                    frame_pen.setCosmetic(True)
+                    painter.setPen(frame_pen)
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.drawRect(selection_rect_screen)
+                    # Tutamaçlar: PATH noktalarının hepsine tutamaç çiz
+                    handle_size_screen = selection_helpers.HANDLE_SIZE
+                    half_handle_screen = handle_size_screen / 2.0
+                    handle_pen = QPen(Qt.GlobalColor.black); handle_pen.setCosmetic(True)
+                    handle_brush = QBrush(QColor(0, 100, 255, 128))
+                    painter.setPen(handle_pen); painter.setBrush(handle_brush)
+                    points = shape_data[3] if len(shape_data) > 3 else []
+                    for idx, pt in enumerate(points):
+                        pos_screen = canvas.world_to_screen(pt)
+                        handle_rect_screen = QRectF(
+                            pos_screen.x() - half_handle_screen,
+                            pos_screen.y() - half_handle_screen,
+                            handle_size_screen, handle_size_screen
+                        )
+                        painter.drawRect(handle_rect_screen)
+                        canvas.current_handles[f'pt_{idx}'] = handle_rect_screen
+                painter.restore()
+                return
         painter.restore() 
         return 
 

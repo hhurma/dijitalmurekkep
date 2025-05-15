@@ -131,6 +131,7 @@ def handle_selector_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
         # (Ctrl+Shift durumu hariç)
         if not canvas.grabbed_handle_type and not item_at_click and not canvas.selected_item_indices and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier and ctrl_pressed):
             logging.debug(f"Selector Press: Selection rectangle started at world_pos: {pos}")
+            canvas.shape_start_point = pos # BAŞLANGIÇ NOKTASINI AYARLA
             canvas.drawing = True 
             canvas.selecting = True 
             canvas.resizing_selection = False
