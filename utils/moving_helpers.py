@@ -41,9 +41,13 @@ def move_item(item_data: Any, dx: float, dy: float, item_type: str | None = None
             # item_data: [color, width, points_list, style?]
             if isinstance(item_data, list) and len(item_data) >= 3 and isinstance(item_data[2], list):
                 points: List[QPointF] = item_data[2]
-                for i in range(len(points)):
-                    if isinstance(points[i], QPointF):
-                        points[i] += delta_qpoint
+                if points: # Boş liste değilse
+                    # QPointF listesini NumPy array'ine dönüştür
+                    points_np = np.array([[p.x(), p.y()] for p in points])
+                    # Vektörel toplama yap
+                    moved_points_np = points_np + delta_np
+                    # NumPy array'ini tekrar QPointF listesine dönüştür
+                    item_data[2] = [QPointF(p[0], p[1]) for p in moved_points_np]
             else:
                 logging.warning(f"move_item: 'lines' tipi için beklenmeyen veri formatı: {item_data}")
 
@@ -55,12 +59,16 @@ def move_item(item_data: Any, dx: float, dy: float, item_type: str | None = None
                     if isinstance(item_data[3], QPointF) and isinstance(item_data[4], QPointF):
                         item_data[3] += delta_qpoint
                         item_data[4] += delta_qpoint
-                # EDITABLE_LINE (eski Bezier) için kontrol noktaları item_data[3]'te bir liste
-                elif tool_type == ToolType.EDITABLE_LINE and len(item_data) >= 4 and isinstance(item_data[3], list):
+                # EDITABLE_LINE (eski Bezier) veya PATH için kontrol noktaları item_data[3]'te bir liste
+                elif tool_type in [ToolType.EDITABLE_LINE, ToolType.PATH] and len(item_data) >= 4 and isinstance(item_data[3], list):
                     control_points: List[QPointF] = item_data[3]
-                    for i in range(len(control_points)):
-                        if isinstance(control_points[i], QPointF):
-                            control_points[i] += delta_qpoint
+                    if control_points: # Boş liste değilse
+                        # QPointF listesini NumPy array'ine dönüştür
+                        points_np = np.array([[p.x(), p.y()] for p in control_points])
+                        # Vektörel toplama yap
+                        moved_points_np = points_np + delta_np
+                        # NumPy array'ini tekrar QPointF listesine dönüştür
+                        item_data[3] = [QPointF(p[0], p[1]) for p in moved_points_np]
                 else:
                     logging.warning(f"move_item: Desteklenmeyen veya eksik verili şekil tipi '{tool_type}' için taşıma atlandı.")
             else:

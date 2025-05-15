@@ -188,14 +188,16 @@ class DrawShapeCommand(Command):
 
 
 class ClearCanvasCommand(Command):
-    """Canvas'ı temizleme işlemini temsil eder (lines, shapes ve images)."""
+    """Canvas'ı temizleme işlemini temsil eder (lines, shapes, images ve b_spline_strokes)."""
     def __init__(self, canvas: 'DrawingCanvas'):
         self.canvas = canvas
         self._previous_lines: List[LineDataType] = []
-        self._previous_shapes: List[ShapeDataType] = [] # shapes için de ekledik
-        self._previous_images: list = [] # YENİ: images için
+        self._previous_shapes: List[ShapeDataType] = []
+        self._previous_images: list = []
+        self._previous_b_splines: List[dict] = [] # YENİ: b_spline_strokes için
         self._was_cleared = False
-        self._was_images_cleared = False # YENİ: images için
+        self._was_images_cleared = False
+        self._was_b_splines_cleared = False # YENİ: b_spline_strokes için
 
     def execute(self):
         """Canvas'ı temizler ve eski durumu saklar."""
@@ -203,22 +205,29 @@ class ClearCanvasCommand(Command):
             lines_exist = hasattr(self.canvas, 'lines') and isinstance(self.canvas.lines, list)
             shapes_exist = hasattr(self.canvas, 'shapes') and isinstance(self.canvas.shapes, list)
             images_exist = hasattr(self.canvas, '_parent_page') and hasattr(self.canvas._parent_page, 'images') and isinstance(self.canvas._parent_page.images, list)
+            b_splines_exist = hasattr(self.canvas, 'b_spline_strokes') and isinstance(self.canvas.b_spline_strokes, list) # YENİ
 
-            if not lines_exist or not shapes_exist:
+            if not lines_exist or not shapes_exist: # b_splines_exist kontrolü buraya eklenebilir, ama lines/shapes temel kabul ediliyor
                 logging.error("ClearCanvasCommand: Canvas.lines veya Canvas.shapes bulunamadı/liste değil.")
                 self._was_cleared = False
                 return
 
             # Sadece en az bir liste doluysa temizle
-            if not self.canvas.lines and not self.canvas.shapes and (not images_exist or not self.canvas._parent_page.images):
+            canvas_is_empty = not self.canvas.lines and \
+                              not self.canvas.shapes and \
+                              (not images_exist or not self.canvas._parent_page.images) and \
+                              (not b_splines_exist or not self.canvas.b_spline_strokes) # YENİ
+            
+            if canvas_is_empty:
                 logging.debug("ClearCanvasCommand execute: Canvas zaten boş.")
                 self._was_cleared = False
                 self._was_images_cleared = False
+                self._was_b_splines_cleared = False # YENİ
                 return
 
-            # Use deepcopy for safety, especially with lists containing QPointF
             self._previous_lines = copy.deepcopy(self.canvas.lines)
             self._previous_shapes = copy.deepcopy(self.canvas.shapes)
+            
             if images_exist:
                 from utils.commands import _copy_image_data_without_qpixmap
                 self._previous_images = [
@@ -231,16 +240,24 @@ class ClearCanvasCommand(Command):
                 self._previous_images = []
                 self._was_images_cleared = False
 
+            if b_splines_exist: # YENİ
+                self._previous_b_splines = copy.deepcopy(self.canvas.b_spline_strokes)
+                self._was_b_splines_cleared = bool(self.canvas.b_spline_strokes)
+                self.canvas.b_spline_strokes.clear()
+            else:
+                self._previous_b_splines = []
+                self._was_b_splines_cleared = False
+
             self.canvas.lines.clear()
             self.canvas.shapes.clear()
 
             if hasattr(self.canvas, 'current_line_points'):
                 self.canvas.current_line_points.clear()
             self.canvas.drawing = False
-            self.canvas.drawing_shape = False # drawing_shape'i de sıfırla
-            self._was_cleared = True
+            self.canvas.drawing_shape = False
+            self._was_cleared = True # Bu genel bir flag olarak kalabilir
             self.canvas.update()
-            logging.debug("ClearCanvasCommand executed (lines, shapes ve images).")
+            logging.debug("ClearCanvasCommand executed (lines, shapes, images ve b_spline_strokes).") # Log güncellendi
             if hasattr(self.canvas, 'selection_changed'):
                 self.canvas.selection_changed.emit()
             if hasattr(self.canvas, '_load_qgraphics_pixmap_items_from_page'):
@@ -249,22 +266,29 @@ class ClearCanvasCommand(Command):
             logging.error(f"ClearCanvasCommand execute hatası: {e}", exc_info=True)
             self._was_cleared = False
             self._was_images_cleared = False
+            self._was_b_splines_cleared = False # YENİ
 
     def undo(self):
         """Temizlenmiş canvas'ı eski haline getirir."""
         try:
-            if not self._was_cleared and not self._was_images_cleared:
+            if not self._was_cleared and not self._was_images_cleared and not self._was_b_splines_cleared: # YENİ
                 return
             self.canvas.lines = copy.deepcopy(self._previous_lines)
             self.canvas.shapes.clear()
             self.canvas.shapes.extend(copy.deepcopy(self._previous_shapes))
+            
             if hasattr(self.canvas, '_parent_page') and hasattr(self.canvas._parent_page, 'images'):
                 self.canvas._parent_page.images.clear()
                 self.canvas._parent_page.images.extend(copy.deepcopy(self._previous_images))
+            
+            if hasattr(self.canvas, 'b_spline_strokes'): # YENİ
+                self.canvas.b_spline_strokes.clear()
+                self.canvas.b_spline_strokes.extend(copy.deepcopy(self._previous_b_splines))
+
             self.canvas.drawing = False
             self.canvas.drawing_shape = False
             self.canvas.update()
-            logging.debug("ClearCanvasCommand undo: Canvas eski haline getirildi (lines, shapes ve images).")
+            logging.debug("ClearCanvasCommand undo: Canvas eski haline getirildi (lines, shapes, images ve b_spline_strokes).") # Log güncellendi
             if hasattr(self.canvas, 'selection_changed'):
                 self.canvas.selection_changed.emit()
             if hasattr(self.canvas, '_load_qgraphics_pixmap_items_from_page'):
@@ -490,32 +514,41 @@ class ResizeItemsCommand(Command):
 
 # Silme Komutu (YENİ - Biriktirilmiş Değişiklikler Uyumlu)
 class EraseCommand(Command):
-    """Çizgi noktalarını veya tüm şekilleri silme işlemini ve geri almayı yönetir."""
+    """Çizgi noktalarını veya tüm şekilleri/b-spline'ları silme işlemini ve geri almayı yönetir."""
     def __init__(self, canvas: 'DrawingCanvas', changes: 'EraseChanges'):
         """Başlatıcı.
 
         Args:
             canvas: İşlemin uygulanacağı DrawingCanvas örneği.
             changes: erase_items_along_path tarafından DOLDURULAN değişiklikler sözlüğü.
-                     {'lines': {index: {'original_points': [...], 'original_color': (r,g,b), 
+                     {
+                         'lines': {index: {'original_points': [...], 'original_color': (r,g,b), 
                                        'original_width': float, 'final_points': [...]}},
-                      'shapes': {index: original_shape_data_copy}}
+                         'shapes': {index: original_shape_data_copy},
+                         'b_spline_strokes': {index: original_bspline_data_copy}
+                     }
         """
         self.canvas = canvas
-        # Gelen değişiklikleri doğrudan sakla (Redo için gerekli)
         self._changes = changes 
-        # Silme işlemi UYGULANMADAN ÖNCEKİ canvas durumunu sakla (Undo için)
         self._lines_before_erase = copy.deepcopy(canvas.lines)
         self._shapes_before_erase = copy.deepcopy(canvas.shapes)
+        self._b_splines_before_erase = copy.deepcopy(getattr(canvas, 'b_spline_strokes', []))
         
-        logging.debug(f"EraseCommand created. Stored current state (lines: {len(self._lines_before_erase)}, shapes: {len(self._shapes_before_erase)}). Changes to apply: lines={list(changes.get('lines', {}).keys())}, shapes={list(changes.get('shapes', {}).keys())}")
+        logging.debug(
+            f"EraseCommand created. Stored current state (lines: {len(self._lines_before_erase)}, "
+            f"shapes: {len(self._shapes_before_erase)}, b_splines: {len(self._b_splines_before_erase)}). "
+            f"Changes to apply: lines={list(changes.get('lines', {}).keys())}, "
+            f"shapes={list(changes.get('shapes', {}).keys())}, "
+            f"b_splines={list(changes.get('b_spline_strokes', {}).keys())}"
+        )
 
     def execute(self):
         """Hesaplanan değişiklikleri canvas'a uygular (asıl silme işlemi burada yapılır)."""
         logging.debug(f"Executing EraseCommand...")
         lines_applied = 0
         shapes_applied = 0
-        indices_to_delete_completely = [] # Tamamen silinecek çizgilerin indeksleri
+        b_splines_applied = 0
+        indices_to_delete_completely = []
 
         # 1. Çizgileri Güncelle/Sil
         line_changes = self._changes.get('lines', {})
@@ -527,17 +560,16 @@ class EraseCommand(Command):
             
             try:
                 if 0 <= index < len(self.canvas.lines):
-                    if final_points: # Nokta kaldıysa güncelle
+                    if final_points: 
                         self.canvas.lines[index][2] = final_points
                         lines_applied += 1
-                    else: # Çizgi tamamen silinecek
+                    else: 
                         indices_to_delete_completely.append(index)
                 else:
                     logging.warning(f"EraseCommand execute: Line {index} not found in canvas.lines.")
             except Exception as e:
                 logging.error(f"Error applying changes for line {index} during execute: {e}", exc_info=True)
 
-        # Tamamen silinecek çizgileri şimdi (tersten) silelim
         indices_to_delete_completely.sort(reverse=True)
         for index in indices_to_delete_completely:
             try:
@@ -549,7 +581,6 @@ class EraseCommand(Command):
 
         # 2. Şekilleri Sil
         shape_changes = self._changes.get('shapes', {})
-        # İndeksleri tersten silelim ki kayma olmasın
         sorted_shape_indices = sorted(shape_changes.keys(), reverse=True)
         for index in sorted_shape_indices:
             try:
@@ -561,19 +592,40 @@ class EraseCommand(Command):
             except Exception as e:
                 logging.error(f"Error removing shape {index} during execute: {e}", exc_info=True)
         
-        logging.debug(f"EraseCommand execute finished. Applied changes to {lines_applied} lines, removed {shapes_applied} shapes.")
+        # 3. B-Spline Stroklarını Sil
+        bspline_changes = self._changes.get('b_spline_strokes', {})
+        sorted_bspline_indices = sorted(bspline_changes.keys(), reverse=True)
+        for index in sorted_bspline_indices:
+            try:
+                if hasattr(self.canvas, 'b_spline_strokes') and 0 <= index < len(self.canvas.b_spline_strokes):
+                    del self.canvas.b_spline_strokes[index]
+                    b_splines_applied += 1
+                else:
+                    logging.warning(f"EraseCommand execute: B-Spline stroke {index} not found in canvas.b_spline_strokes.")
+            except Exception as e:
+                logging.error(f"Error removing B-Spline stroke {index} during execute: {e}", exc_info=True)
+
+        logging.debug(
+            f"EraseCommand execute finished. Applied changes to {lines_applied} lines, "
+            f"removed {shapes_applied} shapes, removed {b_splines_applied} b-splines."
+        )
         self.canvas.update()
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
 
     def undo(self):
-        # Saklanan orijinal durumu geri yükle.
-        logging.debug(f"Undoing EraseCommand: Restoring state to {len(self._lines_before_erase)} lines and {len(self._shapes_before_erase)} shapes.")
+        logging.debug(
+            f"Undoing EraseCommand: Restoring state to {len(self._lines_before_erase)} lines, "
+            f"{len(self._shapes_before_erase)} shapes, {len(self._b_splines_before_erase)} b-splines."
+        )
         try:
-            # Deepcopy ile geri yüklemek daha güvenli olabilir
             self.canvas.lines = copy.deepcopy(self._lines_before_erase)
             self.canvas.shapes.clear()
             self.canvas.shapes.extend(copy.deepcopy(self._shapes_before_erase))
+            if hasattr(self.canvas, 'b_spline_strokes'):
+                self.canvas.b_spline_strokes.clear()
+                self.canvas.b_spline_strokes.extend(copy.deepcopy(self._b_splines_before_erase))
+
             self.canvas.update()
             logging.debug("Undo finished: Canvas state restored.")
             if hasattr(self.canvas, 'selection_changed'):
@@ -584,7 +636,8 @@ class EraseCommand(Command):
     def __str__(self):
         lines_affected = len(self._changes.get('lines', {}))
         shapes_affected = len(self._changes.get('shapes', {}))
-        return f"EraseCommand(lines_affected={lines_affected}, shapes_affected={shapes_affected})"
+        b_splines_affected = len(self._changes.get('b_spline_strokes', {}))
+        return f"EraseCommand(lines_affected={lines_affected}, shapes_affected={shapes_affected}, b_splines_affected={b_splines_affected})"
 
 # --- YENİ: Dosya hash hesaplama fonksiyonu ---
 def get_file_md5(file_path):

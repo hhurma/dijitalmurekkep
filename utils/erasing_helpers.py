@@ -33,9 +33,9 @@ def erase_at_position(canvas: 'DrawingCanvas', position: QPointF, eraser_width: 
     erase_path = [position]
     
     # Silgi değişikliklerini hesapla
-    changes = calculate_erase_changes(canvas.lines, canvas.shapes, erase_path, eraser_width)
+    changes = calculate_erase_changes(canvas.lines, canvas.shapes, getattr(canvas, 'b_spline_strokes', []), erase_path, eraser_width)
     
-    if changes['lines'] or changes['shapes']:
+    if changes['lines'] or changes['shapes'] or changes['b_spline_strokes']:
         # Silme komutu oluştur
         command = EraseCommand(canvas, changes)
         
@@ -115,22 +115,26 @@ def _erase_points_from_line(line_points: List[QPointF], erase_path: List[QPointF
     return final_points, True
 
 
-def calculate_erase_changes(lines: List[List[Any]], shapes: List[List[Any]], erase_path: List[QPointF], eraser_width: float) -> EraseChanges:
-    """Silgi yolu boyunca silinecek çizgi NOKTALARINI ve şekillerin TAMAMINI HESAPLAR.
+def calculate_erase_changes(lines: List[List[Any]], shapes: List[List[Any]], b_spline_strokes: List[dict], erase_path: List[QPointF], eraser_width: float) -> EraseChanges:
+    """Silgi yolu boyunca silinecek çizgi NOKTALARINI, şekillerin ve B-Spline'ların TAMAMINI HESAPLAR.
     
     Canvas verisini DEĞİŞTİRMEZ.
     Yapılacak değişiklikleri bir 'changes' sözlüğü olarak DÖNDÜRÜR.
-    changes = {'lines': {index: {'original_points': [...], 'final_points': [...]}}, 'shapes': {index: original_data}}
+    changes = {
+        'lines': {index: {'original_points': [...], 'final_points': [...]}},
+        'shapes': {index: original_data},
+        'b_spline_strokes': {index: original_data} # YENİ
+    }
     """
     from utils import geometry_helpers # Helperları burada import et
 
-    changes: EraseChanges = {'lines': {}, 'shapes': {}}
+    changes: EraseChanges = {'lines': {}, 'shapes': {}, 'b_spline_strokes': {}} # YENİ
 
     if not erase_path or len(erase_path) < 1:
         return changes # Değişiklik yok
 
     eraser_rect = _get_eraser_bounding_rect(erase_path, eraser_width)
-    logging.debug(f"[Eraser] Eraser Rect: {eraser_rect}") # Eraser rect logu
+    logging.debug(f"[Eraser] Eraser Rect: {eraser_rect}")
 
     # 1. Lines (Nokta Bazlı Silme Hesaplaması)
     for i, line_data in enumerate(lines):
@@ -149,23 +153,21 @@ def calculate_erase_changes(lines: List[List[Any]], shapes: List[List[Any]], era
 
         logging.debug(f"  [Eraser-Line {i}] BBox={line_rect}, QtIntersects={qt_intersects}, ManualIntersects={manual_intersects}")
 
-        # if line_rect.isNull() or not eraser_rect.intersects(line_rect): # ESKİ KONTROL
-        if line_rect.isNull() or not manual_intersects: # YENİ KONTROL (Manuel kesişime göre)
-            continue # Kesişmiyorsa atla
+        if line_rect.isNull() or not manual_intersects: 
+            continue 
         
         current_points = line_data[2]
         final_points, points_were_erased = _erase_points_from_line(current_points, erase_path, eraser_width)
 
         if points_were_erased:
-            # Eşik kontrolü kaldırıldı. Eğer herhangi bir nokta silindiyse, çizgiyi tamamen sil.
             logging.debug(f"Line {i} intersects with erase path. Marking for complete deletion.")
-            final_points = [] # Tamamen silinecek olarak işaretle
+            final_points = [] 
 
             changes['lines'][i] = {
-                'original_points': copy.deepcopy(current_points), # Orijinali sakla
-                'original_color': line_data[0], # Geri alma için renk/kalınlık
+                'original_points': copy.deepcopy(current_points),
+                'original_color': line_data[0],
                 'original_width': line_data[1],
-                'final_points': final_points # Yeni (potansiyel olarak boş) liste
+                'final_points': final_points
             }
 
     # 2. Shapes (Tamamen Silinecekleri Hesapla)
@@ -185,10 +187,28 @@ def calculate_erase_changes(lines: List[List[Any]], shapes: List[List[Any]], era
 
         logging.debug(f"  [Eraser-Shape {i}] Type={shape_data[0]}, BBox={shape_rect}, QtIntersects={qt_intersects_shape}, ManualIntersects={manual_intersects_shape}")
 
-        # if not shape_rect.isNull() and eraser_rect.intersects(shape_rect): # ESKİ KONTROL
-        if not shape_rect.isNull() and manual_intersects_shape: # YENİ KONTROL (Manuel kesişime göre)
-            # Bu şekil silinecek, orijinal verisini kaydet
+        if not shape_rect.isNull() and manual_intersects_shape: 
             changes['shapes'][i] = copy.deepcopy(shape_data)
+
+    # 3. B-Spline Strokes (Tamamen Silinecekleri Hesapla) # YENİ BÖLÜM
+    for i, spline_data in enumerate(b_spline_strokes):
+        spline_rect = geometry_helpers.get_bspline_bounding_box(spline_data) # B-Spline için özel bbox fonksiyonu
+        
+        qt_intersects_spline = False
+        manual_intersects_spline = False
+        if not spline_rect.isNull():
+            qt_intersects_spline = eraser_rect.intersects(spline_rect)
+            # Manuel kesişim kontrolü (yukarıdakilere benzer şekilde)
+            er_left, er_right, er_top, er_bottom = eraser_rect.left(), eraser_rect.right(), eraser_rect.top(), eraser_rect.bottom()
+            spl_left, spl_right, spl_top, spl_bottom = spline_rect.left(), spline_rect.right(), spline_rect.top(), spline_rect.bottom()
+            x_overlap_spline = (spl_left <= er_right) and (spl_right >= er_left)
+            y_overlap_spline = (spl_top <= er_bottom) and (spl_bottom >= er_top)
+            manual_intersects_spline = x_overlap_spline and y_overlap_spline
+
+        logging.debug(f"  [Eraser-BSpline {i}] BBox={spline_rect}, QtIntersects={qt_intersects_spline}, ManualIntersects={manual_intersects_spline}")
+
+        if not spline_rect.isNull() and manual_intersects_spline:
+            changes['b_spline_strokes'][i] = copy.deepcopy(spline_data)
 
     return changes
 

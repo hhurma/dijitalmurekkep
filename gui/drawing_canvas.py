@@ -611,6 +611,26 @@ class DrawingCanvas(QWidget):
         # Seçim dikdörtgeni çiz
         canvas_drawing_helpers.draw_selection_rectangle(self, painter)
 
+        # --- Silgi Önizlemesi --- #
+        if self.current_tool == ToolType.ERASER and self.underMouse(): # Sadece fare canvas üzerindeyken çiz
+            last_pos_screen_qpoint = self.mapFromGlobal(QCursor.pos()) # Global fare pozisyonunu widget koordinatlarına çevir (QPoint döndürür)
+            if self.rect().contains(last_pos_screen_qpoint): # Widget sınırları içindeyse
+                painter.save()
+                eraser_radius = self.eraser_width / 2.0 # Bu float
+                
+                # QPoint'i QPointF'ye dönüştür
+                last_pos_screen_qpointf = QPointF(last_pos_screen_qpoint)
+                
+                # Silgi önizlemesi için renk ve fırça
+                preview_color = QColor(128, 128, 128, 100) # Yarı şeffaf gri
+                painter.setBrush(QBrush(preview_color))
+                painter.setPen(Qt.PenStyle.NoPen) # Kenarlık olmasın
+                
+                # Daire şeklinde önizleme çiz (QPointF merkez ve float yarıçaplarla)
+                painter.drawEllipse(last_pos_screen_qpointf, eraser_radius, eraser_radius)
+                painter.restore()
+        # --- --- --- --- --- -- #
+
     def screen_to_world(self, screen_pos: QPointF) -> QPointF:
         if self._parent_page:
             zoom = self._parent_page.zoom_level
