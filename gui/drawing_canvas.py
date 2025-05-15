@@ -1,7 +1,10 @@
+import numpy as np
+from scipy.interpolate import splev, splprep
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 from PyQt6.QtWidgets import QWidget, QSizePolicy, QApplication
 from PyQt6.QtGui import QColor, QTabletEvent, QPainter, QPen, QBrush, QCursor, QPaintEvent, QPainterPath, QRadialGradient, QPixmap, QVector2D, QTransform, QTouchEvent, QEventPoint
 from PyQt6.QtCore import Qt, QPointF, QRectF, QTimer, QSize, QEvent
+from collections import defaultdict
 from OpenGL import GL
 import logging
 import os 
@@ -13,11 +16,12 @@ import time
 from typing import Optional, Tuple
 
 from utils import drawing_helpers as utils_drawing_helpers # Alias vererek utils'teki helper ile karışmasını önleyelim
-from utils import geometry_helpers, erasing_helpers 
+from utils import geometry_helpers, erasing_helpers, moving_helpers # YENİ: moving_helpers buraya eklendi
 from utils import view_helpers 
 from utils.commands import (
     DrawLineCommand, ClearCanvasCommand, DrawShapeCommand, MoveItemsCommand,
-    ResizeItemsCommand, EraseCommand, RotateItemsCommand 
+    ResizeItemsCommand, EraseCommand, RotateItemsCommand, DrawBsplineCommand, 
+    UpdateBsplineControlPointCommand # YENİ: UpdateBsplineControlPointCommand import edildi
 )
 from utils.undo_redo_manager import UndoRedoManager
 from .enums import TemplateType, ToolType, Orientation 
@@ -30,6 +34,10 @@ from gui import canvas_tablet_handler
 
 # --- YENİ: Çizim Yardımcıları Import --- #
 from . import canvas_drawing_helpers # YENİ: Çizim yardımcıları importu
+# --- --- --- --- --- --- --- --- --- #
+
+# --- YENİ: DrawingWidget Import --- #
+from .widgets.drawing_widget import DrawingWidget
 # --- --- --- --- --- --- --- --- --- #
 
 # Sabitler
@@ -130,6 +138,132 @@ class DrawingCanvas(QWidget):
 
     def __init__(self, undo_manager: UndoRedoManager, parent=None, template_settings: dict | None = None):
         super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
+        self.installEventFilter(self)
+        # Yakınlaştırma için tablet event takibi
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._parent_page = parent  # EditablePage referansı
+        self.scaled_width = None
+        self.scaled_height = None
+        
+        # Undo/Redo Manager
+        self.undo_manager = undo_manager
+
+        # YENİ: B-Spline Widget örneği ve veri saklama
+        self.b_spline_widget = DrawingWidget() # Örnek oluştur
+        self.b_spline_strokes = [] # self.b_spline_widget.strokes ile senkronize edilecek
+
+        # Renkler ve Kalem Ayarları
+        self.current_color = (0.0, 0.0, 0.0, 1.0)
+        self.background_color = (1.0, 1.0, 1.0, 1.0)
+        self.line_style = 'solid'
+        
+        self.current_pen_width = 2.0
+        self.eraser_width = 10
+
+        # Metin ayarları
+        self.current_text = ""
+        self.current_font_family = "Arial"
+        self.current_font_size = 12
+        self.current_font_bold = False
+        self.current_font_italic = False
+        self.current_font_underline = False
+        self.current_text_edit = None
+        
+        # Resim dosyası için
+        self.current_image = None
+        self.restore_cursor_after_stroke = False
+
+        # Çizim veri yapıları
+        self.lines = []  # çizgi noktaları 
+        self.shapes = []  # şekiller (dikdörtgen, daire vb.)
+        self.points = []  # geçici nokta listesi (şu an çizilen)
+        
+        # Şekil ve seçim değişkenleri
+        self.shape_start_point = QPointF()
+        self.shape_end_point = QPointF()
+        self.drawing = False  # Şu anda çizim yapılıyor mu?
+        
+        self.current_tool = ToolType.PEN
+        self.fill_color = (0.5, 0.5, 0.5, 0.25)  # Gri seviye, %25 opaklık
+        
+        # Pan ve Zoom ayarları
+        self.current_zoom_level = 1.0
+        self.pan_offset_x = 0
+        self.pan_offset_y = 0
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self.setMouseTracking(True)  # Fare takibi
+        
+        # Seçim ve taşıma değişkenleri
+        self.selected_item_indices = []
+        self.current_handles = {}
+        self.active_handle = None
+        self.moving_items = False
+        self.moving_start_pos = None
+        self.selecting = False
+        self.resizing = False
+        self.original_positions = []
+        self.original_resize_states = []
+        
+        # Şablon ölçekleri
+        self.template_scales = defaultdict(float)
+        if template_settings is not None:
+            self.template_scales = {int(key): value for key, value in template_settings.get('scales', {}).items()}
+            # Template için varsayılan zoom düzeyi
+            default_zoom_level = template_settings.get('default_zoom_level')
+            if default_zoom_level is not None:
+                self.current_zoom_level = default_zoom_level
+
+        # Düzenlenebilir çizgi için değişkenler
+        self.bezier_control_points = []
+        self.current_editable_line_points = []
+        self.active_handle_index = -1
+        self.active_bezier_handle_index = -1
+        self.is_dragging_bezier_handle = False
+        
+        # B-Spline ilgili değişkenler
+        self.spline_control_points = []  # B-spline kontrol noktaları (scipy formatında)
+        self.spline_knots = None  # B-spline düğüm noktaları
+        self.spline_degree = None  # B-spline derecesi
+        self.spline_u = None  # B-spline parametre değerleri
+        
+        # Düzenleme modu değişkenleri
+        self.current_handles = {}  # Tutamaç noktaları
+        self.active_handle = None  # Aktif tutamaç
+        self.resizing = False  # Yeniden boyutlandırma
+        self.original_resize_states = []  # Boyut değiştirme öncesi durumlar
+        
+        # Editable Line ve araç değişkenleri
+        self.current_tool = ToolType.PEN
+        self.bezier_control_points = []  # Bezier kontrol noktaları
+        self.current_editable_line_points = []  # Düzenlenebilir çizgi noktaları
+        self.active_handle_index = -1  # Aktif tutamaç indeksi
+        self.active_bezier_handle_index = -1  # Aktif bezier tutamacı indeksi
+        self.is_dragging_bezier_handle = False
+        
+        # Undo manager ve geri alma redo
+        self.undo_manager = UndoRedoManager()
+        
+        # Çizgi stili
+        self.line_style = 'solid'
+        
+        # Şekil dolgu rengi (gri seviye % 25 opaklık)
+        self.fill_color = (0.5, 0.5, 0.5, 0.25)
+        
+        # Metin değişkenleri
+        self.current_text_edit = None
+        self.current_text = ""
+        self.current_font_family = "Arial"
+        self.current_font_size = 12
+        self.current_font_bold = False
+        self.current_font_italic = False
+        self.current_font_underline = False
+        
+        # Sinyal bağlantıları
+        if parent:
+            # İçeriği değiştirdiğimizi parent'a bildir
+            self.content_changed = QSignal()
+            self.content_changed.connect(parent.mark_as_modified)
         self.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
         self.installEventFilter(self)
         self.RESIZE_MOVE_THRESHOLD = 3.0
@@ -283,6 +417,15 @@ class DrawingCanvas(QWidget):
         self.pointer_trail_timer.timeout.connect(self._update_pointer_trail)
         self.pointer_trail_timer.start(20)
 
+        # --- YENİ: Kontrol Noktası Seçici Aracı Özellikleri (B-Spline için) --- #
+        self.active_bspline_stroke_index: int | None = None
+        self.active_bspline_control_index: int | None = None
+        self.is_dragging_bspline_handle: bool = False
+        self.bspline_drag_start_cp_pos: np.ndarray | None = None # YENİ: Sürükleme başlangıç pozisyonu
+        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -- #
+
+        # --- YENİ: Düzenlenebilir Çizgi (Eski Bezier) Kontrol Noktası Seçici Aracı Özellikleri --- # 
+
     def get_image_export_data(self) -> List[dict]:
         """Sahnedeki resim öğelerinden PDF dışa aktarma için veri toplar."""
         export_data = []
@@ -316,134 +459,116 @@ class DrawingCanvas(QWidget):
         return export_data
 
     def paintEvent(self, event: QPaintEvent):
-        # logging.debug(f"PaintEvent - Grid Ayarları: ThinColor={getattr(self, 'grid_thin_color', 'Yok')}, ThickInterval={getattr(self, 'grid_thick_line_interval', 'Yok')}")
+        """Ana çizim olayını yönetir. Tüm elemanları tuvale çizer."""
         painter = QPainter(self)
-        
-        # Antialiasing'i her zaman aktif edelim
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         
-        # Arka Plan Çizimi
-        if hasattr(self, '_page_background_pixmap') and self._page_background_pixmap and not self._page_background_pixmap.isNull():
-            if self._parent_page: # parent_page varsa zoom ve pan bilgilerini al
-                zoom = self._parent_page.zoom_level
-                pan_offset_x = self._parent_page.pan_offset.x()
-                pan_offset_y = self._parent_page.pan_offset.y()
+        # Arka planı çiz
+        painter.fillRect(self.rect(), rgba_to_qcolor(self.background_color))
 
-                target_w = int(self._page_background_pixmap.width() * zoom)
-                target_h = int(self._page_background_pixmap.height() * zoom)
-                
-                # PDF'in sol üst köşesinin canvas üzerinde nereye geleceğini hesapla
-                draw_x = -pan_offset_x 
-                draw_y = -pan_offset_y
+        # Eğer aktif bir sayfa varsa ve resimler varsa, önce onları çiz
+        # Bu kısım page.images üzerinden yönetilecek
+        # canvas_drawing_helpers.draw_images(self, painter)
 
-                target_rect = QRectF(draw_x, draw_y, target_w, target_h)
-                source_rect = QRectF(self._page_background_pixmap.rect())
-                painter.drawPixmap(target_rect, self._page_background_pixmap, source_rect)
-            else: # parent_page yoksa, normal çiz
-                painter.drawPixmap(self.rect(), self._page_background_pixmap)
-        elif hasattr(self, '_background_pixmap') and self._background_pixmap and not self._background_pixmap.isNull():
-            painter.drawPixmap(self.rect(), self._background_pixmap)
-        else:
-            painter.fillRect(self.rect(), Qt.GlobalColor.white)
-        
-        # Öğeleri Çiz
-        canvas_drawing_helpers.draw_items(self, painter)
-        # Geçici Çizimler
-        if self.drawing:
-            if self.current_tool == ToolType.PEN:
-                if len(self.current_line_points) > 1:
-                    utils_drawing_helpers.draw_pen_stroke(painter, self.current_line_points, self.current_color, self.current_pen_width, self.line_style)
-            elif self.current_tool in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE]:
-                 if self.drawing_shape and not self.shape_start_point.isNull() and not self.shape_end_point.isNull():
-                    temp_shape_data = [self.current_tool, self.current_color, self.current_pen_width, self.shape_start_point, self.shape_end_point, self.line_style]
-                    if self.current_tool in [ToolType.RECTANGLE, ToolType.CIRCLE] and self.fill_enabled:
-                        fill_r, fill_g, fill_b, fill_a = self.current_fill_rgba
-                        actual_fill_rgba_tuple = (fill_r, fill_g, fill_b, fill_a) # temporary alpha is always the chosen alpha
-                        temp_shape_data.append(actual_fill_rgba_tuple)
-                    utils_drawing_helpers.draw_shape(painter, temp_shape_data, self.line_style)
+        # Kalıcı öğeleri çiz (çizgiler, şekiller, eski editable_line'lar)
+        # Not: draw_items içinde zaten img_data kontrolü var, yukarıdaki draw_images kaldırılabilir.
+        canvas_drawing_helpers.draw_items(self, painter) 
+
+        # YENİ: B-Spline çizgilerini ve kontrol noktalarını çiz (DrawingWidget'tan alınan mantıkla)
+        if self.current_tool == ToolType.EDITABLE_LINE or self.b_spline_strokes: # Araç seçiliyken veya veri varsa çiz
+            # painter.save() # Gerekirse painter durumunu koru
             
-            # --- YENİ: Düzenlenebilir Çizgi Aracı Çizimi --- #
-            elif self.current_tool == ToolType.EDITABLE_LINE:
-                # Önce kontur noktaları her durumda çizelim (bezier kontrol noktaları olmasa bile)
-                pen = QPen(QColor.fromRgbF(*self.current_color), self.current_pen_width)
-                pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-                pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-                painter.setPen(pen)
+            # DrawingWidget'ın paintEvent'indeki gibi strokes'ları çiz
+            pen = QPen(Qt.GlobalColor.black, 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+
+            # Tamamlanmış B-spline'ları çiz
+            for stroke_data in self.b_spline_strokes: # self.b_spline_widget.strokes yerine canvas'taki kopyayı kullan
+                control_points_np = stroke_data['control_points'] # Bunlar numpy array
+                knots = stroke_data['knots']
+                degree = stroke_data['degree']
+                u_params = stroke_data['u']
+                # original_points_with_pressure = stroke_data.get('original_points_with_pressure', [])
+
+                # tck'yı yeniden oluştur
+                tck = (knots, control_points_np.T, degree)
+
+                # B-spline eğrisini çiz
+                # TODO: Koordinat dönüşümlerini uygula (world_to_screen)
+                # Şu an DrawingWidget kendi koordinatlarında çiziyor, canvas'a uyarlamalıyız.
+                # SciPy'den gelen noktalar doğrudan ekran koordinatı gibi varsayılıyor.
+                # Eğer dünya koordinatlarında saklanıyorsa screen_to_world / world_to_screen dönüşümü gerekir.
+                # Şimdilik event.pos() ile gelen canvas pixel koordinatları kullanıldığını varsayıyoruz.
                 
-                # Düz çizgi olarak çiz (her zaman görünür olmalı)
-                if len(self.current_editable_line_points) > 0:
-                    path = QPainterPath()
-                    if len(self.current_editable_line_points) == 1:
-                        # Tek nokta varsa küçük bir daire çiz
-                        painter.drawEllipse(self.current_editable_line_points[0], 2, 2)
-                    else:
-                        # Noktaları birleştiren düz çizgiler çiz
-                        path.moveTo(self.current_editable_line_points[0])
-                        for point in self.current_editable_line_points[1:]:
-                            path.lineTo(point)
-                        painter.drawPath(path)
-                
-                # Daha sonra bezier eğrisi varsa onu çiz
-                if len(self.bezier_control_points) >= 4:
-                    path = QPainterPath()
-                    path.moveTo(self.bezier_control_points[0])  # İlk nokta
-                    
-                    # Tüm bezier segmentlerini çiz
-                    for i in range(0, len(self.bezier_control_points) - 3, 3):
-                        # Eğer bir bezier eğrisi segmenti için yeterli nokta varsa
-                        if i + 3 < len(self.bezier_control_points):
-                            # Her segment: [p0, c1, c2, p1]
-                            # p0 zaten path içindedir, c1, c2 ve p1 ile kubik bezier oluştur
-                            path.cubicTo(
-                                self.bezier_control_points[i + 1],  # c1
-                                self.bezier_control_points[i + 2],  # c2
-                                self.bezier_control_points[i + 3]   # p1
-                            )
-                    
-                    # Eğriyi önceki çizginin üzerine çiz
+                x_fine, y_fine = splev(np.linspace(0, u_params[-1], 100), tck)
+                path = QPainterPath()
+                if len(x_fine) > 0:
+                    path.moveTo(self.world_to_screen(QPointF(x_fine[0], y_fine[0]))) # YENİ: world_to_screen
+                    for i in range(1, len(x_fine)):
+                        path.lineTo(self.world_to_screen(QPointF(x_fine[i], y_fine[i]))) # YENİ: world_to_screen
                     painter.drawPath(path)
-                
-                # Çizgi üzerindeki ana tutamaçları (handle) çiz
-                for i, point in enumerate(self.current_editable_line_points):
-                    if i == self.active_handle_index:
-                        # Aktif tutamaç farklı renkte
-                        painter.setBrush(QBrush(QColor(255, 0, 0, 180)))
-                    else:
-                        painter.setBrush(QBrush(QColor(0, 120, 255, 180)))
-                    painter.setPen(QPen(QColor(255, 255, 255), 1.5))
-                    painter.drawEllipse(point, HANDLE_SIZE/2, HANDLE_SIZE/2)
-                
-                # Bezier kontrol noktalarını çiz
-                if len(self.bezier_control_points) >= 4:
-                    # Tüm bezier kontrol noktaları için kontrol çizgilerini ve noktaları çiz
-                    for i in range(0, len(self.bezier_control_points) - 3, 3):
-                        # Kontrol çizgilerini çiz (p0->c1 ve c2->p1)
-                        if i + 3 < len(self.bezier_control_points):
-                            painter.setPen(QPen(QColor(120, 120, 120, 150), 1, Qt.PenStyle.DashLine))
-                            painter.drawLine(self.bezier_control_points[i], self.bezier_control_points[i + 1])  # p0->c1
-                            painter.drawLine(self.bezier_control_points[i + 2], self.bezier_control_points[i + 3])  # c2->p1
-                            
-                            # Kontrol noktalarını çiz (c1, c2)
-                            for j in range(1, 3):
-                                ctrl_idx = i + j
-                                if ctrl_idx == self.active_bezier_handle_index:
-                                    painter.setBrush(QBrush(QColor(255, 165, 0, 180)))  # Aktif kontrol noktası turuncu
-                                else:
-                                    painter.setBrush(QBrush(QColor(120, 120, 120, 180)))
-                                
-                                painter.setPen(QPen(QColor(255, 255, 255), 1.5))
-                                painter.drawEllipse(self.bezier_control_points[ctrl_idx], HANDLE_SIZE/3, HANDLE_SIZE/3)
-            # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-        
-        # Seçim overlayı
-        canvas_drawing_helpers.draw_selection_overlay(self, painter)
-        
-        # Seçim dikdörtgeni çiz
-        canvas_drawing_helpers.draw_selection_rectangle(self, painter)
-        
-        # --- Pointer Tool Glow/Fade-out Trail ---
-        if self.current_tool == ToolType.TEMPORARY_POINTER and len(self.pointer_trail_points) > 1:
+
+                # B-Spline kontrol noktalarını çiz (kırmızı)
+                # YENİ KOŞUL: Sadece EDITABLE_LINE_NODE_SELECTOR aracı aktifse kontrol noktalarını çiz
+                if self.current_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR:
+                    painter.save()
+                    painter.setPen(QPen(Qt.GlobalColor.red, 5, Qt.PenStyle.SolidLine))
+                    for cp_np in control_points_np:
+                        # cp_np bir numpy array [x, y]
+                        screen_cp = self.world_to_screen(QPointF(cp_np[0], cp_np[1])) # YENİ: world_to_screen
+                        painter.drawPoint(screen_cp) # YENİ: screen_cp kullan
+                    painter.restore()
+
+                    # Seçili B-Spline kontrol noktasını farklı çiz (DrawingWidget'ta yok, eklenebilir)
+                    # BU BLOK DA AYNI KOŞULA TAŞINACAK
+                    if self.b_spline_widget.selected_control_point is not None:
+                        stroke_idx, cp_idx = self.b_spline_widget.selected_control_point
+                        if 0 <= stroke_idx < len(self.b_spline_strokes):
+                            selected_cp_np = self.b_spline_strokes[stroke_idx]['control_points'][cp_idx]
+                            selected_cp_world = QPointF(selected_cp_np[0], selected_cp_np[1])
+                            selected_cp_screen = self.world_to_screen(selected_cp_world) # YENİ: world_to_screen
+                            painter.save()
+                            painter.setPen(QPen(Qt.GlobalColor.magenta, 8, Qt.PenStyle.SolidLine))
+                            painter.setBrush(Qt.GlobalColor.magenta)
+                            painter.drawEllipse(selected_cp_screen, 4, 4) # YENİ: screen koordinatlarını kullan
+                            painter.restore()
+                # YENİ KOŞUL SONU (Kontrol noktası ve seçili nokta çizimi için)
+
+            # Aktif (çizilmekte olan) B-spline stroke'u çiz (DrawingWidget'taki gibi)
+            if len(self.b_spline_widget.current_stroke) > 1:
+                painter.save()
+                for i in range(len(self.b_spline_widget.current_stroke) - 1):
+                    point1_world_qpoint, pressure1 = self.b_spline_widget.current_stroke[i]
+                    point2_world_qpoint, pressure2 = self.b_spline_widget.current_stroke[i+1]
+                    
+                    # pointX_world_qpoint QPointF nesneleri (dünya koordinatlarında)
+                    point1_screen = self.world_to_screen(point1_world_qpoint) # YENİ: world_to_screen
+                    point2_screen = self.world_to_screen(point2_world_qpoint) # YENİ: world_to_screen
+
+                    pen_width = 1 + pressure1 * 9 # Basınca göre kalınlık
+                    pen = QPen(Qt.GlobalColor.blue, pen_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+                    painter.setPen(pen)
+                    painter.drawLine(point1_screen, point2_screen) # YENİ: screen koordinatlarını kullan
+                painter.restore()
+            
+            # Seçili B-Spline kontrol noktasını farklı çiz (DrawingWidget'ta yok, eklenebilir)
+            if self.b_spline_widget.selected_control_point is not None:
+                stroke_idx, cp_idx = self.b_spline_widget.selected_control_point
+                if 0 <= stroke_idx < len(self.b_spline_strokes):
+                    selected_cp_np = self.b_spline_strokes[stroke_idx]['control_points'][cp_idx]
+                    selected_cp_world = QPointF(selected_cp_np[0], selected_cp_np[1])
+                    selected_cp_screen = self.world_to_screen(selected_cp_world) # YENİ: world_to_screen
+                    painter.save()
+                    painter.setPen(QPen(Qt.GlobalColor.magenta, 8, Qt.PenStyle.SolidLine))
+                    painter.setBrush(Qt.GlobalColor.magenta)
+                    painter.drawEllipse(selected_cp_screen, 4, 4) # YENİ: screen koordinatlarını kullan
+                    painter.restore()
+            # YENİ KOŞUL SONU (Kontrol noktası çizimi için)
+            
+            # painter.restore() # Eğer başta save yapıldıysa
+
+        # Geçici işaretçi izini çiz
+        if self.current_tool == ToolType.TEMPORARY_POINTER and self.pointer_trail_points:
             for glow in range(8, 0, -1):
                 path = QPainterPath()
                 path.moveTo(self.pointer_trail_points[0][0])
@@ -463,12 +588,11 @@ class DrawingCanvas(QWidget):
             painter.setPen(pen)
             painter.drawPath(path)
 
-        # --- YENİ: Kontrol Noktası Seçici aracı için overlay çizimi --- #
-        # Bu kısmı sadece düzenlenebilir çizgi seçim aracı aktifken çağırmalıyız
-        if self.current_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR:
-            from gui.tool_handlers import editable_line_node_selector_handler
-            editable_line_node_selector_handler.draw_node_selector_overlay(self, painter)
-        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+        # Seçim overlayı
+        canvas_drawing_helpers.draw_selection_overlay(self, painter)
+        
+        # Seçim dikdörtgeni çiz
+        canvas_drawing_helpers.draw_selection_rectangle(self, painter)
 
     def screen_to_world(self, screen_pos: QPointF) -> QPointF:
         if self._parent_page:
@@ -520,6 +644,108 @@ class DrawingCanvas(QWidget):
             logging.error(f"tabletEvent received but self._parent_page is None! Ignoring event type: {event.type()}")
             event.ignore()
             return
+        
+        # YENİ: Eğer Düzenlenebilir Çizgi Aracı aktifse, olayı b_spline_widget'a yönlendir
+        if self.current_tool == ToolType.EDITABLE_LINE:
+            screen_pos = event.position()
+            world_pos_for_bspline_draw = self.screen_to_world(screen_pos)
+
+            event_type = event.type()
+            if event_type == QTabletEvent.Type.TabletPress:
+                self.b_spline_widget.tabletPressEvent(world_pos_for_bspline_draw, event)
+            elif event_type == QTabletEvent.Type.TabletMove:
+                self.b_spline_widget.tabletMoveEvent(world_pos_for_bspline_draw, event)
+            elif event_type == QTabletEvent.Type.TabletRelease:
+                self.b_spline_widget.tabletReleaseEvent(world_pos_for_bspline_draw, event)
+                # self.b_spline_strokes = self.b_spline_widget.strokes # ESKİ: Doğrudan senkronizasyon
+                # YENİ: Komut ile ekleme
+                if self.b_spline_widget.strokes: # Eğer widget bir stroke oluşturduysa
+                    # DrawingWidget.strokes listesindeki son eleman yeni oluşturulandır.
+                    new_stroke_data = self.b_spline_widget.strokes[-1]
+                    # ÖNEMLİ: self.b_spline_widget.strokes doğrudan DrawingCanvas'ın b_spline_strokes'u 
+                    #         olmamalı. DrawingCanvas kendi kopyasını yönetmeli.
+                    #         DrawBsplineCommand, canvas.b_spline_strokes'a ekleyecek.
+                    #         Bu yüzden, DrawingWidget'in strokes listesini doğrudan senkronize etmek yerine,
+                    #         yeni stroke verisini alıp komutla DrawingCanvas'a ekliyoruz.
+                    
+                    # self.b_spline_strokes listesinin, widget'taki değişiklikleri yansıtması için
+                    # komut çalışmadan önce widget'tan bir kopya alınabilir VEYA
+                    # komutun execute'u zaten append yaptığı için bu adıma gerek kalmaz.
+                    # Şimdilik, widget'tan en son stroke'u alıp komutla ekleyelim.
+                    
+                    # Eğer DrawingWidget.strokes, DrawingCanvas.b_spline_strokes'tan farklıysa
+                    # ve yeni bir eleman eklendiyse, onu komutla yönet.
+                    # Bu, DrawingWidget'ın kendi stroke listesini bağımsız yönettiğini varsayar.
+                    # Bizim senaryomuzda, DrawingWidget.strokes'u DrawingCanvas.b_spline_strokes ile senkronize tutuyorduk.
+                    # Bu durumda, en son eklenen stroke'u alıp, komutla DrawingCanvas.b_spline_strokes'a ekleyelim.
+
+                    # Kontrol: Yeni stroke zaten DrawingCanvas.b_spline_strokes içinde mi?
+                    # Basit bir referans kontrolü (deepcopy yapıldığı için işe yaramaz) yerine
+                    # Eğer widget.strokes uzunluğu canvas.b_spline_strokes'tan büyükse yeni stroke var demektir.
+                    # YA DA DrawingWidget sadece son çizilen stroke'u bir yere koyar, canvas onu alır işler.
+
+                    # Mevcut kurguda: b_spline_widget.tabletReleaseEvent içinde self.strokes.append yapılır.
+                    # Bu self.strokes, DrawingWidget'in kendi listesidir.
+                    # Biz de bu listenin son elemanını alıp Canvas'a komutla ekleyeceğiz.
+                    command = DrawBsplineCommand(self, new_stroke_data)
+                    self.undo_manager.execute(command)
+                    # self.b_spline_strokes artık komut tarafından güncellenmiş olacak.
+                else:
+                    logging.warning("tabletEvent (EDITABLE_LINE Release): b_spline_widget.strokes boş, komut oluşturulmadı.")
+
+            self.update()
+            return
+        # YENİ: B-Spline Kontrol Noktası Seçici Aracı için olay yönetimi
+        elif self.current_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR:
+            world_pos_for_selector = self.screen_to_world(event.position())
+            event_type = event.type()
+
+            if event_type == QTabletEvent.Type.TabletPress:
+                found_handle = self._get_bspline_control_point_at(world_pos_for_selector)
+                if found_handle:
+                    self.active_bspline_stroke_index, self.active_bspline_control_index = found_handle
+                    self.is_dragging_bspline_handle = True
+                    # Başlangıç pozisyonunu kaydet
+                    self.bspline_drag_start_cp_pos = self.b_spline_strokes[self.active_bspline_stroke_index]['control_points'][self.active_bspline_control_index].copy()
+                    self.b_spline_widget.selected_control_point = found_handle 
+                else:
+                    self.is_dragging_bspline_handle = False
+                    self.active_bspline_stroke_index = None
+                    self.active_bspline_control_index = None
+                    self.b_spline_widget.selected_control_point = None
+                    self.bspline_drag_start_cp_pos = None # Temizle
+                self.update()
+            
+            elif event_type == QTabletEvent.Type.TabletMove:
+                if self.is_dragging_bspline_handle and self.active_bspline_stroke_index is not None and self.active_bspline_control_index is not None:
+                    self.b_spline_strokes[self.active_bspline_stroke_index]['control_points'][self.active_bspline_control_index] = \
+                        np.array([world_pos_for_selector.x(), world_pos_for_selector.y()])
+                    self.update()
+            
+            elif event_type == QTabletEvent.Type.TabletRelease:
+                if (self.is_dragging_bspline_handle and
+                    self.active_bspline_stroke_index is not None and
+                    self.active_bspline_control_index is not None and
+                    self.bspline_drag_start_cp_pos is not None):
+                    
+                    current_pos_array = self.b_spline_strokes[self.active_bspline_stroke_index]['control_points'][self.active_bspline_control_index]
+                    
+                    if not np.array_equal(self.bspline_drag_start_cp_pos, current_pos_array):
+                        command = UpdateBsplineControlPointCommand(
+                            self,
+                            self.active_bspline_stroke_index,
+                            self.active_bspline_control_index,
+                            self.bspline_drag_start_cp_pos,
+                            current_pos_array.copy()
+                        )
+                        self.undo_manager.execute(command)
+                    
+                self.is_dragging_bspline_handle = False
+                self.bspline_drag_start_cp_pos = None
+                self.update()
+            return
+
+        # Genel tablet olay yönetimi (Pen, Eraser, Selector vb. için)
         pos = self.screen_to_world(event.position())
         self.pressure = event.pressure()
         event_type = event.type()
@@ -574,6 +800,13 @@ class DrawingCanvas(QWidget):
                             logging.warning(f"_get_current_selection_states: Geçersiz images index: {index}")
                     else:
                          logging.warning(f"_get_current_selection_states: page_ref.images bulunamadı veya liste değil.")
+                elif item_type == 'bspline_strokes': # YENİ: B-Spline Strokes için durum alma
+                    if 0 <= index < len(self.b_spline_strokes):
+                        item_data_source = self.b_spline_strokes[index]
+                        # B-Spline stroke_data genellikle numpy array'ler içerir, deepcopy güvenli olmalı.
+                        current_item_state = copy.deepcopy(item_data_source) if item_data_source else None
+                    else:
+                        logging.warning(f"_get_current_selection_states: Geçersiz bspline_strokes index: {index}")
                 else:
                     logging.warning(f"_get_current_selection_states: Bilinmeyen öğe tipi: {item_type}[{index}]")
 
@@ -585,44 +818,37 @@ class DrawingCanvas(QWidget):
 
     def _get_combined_bbox(self, states: List[Any]) -> QRectF:
         combined_bbox = QRectF()
-        # Gelen 'states' listesi artık _get_current_selection_states'ten
-        # [(item_type, index, full_item_data_copy), ...] formatında gelmeli.
-        # VEYA doğrudan self._selected_item_indices kullanarak canvas'tan okuyabilir.
-        # Şimdilik ikincisini kullanalım, daha basit.
-
         for item_type, index in self._selected_item_indices:
             item_data = None
+            bbox = QRectF() # Önce null yap
             if item_type == 'lines' and 0 <= index < len(self.lines):
                 item_data = self.lines[index]
+                bbox = geometry_helpers.get_item_bounding_box(item_data, 'lines')
             elif item_type == 'shapes' and 0 <= index < len(self.shapes):
                 item_data = self.shapes[index]
-            # --- YENİ: Resimler için _parent_page kontrolü ---
+                bbox = geometry_helpers.get_item_bounding_box(item_data, 'shapes')
             elif item_type == 'images' and self._parent_page and hasattr(self._parent_page, 'images') and 0 <= index < len(self._parent_page.images):
-                 item_data = self._parent_page.images[index] # Burası rect veya angle gibi veriler için
-            # --- --- --- --- --- --- --- --- --- --- --- ---
-
-            # --- DÜZELTME: item_data kontrolü ve bounding box alma ---
-            bbox = QRectF() # Önce null yap
-            if item_data:
-                if item_type in ['lines', 'shapes']:
-                     bbox = geometry_helpers.get_item_bounding_box(item_data, item_type)
-                elif item_type == 'images' and 'rect' in item_data:
-                     bbox = item_data['rect'] # Resimler için doğrudan rect'i al
-            # --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-
+                item_data = self._parent_page.images[index]
+                if 'rect' in item_data:
+                    bbox = item_data['rect']
+            elif item_type == 'bspline_strokes' and 0 <= index < len(self.b_spline_strokes):
+                item_data = self.b_spline_strokes[index]
+                logging.debug(f"[_get_combined_bbox] bspline_strokes[{index}] item_data: {item_data}")
+                bbox = geometry_helpers.get_bspline_bounding_box(item_data)
+                logging.debug(f"[_get_combined_bbox] bspline_strokes[{index}] bbox: {bbox}")
+            else:
+                bbox = QRectF()
+            logging.debug(f"[_get_combined_bbox] {item_type}[{index}] bbox: {bbox}")
             if not bbox.isNull():
                 if combined_bbox.isNull():
                     combined_bbox = bbox
                 else:
                     combined_bbox = combined_bbox.united(bbox)
             else:
-                 # Hata durumunda veya geçersiz öğe durumunda loglama (isteğe bağlı)
-                 if item_type != 'images': # Resimler için item_data olmayabilir, loglama yapma
-                     logging.warning(f"_get_combined_bbox: Geçersiz öğe referansı veya bbox hesaplanamadı: {item_type}[{index}]")
-                 elif item_type == 'images' and not item_data:
-                     logging.warning(f"_get_combined_bbox: Geçersiz resim referansı: images[{index}] (parent_page: {self._parent_page is not None})")
-
-
+                if item_type != 'images':
+                    logging.warning(f"_get_combined_bbox: Geçersiz öğe referansı veya bbox hesaplanamadı: {item_type}[{index}]")
+                elif item_type == 'images' and not item_data:
+                    logging.warning(f"_get_combined_bbox: Geçersiz resim referansı: images[{index}] (parent_page: {self._parent_page is not None})")
         return combined_bbox
 
     def is_point_on_selection(self, point: QPointF, tolerance: float = 5.0) -> bool:
@@ -732,17 +958,77 @@ class DrawingCanvas(QWidget):
         logging.debug(f"--- is_point_on_selection result: {result} ---")
         return result
 
-    def move_selected_items(self, dx: float, dy: float):
-        moved = False
-        for item_type, index in self._selected_item_indices:
-            item_data = None
-            if item_type == 'lines' and 0 <= index < len(self.lines):
-                item_data = self.lines[index]
-            elif item_type == 'shapes' and 0 <= index < len(self.shapes):
-                item_data = self.shapes[index]
-            if item_data:
-                moving_helpers.move_item(item_data, dx, dy)
-                moved = True
+    def _reposition_selected_items_from_initial(self, total_dx: float, total_dy: float):
+        """
+        Seçili öğeleri, sürüklemenin başlangıcındaki orijinal durumlarına göre
+        total_dx ve total_dy kadar yeniden konumlandırır.
+        self.move_original_states (başlangıç durumları) ve 
+        self.selected_item_indices (tür ve orijinal indeks) kullanılır.
+        """
+        if len(self.selected_item_indices) != len(self.move_original_states):
+            logging.error(
+                "_reposition_selected_items_from_initial: self.selected_item_indices uzunluğu (%d) "
+                "ile self.move_original_states uzunluğu (%d) eşleşmiyor.",
+                len(self.selected_item_indices), len(self.move_original_states)
+            )
+            logging.error(f"  selected_item_indices: {self.selected_item_indices}")
+            logging.error(f"  move_original_states: {[type(s) for s in self.move_original_states]}")
+            return
+
+        # LOG: Taşıma başında hangi öğeler taşınacak?
+        logging.debug(f"[TAŞIMA BAŞLANGICI] Seçili öğeler: {self.selected_item_indices}")
+        for i, (item_type, item_original_idx) in enumerate(self.selected_item_indices):
+            logging.debug(f"  {i}: type={item_type}, index={item_original_idx}")
+
+        something_moved = False
+        for i, (item_type, item_original_idx) in enumerate(self.selected_item_indices):
+            original_item_data_from_drag_start = self.move_original_states[i]
+            if original_item_data_from_drag_start is None:
+                logging.warning(
+                    f"_reposition_selected_items_from_initial: "
+                    f"{item_type}[{item_original_idx}] için orijinal veri (move_original_states[{i}]) None, atlanıyor."
+                )
+                continue
+            data_to_move = copy.deepcopy(original_item_data_from_drag_start)
+            logging.debug(f"[TAŞIMA] {item_type}[{item_original_idx}] taşınıyor.")
+            from utils import moving_helpers
+            moving_helpers.move_item(data_to_move, total_dx, total_dy, item_type=item_type)
+            something_moved = True
+            if item_type == 'bspline_strokes':
+                if 0 <= item_original_idx < len(self.b_spline_strokes):
+                    self.b_spline_strokes[item_original_idx] = data_to_move
+                else:
+                    logging.warning(f"Taşıma: Geçersiz bspline_strokes index {item_original_idx}")
+                    something_moved = False
+            elif item_type == 'lines':
+                if 0 <= item_original_idx < len(self.lines):
+                    self.lines[item_original_idx] = data_to_move
+                else:
+                    logging.warning(f"Taşıma: Geçersiz lines index {item_original_idx}")
+                    something_moved = False
+            elif item_type == 'shapes':
+                if 0 <= item_original_idx < len(self.shapes):
+                    self.shapes[item_original_idx] = data_to_move
+                else:
+                    logging.warning(f"Taşıma: Geçersiz shapes index {item_original_idx}")
+                    something_moved = False
+            elif item_type == 'images':
+                if self._parent_page and hasattr(self._parent_page, 'images'):
+                    if 0 <= item_original_idx < len(self._parent_page.images):
+                        self._parent_page.images[item_original_idx].update(data_to_move)
+                    else:
+                        logging.warning(f"Taşıma: Geçersiz images index {item_original_idx}")
+                        something_moved = False
+                else:
+                    logging.warning("Taşıma: Resimler için _parent_page veya _parent_page.images bulunamadı.")
+                    something_moved = False
+            else:
+                logging.warning(f"Taşıma: Bilinmeyen öğe tipi '{item_type}'")
+                something_moved = False
+        if something_moved:
+            if self._parent_page:
+                 self._parent_page.mark_as_modified() # Taşıma yapıldıysa sayfayı değiştirilmiş olarak işaretle
+        # self.update() # Bu metodun kendisi update çağırmamalı, çağıran yer (örn. mouseMove) yapmalı.
 
     def set_tool(self, tool: ToolType):
         previous_tool = self.current_tool
@@ -1235,6 +1521,34 @@ class DrawingCanvas(QWidget):
                         logging.debug(f"      [GET_ITEM_AT_DEBUG]       Line {i}, Segment {j}-{j+1}: is_point_on_line FAILED.")
                 logging.debug(f"    [GET_ITEM_AT_DEBUG]     Line {i}: BBox contained point, but all segment checks failed.")
         
+        # 3. B-Spline Eğrilerini Kontrol Et (Sondan başa doğru)
+        # Not: B-spline'lar self.b_spline_strokes içinde saklanıyor.
+        # Eğer normal şekil seçimiyle çakışmaması için ayrı bir tool ile yönetilecekse
+        # bu kısım sadece ilgili tool aktifken çalışmalı veya hiç olmamalı.
+        # Şimdilik genel seçici (_get_item_at) içinde deneyelim.
+        if hasattr(self, 'b_spline_strokes') and self.b_spline_strokes:
+            logging.debug(f"  _get_item_at: Checking {len(self.b_spline_strokes)} B-Spline strokes...")
+            for i in range(len(self.b_spline_strokes) - 1, -1, -1):
+                stroke_data = self.b_spline_strokes[i]
+                logging.debug(f"    _get_item_at: For B-Spline stroke {i}, attempting to get bbox. World pos: {world_pos}") # YENİ LOG
+                # B-spline'ın sınırlayıcı kutusunu al
+                # Bu fonksiyonun utils.geometry_helpers içinde tanımlı olması gerekiyor.
+                try:
+                    bbox = geometry_helpers.get_bspline_bounding_box(stroke_data)
+                    logging.debug(f"    _get_item_at: B-Spline stroke {i} bbox: {bbox}. IsNull: {bbox.isNull() if bbox else 'N/A'}") # YENİ LOG
+                    if not bbox.isNull() and bbox.contains(world_pos):
+                        logging.debug(f"  >>> _get_item_at: B-Spline stroke {i} CONTAINS world_pos. Returning ('bspline_strokes', {i})") # YENİ LOG
+                        # TODO: Daha hassas bir "nokta eğri üzerinde mi" kontrolü eklenebilir.
+                        # Şimdilik sadece bbox yeterli.
+                        # logging.debug(f"  >>> _get_item_at: B-Spline stroke found at index {i} by bbox.contains") # ESKİ LOG
+                        return ('bspline_strokes', i) # Yeni bir item_type tanımlıyoruz
+                    elif bbox.isNull():
+                        logging.debug(f"    _get_item_at: B-Spline stroke {i} bbox isNull. Skipping contains check.") # YENİ LOG
+                    else:
+                        logging.debug(f"    _get_item_at: B-Spline stroke {i} bbox DOES NOT contain world_pos.") # YENİ LOG
+                except Exception as e:
+                    logging.error(f"_get_item_at: B-Spline bbox alınırken hata (stroke {i}): {e}", exc_info=True)
+
         logging.debug("--- _get_item_at: No item found. ---")
         return None
     # --- --- --- --- --- --- --- --- --- --- --- --- -- #
@@ -1251,6 +1565,28 @@ class DrawingCanvas(QWidget):
                 return handle_type
         return None
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- -- #
+
+    # YENİ METOT: B-Spline Kontrol Noktası Bulma
+    def _get_bspline_control_point_at(self, world_pos: QPointF, tolerance: float = 10.0) -> Tuple[int, int] | None:
+        """Verilen dünya koordinatına en yakın B-Spline kontrol noktasını bulur.
+           (stroke_index, control_point_index) veya None döndürür.
+        """
+        # Toleransı dünya birimlerinde düşünmeliyiz.
+        # world_to_screen dönüşümü ile ekran piksel toleransını dünya birimine çevirebiliriz,
+        # ancak bu zoom seviyesine göre değişir. Şimdilik sabit bir dünya toleransı kullanalım.
+        # Daha gelişmiş bir çözüm, ekran pikseli toleransını anlık zoom'a göre dünyaya çevirmek olabilir.
+
+        for stroke_idx, stroke_data in enumerate(self.b_spline_strokes):
+            control_points_np = stroke_data.get('control_points')
+            if control_points_np is not None:
+                for cp_idx, cp_np in enumerate(control_points_np):
+                    # cp_np, [x, y] şeklinde bir numpy array
+                    cp_qpointf = QPointF(cp_np[0], cp_np[1])
+                    # Basit manhattan uzaklığı veya Öklid mesafesi kullanılabilir
+                    if (world_pos - cp_qpointf).manhattanLength() < tolerance:
+                        return (stroke_idx, cp_idx)
+        return None
+    # --- --- --- --- --- --- --- --- --- --- --- --- -- #
 
     def load_background_template_image(self, image_path: str | None = None, force_reload: bool = False):
         """Verilen yoldan veya mevcut _current_background_image_path'den şablon arka planını yükler."""
@@ -1617,3 +1953,27 @@ class DrawingCanvas(QWidget):
             pass  # Çizim bitince iz fade-out ile silinecek
         super().mouseReleaseEvent(event)
 
+    def _calculate_final_states_for_move(self, original_states: List[Any], 
+                                         selected_indices: List[Tuple[str, int]], 
+                                         dx: float, dy: float) -> List[Any]:
+        """Verilen orijinal durumları ve taşıma miktarını kullanarak nihai durumları hesaplar.
+        Her bir öğe için moving_helpers.move_item çağırır.
+        """
+        final_states = []
+        if len(original_states) != len(selected_indices):
+            logging.error("_calculate_final_states_for_move: original_states ve selected_indices uzunlukları eşleşmiyor.")
+            return original_states # Hata durumunda orijinali döndür
+
+        for i, (item_type, index) in enumerate(selected_indices):
+            original_state_copy = copy.deepcopy(original_states[i]) # Üzerinde değişiklik yapmak için kopya al
+            if original_state_copy is None:
+                logging.warning(f"_calculate_final_states_for_move: original_state_copy is None for {item_type}[{index}]")
+                final_states.append(None)
+                continue
+            
+            # moving_helpers.move_item, item_data'yı yerinde değiştirir.
+            # item_type'ı da gönderiyoruz.
+            moving_helpers.move_item(original_state_copy, dx, dy, item_type=item_type)
+            final_states.append(original_state_copy) # Değiştirilmiş kopyayı ekle
+            
+        return final_states

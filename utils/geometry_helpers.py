@@ -6,6 +6,8 @@ from typing import List, Tuple, Any
 import math
 import copy
 import logging
+import numpy as np # YENİ: NumPy importu
+from scipy.interpolate import splev # YENİ: splev importu
 
 from gui.enums import ToolType
 
@@ -119,6 +121,114 @@ def get_item_bounding_box(item_data, item_type: str) -> QRectF:
     
     # Diğer türler için boş bir dikdörtgen döndür
     return QRectF()
+
+def get_bspline_bounding_box(stroke_data: dict, num_samples: int = 100) -> QRectF:
+    """
+    Verilen B-Spline stroke verisi için sınırlayıcı kutuyu hesaplar.
+    Eksik anahtar veya None değer varsa, fallback olarak sadece 'control_points' listesinin bbox'unu döndür.
+    """
+    logging.debug(f"[get_bspline_bounding_box] stroke_data: {stroke_data}")
+    # Anahtarlar eksikse veya None ise, fallback olarak bbox'u kontrol noktalarından hesapla
+    if not isinstance(stroke_data, dict) or 'control_points' not in stroke_data:
+        logging.warning("get_bspline_bounding_box: stroke_data dict değil veya 'control_points' anahtarı yok.")
+        return QRectF()
+    control_points = stroke_data.get('control_points')
+    # Eğer numpy array değilse, QPointF listesi olabilir
+    if isinstance(control_points, list) and len(control_points) > 0 and isinstance(control_points[0], QPointF):
+        min_x = min(p.x() for p in control_points)
+        max_x = max(p.x() for p in control_points)
+        min_y = min(p.y() for p in control_points)
+        max_y = max(p.y() for p in control_points)
+        return QRectF(QPointF(min_x, min_y), QPointF(max_x, max_y))
+    # Eski anahtar kontrolleri ve numpy array işlemleri
+    if not all(k in stroke_data for k in ['control_points', 'knots', 'degree', 'u']):
+        logging.warning("get_bspline_bounding_box: stroke_data eksik anahtarlar içeriyor.")
+        return QRectF()
+    control_points_np = stroke_data.get('control_points')
+    knots = stroke_data.get('knots')
+    degree = stroke_data.get('degree')
+    u_params = stroke_data.get('u')
+    if control_points_np is None or knots is None or degree is None or u_params is None or len(control_points_np) == 0:
+        logging.warning("get_bspline_bounding_box: stroke_data içindeki bazı değerler None veya kontrol noktaları boş.")
+        return QRectF()
+    
+    if not isinstance(control_points_np, np.ndarray):
+        logging.warning("get_bspline_bounding_box: control_points_np bir numpy array değil.")
+        # Hata durumunda sadece kontrol noktalarının bbox'ını döndürmeyi dene (eğer liste ise np array'e çevir)
+        try:
+            if isinstance(control_points_np, list) and len(control_points_np) > 0:
+                # Eğer QPointF listesi ise np array'e çevir
+                if all(isinstance(p, QPointF) for p in control_points_np):
+                    control_points_np = np.array([(p.x(), p.y()) for p in control_points_np])
+                else: # Değilse ve hala liste ise, np.array ile çevirmeyi dene
+                    control_points_np = np.array(control_points_np)
+            
+            if not isinstance(control_points_np, np.ndarray) or control_points_np.ndim != 2 or control_points_np.shape[1] != 2:
+                 logging.error("get_bspline_bounding_box: control_points_np uygun numpy formatına çevrilemedi.")
+                 return QRectF()
+                 
+            min_x = np.min(control_points_np[:, 0])
+            max_x = np.max(control_points_np[:, 0])
+            min_y = np.min(control_points_np[:, 1])
+            max_y = np.max(control_points_np[:, 1])
+            return QRectF(QPointF(min_x, min_y), QPointF(max_x, max_y))
+        except Exception as e_fallback:
+            logging.error(f"get_bspline_bounding_box (fallback numpy dönüşümü): Kontrol noktası bbox hesaplanırken hata: {e_fallback}")
+            return QRectF()
+
+    if len(u_params) == 0: 
+        if len(control_points_np) > 0:
+            min_x = np.min(control_points_np[:, 0])
+            max_x = np.max(control_points_np[:, 0])
+            min_y = np.min(control_points_np[:, 1])
+            max_y = np.max(control_points_np[:, 1])
+            return QRectF(QPointF(min_x, min_y), QPointF(max_x, max_y))
+        return QRectF()
+
+    try:
+        # control_points_np zaten (N,2) formatında olmalı.
+        # splev, tck'nın ikinci elemanı için (dims, N) bekler, yani (2,N).
+        tck = (knots, control_points_np.T, degree)
+        
+        if len(u_params) < 1 or u_params[-1] <= u_params[0]:
+            if len(control_points_np) > 0:
+                min_x = np.min(control_points_np[:, 0])
+                max_x = np.max(control_points_np[:, 0])
+                min_y = np.min(control_points_np[:, 1])
+                max_y = np.max(control_points_np[:, 1])
+                return QRectF(QPointF(min_x, min_y), QPointF(max_x, max_y))
+            return QRectF()
+
+        x_coords, y_coords = splev(np.linspace(u_params[0], u_params[-1], num_samples), tck)
+
+        if not isinstance(x_coords, np.ndarray) or not isinstance(y_coords, np.ndarray) or x_coords.size == 0 or y_coords.size == 0:
+            logging.warning("get_bspline_bounding_box: splev beklenen numpy array'leri döndürmedi veya boş array döndürdü.")
+            # Fallback to control points bbox
+            if len(control_points_np) > 0:
+                min_x = np.min(control_points_np[:, 0]); max_x = np.max(control_points_np[:, 0])
+                min_y = np.min(control_points_np[:, 1]); max_y = np.max(control_points_np[:, 1])
+                return QRectF(QPointF(min_x, min_y), QPointF(max_x, max_y))
+            return QRectF()
+
+        min_x = np.min(x_coords)
+        max_x = np.max(x_coords)
+        min_y = np.min(y_coords)
+        max_y = np.max(y_coords)
+
+        return QRectF(QPointF(min_x, min_y), QPointF(max_x, max_y))
+
+    except Exception as e:
+        logging.error(f"get_bspline_bounding_box: B-Spline örneklenirken hata: {e}", exc_info=True)
+        try:
+            if len(control_points_np) > 0 and isinstance(control_points_np, np.ndarray) and control_points_np.ndim == 2 and control_points_np.shape[1] == 2:
+                min_x = np.min(control_points_np[:, 0])
+                max_x = np.max(control_points_np[:, 0])
+                min_y = np.min(control_points_np[:, 1])
+                max_y = np.max(control_points_np[:, 1])
+                return QRectF(QPointF(min_x, min_y), QPointF(max_x, max_y))
+        except Exception as e_fallback:
+            logging.error(f"get_bspline_bounding_box (fallback): Kontrol noktası bbox hesaplanırken hata: {e_fallback}")
+        return QRectF()
 
 def is_point_on_line(point, line_start, line_end, tolerance=5.0):
     """Bir noktanın çizgi üzerinde olup olmadığını kontrol eder.
@@ -440,5 +550,25 @@ def is_point_in_rotated_rect(point_world: QPointF, rect_world: QRectF, angle_deg
     # 2. Döndürülmüş noktanın, orijinal (döndürülmemiş) dikdörtgenin içinde olup olmadığını kontrol et.
     return rect_world.contains(rotated_point)
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- #
+
+# YENİ: Standart Tutamaç Pozisyonları
+def get_standard_handle_positions(bbox: QRectF) -> dict:
+    """
+    Verilen bir QRectF (sınırlayıcı kutu) için standart 8 boyutlandırma
+    tutamacının dünya koordinatlarındaki pozisyonlarını bir sözlük olarak döndürür.
+    """
+    if bbox.isNull() or not bbox.isValid():
+        return {}
+    return {
+        'top-left': bbox.topLeft(),
+        'top-right': bbox.topRight(),
+        'bottom-left': bbox.bottomLeft(),
+        'bottom-right': bbox.bottomRight(),
+        'middle-top': QPointF(bbox.center().x(), bbox.top()),
+        'middle-bottom': QPointF(bbox.center().x(), bbox.bottom()),
+        'middle-left': QPointF(bbox.left(), bbox.center().y()),
+        'middle-right': QPointF(bbox.right(), bbox.center().y())
+    }
+# --- --- --- --- --- --- --- --- --- ---
 
 # ... rest of the file ... 

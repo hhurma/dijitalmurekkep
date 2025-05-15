@@ -5,7 +5,7 @@ import logging
 from typing import TYPE_CHECKING, List, Tuple, Dict, Optional
 import math
 
-from PyQt6.QtCore import QPointF, Qt
+from PyQt6.QtCore import QPointF, Qt, QRectF
 from PyQt6.QtGui import QTabletEvent, QColor, QPen, QPainter
 from PyQt6.QtWidgets import QApplication
 
@@ -386,6 +386,24 @@ def draw_node_selector_overlay(canvas: 'DrawingCanvas', painter: QPainter):
             if shape_data[0] == ToolType.EDITABLE_LINE:
                 control_points = shape_data[3]
                 
+                # Önce gerçek B-spline kontrol noktaları varsa onları göster
+                if hasattr(canvas, 'spline_control_points') and canvas.spline_control_points:
+                    # İlk olarak B-spline kontrol noktaları arasındaki bağlantıları çiz
+                    painter.save()
+                    pen = QPen(QColor(180, 80, 80, 150), 1, Qt.PenStyle.DashLine)
+                    painter.setPen(pen)
+                    for i in range(len(canvas.spline_control_points)-1):
+                        p1 = canvas.spline_control_points[i]
+                        p2 = canvas.spline_control_points[i+1]
+                        painter.drawLine(p1, p2)
+                    
+                    # Ardından B-spline kontrol noktalarını çiz (kırmızı)
+                    for i, cp in enumerate(canvas.spline_control_points):
+                        painter.setBrush(QColor(255, 0, 0, 200))  # Kırmızı
+                        painter.setPen(QPen(Qt.GlobalColor.white, 1.0))
+                        painter.drawRect(QRectF(cp.x()-4, cp.y()-4, 8, 8))  # Kare şeklinde kontrol noktaları
+                    painter.restore()
+                
                 # Bezier kontrol çizgilerini çiz
                 pen = QPen(HANDLE_CONNECT_COLOR, 1, Qt.PenStyle.DashLine)
                 painter.setPen(pen)
@@ -402,7 +420,7 @@ def draw_node_selector_overlay(canvas: 'DrawingCanvas', painter: QPainter):
                         if i - 1 >= 0 and i % 3 == 0:  # c2 için (önceki segmentin)
                             painter.drawLine(main_point, control_points[i - 1])
                 
-                # Ana noktaları çiz
+                # Ana noktaları çiz (mavi)
                 for i in range(0, len(control_points), 3):
                     if i < len(control_points):
                         point = control_points[i]
@@ -413,23 +431,24 @@ def draw_node_selector_overlay(canvas: 'DrawingCanvas', painter: QPainter):
                         elif hasattr(canvas, 'hovered_node_index') and i == canvas.hovered_node_index:
                             painter.setBrush(SELECTION_HIGHLIGHT_COLOR)
                         else:
-                            painter.setBrush(NODE_COLOR)
+                            painter.setBrush(NODE_COLOR)  # Normal durum: Mavi
                         
                         painter.setPen(QPen(Qt.GlobalColor.white, 1.5))
                         painter.drawEllipse(point, HANDLE_SIZE/2, HANDLE_SIZE/2)
                 
-                # Bezier kontrol noktalarını çiz
+                # Bezier kontrol noktalarını çiz (gri)
                 for i in range(len(control_points)):
                     if i % 3 != 0:  # Sadece kontrol noktaları
                         point = control_points[i]
                         
-                        # Seçili veya vurgulanmış kontrol noktası için farklı renk
+                        # Seçili veya vurgulanmış kontrol noktası için farklı renk (gri yerine kırmızı)
                         if i == canvas.active_bezier_handle_index:
-                            painter.setBrush(ACTIVE_NODE_COLOR)
+                            painter.setBrush(ACTIVE_NODE_COLOR)  # Kırmızı
                         elif hasattr(canvas, 'hovered_bezier_handle_index') and i == canvas.hovered_bezier_handle_index:
-                            painter.setBrush(SELECTION_HIGHLIGHT_COLOR)
+                            painter.setBrush(SELECTION_HIGHLIGHT_COLOR)  # Turuncu
                         else:
-                            painter.setBrush(BEZIER_HANDLE_COLOR)
+                            painter.setBrush(QColor(160, 160, 160, 160))  # Gri
                         
                         painter.setPen(QPen(Qt.GlobalColor.white, 1.0))
-                        painter.drawEllipse(point, BEZIER_HANDLE_SIZE/2, BEZIER_HANDLE_SIZE/2) 
+                        # Kontrol noktalarını küçük kare şeklinde göster
+                        painter.drawRect(QRectF(point.x()-3, point.y()-3, 6, 6)) 

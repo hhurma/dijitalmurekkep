@@ -240,16 +240,126 @@ def draw_shape(painter: QPainter, shape_data: List[Any], line_style: str = 'soli
             
             # Bezier eğrisi path'ini oluştur
             path = QPainterPath()
-            path.moveTo(control_points[0])
             
-            # Tüm bezier segmentlerini çiz
-            for i in range(0, len(control_points) - 3, 3):
-                if i + 3 < len(control_points):
-                    path.cubicTo(
-                        control_points[i + 1],  # c1
-                        control_points[i + 2],  # c2
-                        control_points[i + 3]   # p1
-                    )
+            # Eğer kontrol noktaları kübik Bezier eğrileri için ayarlanmışsa
+            if len(control_points) >= 4 and (len(control_points) - 1) % 3 == 0:
+                # Standart kübik Bezier eğrisi çizimi
+                path.moveTo(control_points[0])
+                for i in range(0, len(control_points) - 3, 3):
+                    if i + 3 < len(control_points):
+                        path.cubicTo(
+                            control_points[i + 1],  # c1
+                            control_points[i + 2],  # c2
+                            control_points[i + 3]   # p1
+                        )
+            else:
+                # Düz çizgilerin yumuşatılmış versiyonu: her iki nokta arasına
+                # otomatik olarak kübik Bezier eğrisi oluştur
+                if len(control_points) >= 2:
+                    path.moveTo(control_points[0])
+                    
+                    # Eğriliği kontrol etmek için yön vektörlerini ve kontrol noktalarını hesapla
+                    # Catmull-Rom tipi spline interpolasyon yaklaşımı
+                    tension = 0.3  # Düşük değerler daha yumuşak eğriler oluşturur (0-1 arası)
+                    control_distance = 0.4  # Kontrol noktalarının ana noktalardan uzaklık faktörü
+                    
+                    # Her nokta çifti için kontrol noktaları hesapla
+                    for i in range(len(control_points) - 1):
+                        p0 = control_points[i]      # Mevcut nokta
+                        p3 = control_points[i + 1]  # Sonraki nokta
+                        
+                        # İki nokta arasındaki mesafeyi hesapla
+                        dx = p3.x() - p0.x()
+                        dy = p3.y() - p0.y()
+                        distance = math.sqrt(dx*dx + dy*dy)
+                        
+                        # Kontrol noktalarının yönlerini hesapla
+                        # Önceki ve sonraki noktalardan yön vektörleri elde et
+                        if i == 0:  # İlk nokta için
+                            if len(control_points) > 2:  # En az 3 nokta varsa
+                                # İlk iki segment kullanılarak yön hesapla
+                                next_dx = control_points[2].x() - p3.x()
+                                next_dy = control_points[2].y() - p3.y()
+                                # Ters yönde ortalama eğim
+                                tan_x = dx - next_dx * tension * 0.5
+                                tan_y = dy - next_dy * tension * 0.5
+                                
+                                # Sonraki nokta için teğeti ayarla
+                                next_tan_x = dx
+                                next_tan_y = dy
+                                
+                                if i + 2 < len(control_points):  # Eğer yeterli nokta varsa
+                                    next_tan_x = (dx + next_dx) * 0.5 * tension
+                                    next_tan_y = (dy + next_dy) * 0.5 * tension
+                            else:
+                                # Sadece mevcut segment
+                                tan_x = dx
+                                tan_y = dy
+                                next_tan_x = dx
+                                next_tan_y = dy
+                        elif i == len(control_points) - 2:  # Son nokta için
+                            if len(control_points) > 2:
+                                # Son iki segment kullanılarak yön hesapla
+                                prev_dx = p0.x() - control_points[i - 1].x()
+                                prev_dy = p0.y() - control_points[i - 1].y()
+                                # Ortalama eğim
+                                tan_x = prev_dx * tension * 0.5 + dx
+                                tan_y = prev_dy * tension * 0.5 + dy
+                            else:
+                                # Sadece mevcut segment
+                                tan_x = dx
+                                tan_y = dy
+                                
+                            # Son nokta için sonraki teğeti ayarla (aynı yön)
+                            next_tan_x = dx
+                            next_tan_y = dy
+                        else:
+                            # Ara noktalar için önceki ve sonraki segmentlerden ortalama yön hesapla
+                            prev_dx = p0.x() - control_points[i - 1].x()
+                            prev_dy = p0.y() - control_points[i - 1].y()
+                            next_dx = control_points[i + 2].x() - p3.x() if i + 2 < len(control_points) else 0
+                            next_dy = control_points[i + 2].y() - p3.y() if i + 2 < len(control_points) else 0
+                            
+                            # Ortalama teğet yönü
+                            tan_x = (prev_dx + dx) * 0.5 * tension
+                            tan_y = (prev_dy + dy) * 0.5 * tension
+                            
+                            # Sonraki teğet için varsayılan değerleri ata
+                            next_tan_x = dx
+                            next_tan_y = dy
+                            
+                            # Eğer başka bir nokta daha varsa, gerçek değerleri hesapla
+                            if i + 2 < len(control_points):
+                                next_tan_x = (dx + next_dx) * 0.5 * tension
+                                next_tan_y = (dy + next_dy) * 0.5 * tension
+                        
+                        # Teğet vektörü normalize et ve kontrol noktası uzaklığını ayarla
+                        tan_len = math.sqrt(tan_x*tan_x + tan_y*tan_y)
+                        if tan_len > 1e-6:  # Sıfıra bölmeyi önle
+                            tan_x = tan_x / tan_len * distance * control_distance
+                            tan_y = tan_y / tan_len * distance * control_distance
+                        else:
+                            tan_x = dx * control_distance
+                            tan_y = dy * control_distance
+                            
+                        if i < len(control_points) - 2:
+                            next_tan_len = math.sqrt(next_tan_x*next_tan_x + next_tan_y*next_tan_y)
+                            if next_tan_len > 1e-6:
+                                next_tan_x = next_tan_x / next_tan_len * distance * control_distance
+                                next_tan_y = next_tan_y / next_tan_len * distance * control_distance
+                            else:
+                                next_tan_x = dx * control_distance
+                                next_tan_y = dy * control_distance
+                        
+                        # Kontrol noktalarını hesapla
+                        p1 = QPointF(p0.x() + tan_x, p0.y() + tan_y)
+                        if i < len(control_points) - 2:
+                            p2 = QPointF(p3.x() - next_tan_x, p3.y() - next_tan_y)
+                        else:
+                            p2 = QPointF(p3.x() - tan_x, p3.y() - tan_y)
+                        
+                        # Bezier eğrisi çiz
+                        path.cubicTo(p1, p2, p3)
             
             painter.drawPath(path)
             painter.restore()
