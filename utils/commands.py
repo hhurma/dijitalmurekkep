@@ -908,12 +908,13 @@ class RotateItemsCommand(Command):
 # --- --- --- --- --- --- --- -- #
 
 class PasteItemsCommand(Command):
-    """Clipboard'dan yapıştırılan öğeleri ekleme işlemini Undo/Redo ile yönetir."""
-    def __init__(self, canvas: 'DrawingCanvas', items_to_paste: list):
+    """Clipboard'dan öğeleri yapıştırmak için kullanılan komut sınıfı."""
+    
+    def __init__(self, canvas, items_to_paste):
         self.canvas = canvas
-        self.items_to_paste = copy.deepcopy(items_to_paste)  # [('lines', line_data), ...]
-        self.pasted_indices = []  # [('lines', index), ...]
-
+        self.items_to_paste = items_to_paste
+        self.pasted_indices = []  # Yapıştırılan öğelerin indisleri
+    
     def execute(self):
         self.pasted_indices = []
         for item_type, item_data in self.items_to_paste:
@@ -923,33 +924,53 @@ class PasteItemsCommand(Command):
                 self.canvas.lines.append(yeni_data)
                 self.pasted_indices.append(('lines', len(self.canvas.lines)-1))
             elif item_type == 'shapes' and len(yeni_data) > 4:
-                yeni_data[3] = QPointF(yeni_data[3].x()+20, yeni_data[3].y()+20)
-                yeni_data[4] = QPointF(yeni_data[4].x()+20, yeni_data[4].y()+20)
+                # Şekil tipine göre kontrol yaparak işlem gerçekleştir
+                if yeni_data[0] == ToolType.EDITABLE_LINE and len(yeni_data) > 3:
+                    # Düzenlenebilir çizgi için özel işlem
+                    # Kontrol noktalarını öteleme
+                    control_points = yeni_data[3]
+                    control_points = [[p[0]+20, p[1]+20] for p in control_points]
+                    yeni_data[3] = control_points
+                else:
+                    # Normal şekiller için
+                    # Dikdörtgen ve oval gibi şekilleri öteleme
+                    rect = yeni_data[1]
+                    if isinstance(rect, QRectF):
+                        yeni_data[1] = QRectF(rect.x()+20, rect.y()+20, rect.width(), rect.height())
+                
                 self.canvas.shapes.append(yeni_data)
                 self.pasted_indices.append(('shapes', len(self.canvas.shapes)-1))
-            elif item_type == 'images' and 'rect' in yeni_data:
-                yeni_data['uuid'] = str(uuid.uuid4())
-                if 'path' in yeni_data:
-                    yeni_data['pixmap'] = QPixmap(yeni_data['path'])
-                    yeni_data['original_pixmap_for_scaling'] = yeni_data['pixmap']
-                    yeni_data['pixmap_item'] = QGraphicsPixmapItem(yeni_data['pixmap'])
-                    yeni_data['pixmap_item'].setPos(yeni_data['rect'].x(), yeni_data['rect'].y())
-                rect = yeni_data['rect']
-                yeni_rect = rect.translated(20, 20)
-                yeni_data['rect'] = yeni_rect
-                if 'pixmap_item' in yeni_data:
-                    yeni_data['pixmap_item'].setPos(yeni_rect.x(), yeni_rect.y())
-                if hasattr(self.canvas._parent_page, 'images'):
-                    self.canvas._parent_page.images.append(yeni_data)
-                    self.pasted_indices.append(('images', len(self.canvas._parent_page.images)-1))
-                    if hasattr(self.canvas, '_load_qgraphics_pixmap_items_from_page'):
-                        self.canvas._load_qgraphics_pixmap_items_from_page()
-        self.canvas.selected_item_indices = self.pasted_indices
+            
+            elif item_type == 'bspline_strokes' and hasattr(self.canvas, 'b_spline_strokes'):
+                # B-Spline çizgileri için özel işlem
+                if 'control_points' in yeni_data:
+                    # Kontrol noktalarını öteleme (20 piksel sağa ve aşağıya)
+                    import numpy as np
+                    if isinstance(yeni_data['control_points'], np.ndarray):
+                        yeni_data['control_points'] = yeni_data['control_points'] + np.array([20, 20])
+                
+                # Yapıştırılan B-spline'ı ekle ve indisini kaydet
+                self.canvas.b_spline_strokes.append(yeni_data)
+                self.pasted_indices.append(('bspline_strokes', len(self.canvas.b_spline_strokes)-1))
+                logging.info(f"B-spline çizgisi yapıştırıldı. İndis: {len(self.canvas.b_spline_strokes)-1}")
+            
+            elif item_type == 'images' and hasattr(self.canvas._parent_page, 'images'):
+                # Resim verisi
+                if len(yeni_data) >= 3:  # rect, path, pixmap
+                    # Resimleri öteleme
+                    rect = yeni_data.get('rect')
+                    if isinstance(rect, QRectF):
+                        yeni_data['rect'] = QRectF(rect.x()+20, rect.y()+20, rect.width(), rect.height())
+                
+                self.canvas._parent_page.images.append(yeni_data)
+                self.pasted_indices.append(('images', len(self.canvas._parent_page.images)-1))
+        
+        # Canvas'ı yeniden çiz
+        if hasattr(self.canvas, '_load_qgraphics_items'):
+            self.canvas._load_qgraphics_items()
         self.canvas.update()
-        logging.info(f"PasteItemsCommand: {len(self.pasted_indices)} öğe yapıştırıldı.")
-        if hasattr(self.canvas, 'selection_changed'):
-            self.canvas.selection_changed.emit()
-
+        return True
+    
     def undo(self):
         # Yapıştırılan öğeleri geri al
         for item_type, idx in sorted(self.pasted_indices, reverse=True):
@@ -957,15 +978,16 @@ class PasteItemsCommand(Command):
                 del self.canvas.lines[idx]
             elif item_type == 'shapes' and 0 <= idx < len(self.canvas.shapes):
                 del self.canvas.shapes[idx]
+            elif item_type == 'bspline_strokes' and hasattr(self.canvas, 'b_spline_strokes') and 0 <= idx < len(self.canvas.b_spline_strokes):
+                del self.canvas.b_spline_strokes[idx]
             elif item_type == 'images' and hasattr(self.canvas._parent_page, 'images') and 0 <= idx < len(self.canvas._parent_page.images):
                 del self.canvas._parent_page.images[idx]
-        if hasattr(self.canvas, '_load_qgraphics_pixmap_items_from_page'):
-            self.canvas._load_qgraphics_pixmap_items_from_page()
-        self.canvas.selected_item_indices = []
+        
+        if hasattr(self.canvas, '_load_qgraphics_items'):
+            self.canvas._load_qgraphics_items()
         self.canvas.update()
         logging.info("PasteItemsCommand: Undo ile yapıştırılan öğeler kaldırıldı.")
-        if hasattr(self.canvas, 'selection_changed'):
-            self.canvas.selection_changed.emit()
+        return True
 
 # QPixmap ve QGraphicsPixmapItem gibi nesneleri kopyalamadan atlayan yardımcı fonksiyon
 
@@ -995,6 +1017,10 @@ class DeleteItemsCommand(Command):
                 data = copy.deepcopy(self.canvas.shapes[idx])
                 del self.canvas.shapes[idx]
                 self.deleted_items.append(('shapes', idx, data))
+            elif item_type == 'bspline_strokes' and hasattr(self.canvas, 'b_spline_strokes') and 0 <= idx < len(self.canvas.b_spline_strokes):
+                data = copy.deepcopy(self.canvas.b_spline_strokes[idx])
+                del self.canvas.b_spline_strokes[idx]
+                self.deleted_items.append(('bspline_strokes', idx, data))
             elif item_type == 'images' and hasattr(self.canvas._parent_page, 'images') and 0 <= idx < len(self.canvas._parent_page.images):
                 data = _copy_image_data_without_qpixmap(self.canvas._parent_page.images[idx])
                 del self.canvas._parent_page.images[idx]
@@ -1016,6 +1042,9 @@ class DeleteItemsCommand(Command):
                 self.canvas.shapes.insert(idx, data)
                 logging.debug(f"DeleteItemsCommand.undo: shapes'e eklenen veri: {data}")
                 logging.debug(f"DeleteItemsCommand.undo: shapes'in son hali: {self.canvas.shapes}")
+            elif item_type == 'bspline_strokes' and hasattr(self.canvas, 'b_spline_strokes'):
+                self.canvas.b_spline_strokes.insert(idx, data)
+                logging.debug(f"DeleteItemsCommand.undo: b_spline_strokes'a eklenen veri: {data}")
             elif item_type == 'images' and hasattr(self.canvas._parent_page, 'images'):
                 # QPixmap'ı path üzerinden tekrar yükle
                 from PyQt6.QtGui import QPixmap

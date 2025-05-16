@@ -10,6 +10,7 @@ import uuid
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QGraphicsPixmapItem
 from utils.commands import PasteItemsCommand, DeleteItemsCommand
+from gui.enums import ToolType
 
 # Basit bir uygulama içi clipboard (sadece bellek)
 _CLIPBOARD: Dict[str, Any] = {
@@ -28,7 +29,21 @@ def handle_copy_selection(canvas) -> bool:
         if item_type == 'lines' and 0 <= idx < len(canvas.lines):
             _CLIPBOARD['items'].append(('lines', copy.deepcopy(canvas.lines[idx])))
         elif item_type == 'shapes' and 0 <= idx < len(canvas.shapes):
-            _CLIPBOARD['items'].append(('shapes', copy.deepcopy(canvas.shapes[idx])))
+            # Şekil tipine göre kontrol yap - düzenlenebilir çizgi için özel işlem
+            shape_data = canvas.shapes[idx]
+            if len(shape_data) > 0 and shape_data[0] == ToolType.EDITABLE_LINE:
+                # Düzenlenebilir çizgi özel formatı
+                editable_line_data = copy.deepcopy(shape_data)
+                _CLIPBOARD['items'].append(('shapes', editable_line_data))
+                logging.debug(f"handle_copy_selection: Düzenlenebilir çizgi kopyalandı: {editable_line_data}")
+            else:
+                # Normal şekiller
+                _CLIPBOARD['items'].append(('shapes', copy.deepcopy(shape_data)))
+        elif item_type == 'bspline_strokes' and hasattr(canvas, 'b_spline_strokes') and 0 <= idx < len(canvas.b_spline_strokes):
+            # B-Spline özel işlemi
+            bspline_data = copy.deepcopy(canvas.b_spline_strokes[idx])
+            _CLIPBOARD['items'].append(('bspline_strokes', bspline_data))
+            logging.debug(f"handle_copy_selection: B-Spline kopyalandı: {idx}")
         elif item_type == 'images' and hasattr(canvas._parent_page, 'images') and 0 <= idx < len(canvas._parent_page.images):
             img = canvas._parent_page.images[idx]
             # Sadece temel alanları kopyala (QPixmap ve pixmap_item hariç)
@@ -44,37 +59,67 @@ def handle_copy_selection(canvas) -> bool:
     return True
 
 def handle_cut_selection(canvas) -> bool:
+    """Seçili öğeleri keser (kopyalar ve siler)."""
     logging.debug(f"handle_cut_selection: BAŞLANGIÇ shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
-    """Seçili öğeleri keser (clipboard'a alır ve canvas'tan siler, Undo/Redo ile)."""
-    if not handle_copy_selection(canvas):
+    
+    # Önce kopyala
+    copied = handle_copy_selection(canvas)
+    if not copied:
         return False
-    logging.debug(f"handle_cut_selection: Komut öncesi shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
+    
+    # Seçili öğelerin olmadığını kontrol et
     if not hasattr(canvas, 'selected_item_indices') or not canvas.selected_item_indices:
-        logging.info("handle_cut_selection: Seçili öğe yok, kesme yapılmadı.")
         return False
+    
+    # Sonra sil (DeleteItemsCommand ile)
+    logging.debug(f"handle_cut_selection: Komut öncesi shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
     command = DeleteItemsCommand(canvas, canvas.selected_item_indices)
     logging.debug(f"handle_cut_selection: DeleteItemsCommand sonrası shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
+    
+    # Undo manager varsa komut ile sil, yoksa doğrudan sil
     if hasattr(canvas, 'undo_manager') and canvas.undo_manager:
         canvas.undo_manager.execute(command)
-        logging.debug(f"handle_cut_selection: SON shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
-        return True
     else:
         logging.warning("handle_cut_selection: Undo manager bulunamadı, doğrudan silme yapılacak.")
         command.execute()
-        logging.debug(f"handle_cut_selection: SON (doğrudan silme) shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
-        return True
+    
+    logging.debug(f"handle_cut_selection: SON shapes id={id(canvas.shapes)}, içerik={canvas.shapes} ")
+    return True
 
 def handle_paste_selection(canvas) -> bool:
-    """Clipboard'daki öğeleri canvas'a yapıştırır (Undo/Redo ile)."""
+    """Clipboard'dan öğeleri yapıştırır."""
     global _CLIPBOARD
-    if not _CLIPBOARD['items']:
+    if not _CLIPBOARD or 'items' not in _CLIPBOARD or not _CLIPBOARD['items']:
         logging.info("handle_paste_selection: Clipboard boş, yapıştırma yapılmadı.")
         return False
-    command = PasteItemsCommand(canvas, _CLIPBOARD['items'])
-    if hasattr(canvas, 'undo_manager') and canvas.undo_manager:
-        canvas.undo_manager.execute(command)
+    
+    # Yapıştırılacak öğeleri hazırla
+    items_to_paste = []
+    for item_type, item_data in _CLIPBOARD['items']:
+        if item_type == 'lines' or item_type == 'shapes':
+            items_to_paste.append((item_type, item_data))
+        elif item_type == 'bspline_strokes' and hasattr(canvas, 'b_spline_strokes'):
+            # b_spline_stroke için özel işlem
+            items_to_paste.append((item_type, item_data))
+            logging.debug(f"handle_paste_selection: b_spline_stroke yapıştırmaya hazırlanıyor.")
+        elif item_type == 'images':
+            # Resim verisi
+            items_to_paste.append((item_type, item_data))
+    
+    if not items_to_paste:
+        logging.info("handle_paste_selection: Yapıştırılacak uygun öğe yok.")
+        return False
+    
+    # Yapıştırma komutunu oluştur ve yürüt
+    paste_command = PasteItemsCommand(canvas, items_to_paste)
+    canvas.undo_manager.execute(paste_command)
+    
+    # Komutun başarılı olduğunu kontrol et
+    if hasattr(paste_command, 'pasted_indices') and paste_command.pasted_indices:
+        canvas.selected_item_indices = paste_command.pasted_indices
+        canvas.update()
+        logging.info(f"handle_paste_selection: {len(paste_command.pasted_indices)} öğe başarıyla yapıştırıldı.")
         return True
     else:
-        logging.warning("handle_paste_selection: Undo manager bulunamadı, doğrudan ekleme yapılacak.")
-        command.execute()
-        return True 
+        logging.error("handle_paste_selection: Yapıştırma işlemi başarısız.")
+        return False 
