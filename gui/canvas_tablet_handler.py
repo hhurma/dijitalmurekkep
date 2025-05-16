@@ -324,8 +324,8 @@ def calculate_rotated_bbox_from_handle(
     return new_bbox_world
 
 def handle_tablet_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
-    print(f"[DEBUG] TOOL (PRESS): {canvas.current_tool}")
-    logging.info(f"TOOL (PRESS): {canvas.current_tool}")
+    #print(f"[DEBUG] TOOL (PRESS): {canvas.current_tool}")
+    #logging.info(f"TOOL (PRESS): {canvas.current_tool}")
     """
     DrawingCanvas._handle_tablet_press metodunun taşınmış halidir.
     Tablet basma olayını yönetir.
@@ -582,7 +582,7 @@ def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEven
             action_performed = True
         elif canvas.moving_selection:
             # Seçili öğeler taşınıyor
-            logging.debug(f"Canvas Tablet Handler: moving selection. Move start point: {canvas.move_start_point}, isNull: {canvas.move_start_point.isNull()}")
+            #logging.debug(f"Canvas Tablet Handler: moving selection. Move start point: {canvas.move_start_point}, isNull: {canvas.move_start_point.isNull()}")
             selector_tool_handler.handle_selector_move_selection(canvas, pos, event)
             action_performed = True
         elif canvas.resizing_selection:
@@ -650,8 +650,8 @@ def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEven
         event.accept()
 
 def handle_tablet_release(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
-    print(f"[DEBUG] TOOL (RELEASE): {canvas.current_tool}")
-    logging.info(f"TOOL (RELEASE): {canvas.current_tool}")
+    #print(f"[DEBUG] TOOL (RELEASE): {canvas.current_tool}")
+    #logging.info(f"TOOL (RELEASE): {canvas.current_tool}")
     """
     DrawingCanvas._handle_tablet_release metodunun taşınmış halidir.
     Tablet bırakma olayını yönetir.

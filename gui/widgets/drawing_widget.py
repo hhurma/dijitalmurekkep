@@ -15,13 +15,13 @@ class DrawingWidget(QWidget):
         self.setMouseTracking(True) # Enable tracking even when no button is pressed
         self.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, False) # TabletEvent için bunu False yapabiliriz
         self.default_line_thickness = 2 # YENİ: Varsayılan kalınlık
-        logging.debug(f"DrawingWidget initialized. ID: {id(self)}, default_line_thickness: {self.default_line_thickness}") # YENİ LOG
+        #logging.debug(f"DrawingWidget initialized. ID: {id(self)}, default_line_thickness: {self.default_line_thickness}") # YENİ LOG
 
     def setDefaultLineThickness(self, thickness):
         """Sets the default thickness for new strokes."""
         old_thickness = self.default_line_thickness
         self.default_line_thickness = thickness
-        logging.debug(f"DrawingWidget ID: {id(self)}. setDefaultLineThickness called. Old: {old_thickness}, New: {self.default_line_thickness}") # YENİ LOG
+        #logging.debug(f"DrawingWidget ID: {id(self)}. setDefaultLineThickness called. Old: {old_thickness}, New: {self.default_line_thickness}") # YENİ LOG
 
     # YENİ METOD: Verilen dünya koordinatına en yakın kontrol noktasını bulur.
     def _get_control_point_at(self, world_pos: QPointF, tolerance: float = 10.0) -> tuple[int, int] | None:
@@ -53,7 +53,7 @@ class DrawingWidget(QWidget):
         self.current_stroke = [(world_pos, event.pressure())] 
         self.selected_control_point = None # Yeni çizgi başlarken CP seçimini kaldır
         self.drag_start_cp_pos = None
-        logging.debug(f"DrawingWidget: Starting new stroke at {world_pos}")
+        #logging.debug(f"DrawingWidget: Starting new stroke at {world_pos}")
         self.update()
 
     def tabletMoveEvent(self, world_pos: QPointF, event: QTabletEvent):
@@ -84,7 +84,7 @@ class DrawingWidget(QWidget):
                     # smoothing değerini artırarak kontrol noktası sayısını azaltmayı dene
                     # Önceki sabit değer 5.0 idi. Şimdi nokta sayısına orantılı yapalım.
                     smoothing_factor = points_np.shape[0] * 0.75 
-                    logging.debug(f"DrawingWidget: splprep çağrılıyor. Nokta sayısı: {points_np.shape[0]}, Smoothing faktörü: {smoothing_factor:.2f}, Derece: {k}")
+                    #logging.debug(f"DrawingWidget: splprep çağrılıyor. Nokta sayısı: {points_np.shape[0]}, Smoothing faktörü: {smoothing_factor:.2f}, Derece: {k}")
                     tck, u = splprep(points_np.T, s=smoothing_factor, k=k)
                     # tck = (knots, control_points_scipy, degree)
                     # control_points_scipy, scipy'den (K, Ndim) şeklinde bir array döner (K kontrol noktası, Ndim=2)
@@ -111,10 +111,11 @@ class DrawingWidget(QWidget):
                     control_points_list_np = [np.array(cp_row) for cp_row in control_points_combined_np_array]
 
                     # YENİ LOG: control_points_list_np'nin formatını kontrol et
-                    logging.debug(f"DrawingWidget tabletReleaseEvent: control_points_list_np (len: {len(control_points_list_np) if control_points_list_np is not None else 'None'}):")
+                    #logging.debug(f"DrawingWidget tabletReleaseEvent: control_points_list_np (len: {len(control_points_list_np) if control_points_list_np is not None else 'None'}):")
                     if control_points_list_np:
                         for idx, cp_arr in enumerate(control_points_list_np):
-                            logging.debug(f"  CP[{idx}]: type={type(cp_arr)}, shape={cp_arr.shape if hasattr(cp_arr, 'shape') else 'N/A'}, content={cp_arr}")
+                            #logging.debug(f"  CP[{idx}]: type={type(cp_arr)}, shape={cp_arr.shape if hasattr(cp_arr, 'shape') else 'N/A'}, content={cp_arr}")
+                            pass
                     # YENİ LOG SONU
 
                     new_stroke_data = {
@@ -126,10 +127,11 @@ class DrawingWidget(QWidget):
                         'original_points_with_pressure': original_points_with_pressure # YENİ: Orijinal noktaları sakla
                     }
                     self.strokes.append(new_stroke_data)
-                    logging.debug(f"DrawingWidget ID: {id(self)}. tabletReleaseEvent: Storing new stroke with thickness: {self.default_line_thickness}")
-                    logging.debug(f"DrawingWidget: New B-spline stroke added to self.strokes. Count: {len(self.strokes)}")
+                    #logging.debug(f"DrawingWidget ID: {id(self)}. tabletReleaseEvent: Storing new stroke with thickness: {self.default_line_thickness}")
+                    #logging.debug(f"DrawingWidget: New B-spline stroke added to self.strokes. Count: {len(self.strokes)}")
                 except Exception as e:
-                    logging.error(f"DrawingWidget: B-spline oluşturulurken hata: {e}", exc_info=True)
+                    #logging.error(f"DrawingWidget: B-spline oluşturulurken hata: {e}", exc_info=True)
+                    pass
             self.current_stroke = []
         self.update()
 
@@ -142,18 +144,18 @@ class DrawingWidget(QWidget):
 
         # Draw completed B-splines and control points
         if not self.strokes:
-            logging.debug(f"DrawingWidget ID: {id(self)}. paintEvent: self.strokes is empty. Nothing to draw for B-splines.") # YENİ LOG
-
+            #logging.debug(f"DrawingWidget ID: {id(self)}. paintEvent: self.strokes is empty. Nothing to draw for B-splines.") # YENİ LOG
+            pass
         for i, stroke_data in enumerate(self.strokes): # YENİ: index için enumerate
-            logging.debug(f"DrawingWidget ID: {id(self)}. paintEvent: Processing stroke {i}. Data keys: {list(stroke_data.keys()) if isinstance(stroke_data, dict) else 'Not a dict'}") # YENİ LOG
-            
+            #logging.debug(f"DrawingWidget ID: {id(self)}. paintEvent: Processing stroke {i}. Data keys: {list(stroke_data.keys()) if isinstance(stroke_data, dict) else 'Not a dict'}") # YENİ LOG
+            pass
             control_points = stroke_data.get('control_points') # .get() ile daha güvenli erişim
             knots = stroke_data.get('knots')
             degree = stroke_data.get('degree')
             u = stroke_data.get('u')
             
             if control_points is None or knots is None or degree is None or u is None:
-                logging.error(f"DrawingWidget ID: {id(self)}. paintEvent: Stroke {i} is missing critical B-spline data. Skipping.")
+                #logging.error(f"DrawingWidget ID: {id(self)}. paintEvent: Stroke {i} is missing critical B-spline data. Skipping.")
                 continue # Bu stroke'u atla
 
             # Get original points with pressure (not directly used for B-spline path rendering here)
@@ -162,7 +164,7 @@ class DrawingWidget(QWidget):
             stroke_thickness = stroke_thickness_from_data if stroke_thickness_from_data is not None else self.default_line_thickness # YENİ: Sonra fallback
 
             # YENİ LOG: Çizim sırasındaki kalınlık ve tipi
-            logging.debug(f"DrawingWidget ID: {id(self)}. paintEvent: Drawing stroke {i} with effective_thickness: {stroke_thickness} (type: {type(stroke_thickness)}). (From stroke: {stroke_thickness_from_data}, Current widget default: {self.default_line_thickness})")
+            #logging.debug(f"DrawingWidget ID: {id(self)}. paintEvent: Drawing stroke {i} with effective_thickness: {stroke_thickness} (type: {type(stroke_thickness)}). (From stroke: {stroke_thickness_from_data}, Current widget default: {self.default_line_thickness})")
 
             # Reconstruct tck from stored components
             try:
@@ -170,7 +172,7 @@ class DrawingWidget(QWidget):
                 # veya burada bir kontrol/dönüşüm eklenebilir.
                 tck = (knots, np.asarray(control_points).T, degree)
             except Exception as e:
-                logging.error(f"DrawingWidget ID: {id(self)}. paintEvent: Error reconstructing tck for stroke {i}: {e}. Control points: {control_points}")
+                #logging.error(f"DrawingWidget ID: {id(self)}. paintEvent: Error reconstructing tck for stroke {i}: {e}. Control points: {control_points}")
                 continue # Bu stroke'u atla
 
             # Define pen for this specific stroke
@@ -179,7 +181,7 @@ class DrawingWidget(QWidget):
                 pen = QPen(Qt.GlobalColor.black, float(stroke_thickness), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
                 painter.setPen(pen)
             except Exception as e:
-                logging.error(f"DrawingWidget ID: {id(self)}. paintEvent: Error creating QPen for stroke {i} with thickness {stroke_thickness}: {e}")
+                #logging.error(f"DrawingWidget ID: {id(self)}. paintEvent: Error creating QPen for stroke {i} with thickness {stroke_thickness}: {e}")
                 # Belki varsayılan bir pen ile devam edilebilir veya bu stroke atlanabilir
                 default_pen_for_error = QPen(Qt.GlobalColor.magenta, 1) # Hata durumunda farklı renkte çiz
                 painter.setPen(default_pen_for_error)
@@ -193,7 +195,7 @@ class DrawingWidget(QWidget):
                     path.lineTo(QPointF(x_fine[i], y_fine[i]))
                 painter.drawPath(path)
             except Exception as e:
-                logging.error(f"DrawingWidget ID: {id(self)}. paintEvent: Error drawing B-spline for stroke {i}: {e}")
+                #logging.error(f"DrawingWidget ID: {id(self)}. paintEvent: Error drawing B-spline for stroke {i}: {e}")
                 continue # Bu stroke'u atla
 
             # Draw control points

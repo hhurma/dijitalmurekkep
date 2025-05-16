@@ -143,7 +143,7 @@ def get_bspline_bounding_box(stroke_data: dict, num_samples: int = 100) -> QRect
     Verilen B-Spline stroke verisi için sınırlayıcı kutuyu hesaplar.
     Eksik anahtar veya None değer varsa, fallback olarak sadece 'control_points' listesinin bbox'unu döndür.
     """
-    logging.debug(f"[get_bspline_bounding_box] stroke_data: {stroke_data}")
+    #logging.debug(f"[get_bspline_bounding_box] stroke_data: {stroke_data}")
     # Anahtarlar eksikse veya None ise, fallback olarak bbox'u kontrol noktalarından hesapla
     if not isinstance(stroke_data, dict) or 'control_points' not in stroke_data:
         logging.warning("get_bspline_bounding_box: stroke_data dict değil veya 'control_points' anahtarı yok.")
@@ -169,7 +169,7 @@ def get_bspline_bounding_box(stroke_data: dict, num_samples: int = 100) -> QRect
         return QRectF()
     
     if not isinstance(control_points_np, np.ndarray):
-        logging.warning("get_bspline_bounding_box: control_points_np bir numpy array değil.")
+        #logging.warning("get_bspline_bounding_box: control_points_np bir numpy array değil.")
         # Hata durumunda sadece kontrol noktalarının bbox'ını döndürmeyi dene (eğer liste ise np array'e çevir)
         try:
             if isinstance(control_points_np, list) and len(control_points_np) > 0:
@@ -402,7 +402,7 @@ def move_items_by(lines: List[List[Any]],
                         continue
                         
                     shape_type = shape_data[0]
-                    logging.debug(f"Moving shape {index} (type: {shape_type}) by ({dx}, {dy})")
+                    #logging.debug(f"Moving shape {index} (type: {shape_type}) by ({dx}, {dy})")
                     
                     if shape_type == ToolType.EDITABLE_LINE:
                         # Düzenlenebilir çizgi için tüm kontrol noktalarını taşı
@@ -420,7 +420,7 @@ def move_items_by(lines: List[List[Any]],
                             shape_data[3] = old_p1 + delta # p1
                             shape_data[4] = old_p2 + delta # p2
                             
-                            logging.debug(f"Shape {index} (type: {shape_type}) moved from ({old_p1.x():.1f}, {old_p1.y():.1f})-({old_p2.x():.1f}, {old_p2.y():.1f}) to ({shape_data[3].x():.1f}, {shape_data[3].y():.1f})-({shape_data[4].x():.1f}, {shape_data[4].y():.1f})")
+                            #logging.debug(f"Shape {index} (type: {shape_type}) moved from ({old_p1.x():.1f}, {old_p1.y():.1f})-({old_p2.x():.1f}, {old_p2.y():.1f}) to ({shape_data[3].x():.1f}, {shape_data[3].y():.1f})-({shape_data[4].x():.1f}, {shape_data[4].y():.1f})")
                     else:
                         # Diğer şekiller (bilinmeyen türler) için genel yaklaşım
                         # Eğer p1 ve p2 pozisyonları varsa onları taşı
@@ -431,7 +431,7 @@ def move_items_by(lines: List[List[Any]],
                             shape_data[3] = old_p1 + delta # p1
                             shape_data[4] = old_p2 + delta # p2
                             
-                            logging.debug(f"Unknown shape {index} (type: {shape_type}) moved from ({old_p1.x():.1f}, {old_p1.y():.1f})-({old_p2.x():.1f}, {old_p2.y():.1f}) to ({shape_data[3].x():.1f}, {shape_data[3].y():.1f})-({shape_data[4].x():.1f}, {shape_data[4].y():.1f})")
+                            #logging.debug(f"Unknown shape {index} (type: {shape_type}) moved from ({old_p1.x():.1f}, {old_p1.y():.1f})-({old_p2.x():.1f}, {old_p2.y():.1f}) to ({shape_data[3].x():.1f}, {shape_data[3].y():.1f})-({shape_data[4].x():.1f}, {shape_data[4].y():.1f})")
             elif item_type == 'images':
                 # Canvas'ta images listesi mevcut ise
                 canvas = None

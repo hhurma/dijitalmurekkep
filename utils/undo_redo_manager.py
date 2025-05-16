@@ -29,20 +29,21 @@ class UndoRedoManager(QObject):
             
         self._is_processing = True
         try:
-            logging.debug(f"[UndoRedoManager] execute çağrıldı. Komut: {type(command).__name__}")
+            #logging.debug(f"[UndoRedoManager] execute çağrıldı. Komut: {type(command).__name__}")
             result = command.execute()
             if result is False:
                 logging.warning(f"[UndoRedoManager] Komut execute başarısız: {type(command).__name__}")
                 return False
             self.undo_stack.append(command)
             self.redo_stack.clear() # Yeni komut sonrası redo yığınını temizle
-            logging.debug(f"[UndoRedoManager] Komut yığına eklendi. Undo stack uzunluğu: {len(self.undo_stack)}")
+            #logging.debug(f"[UndoRedoManager] Komut yığına eklendi. Undo stack uzunluğu: {len(self.undo_stack)}")
             self._emit_stack_signals()
-            logging.debug(f"Komut yürütüldü ve undo yığınına eklendi: {type(command).__name__}")
+            #logging.debug(f"Komut yürütüldü ve undo yığınına eklendi: {type(command).__name__}")
             self.content_modified.emit() # İçerik değişti
             return True
         except Exception as e:
-            logging.error(f"Komut execute edilirken hata oluştu: {type(command).__name__} - {e}")
+            #logging.error(f"Komut execute edilirken hata oluştu: {type(command).__name__} - {e}")
+            pass
         finally:
              self._is_processing = False # İşlemi bitir
 
@@ -138,7 +139,7 @@ class UndoRedoManager(QObject):
 
     def _emit_stack_signals(self):
         """Yığın durumuna göre can_undo/can_redo sinyallerini tetikler."""
-        logging.debug(f"UndoRedoManager._emit_stack_signals: BAŞLANGIÇ. can_undo={self.can_undo()}, can_redo={self.can_redo()}")
+        #logging.debug(f"UndoRedoManager._emit_stack_signals: BAŞLANGIÇ. can_undo={self.can_undo()}, can_redo={self.can_redo()}")
         self.can_undo_changed.emit(self.can_undo())
         self.can_redo_changed.emit(self.can_redo())
         # logging.debug(f"UndoRedoManager._emit_stack_signals: BİTİŞ.")

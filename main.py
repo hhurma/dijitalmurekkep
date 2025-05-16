@@ -34,7 +34,7 @@ def main():
         center_point = primary_screen.center() - window_geometry.center()
         # Pencereyi taşı
         window.move(center_point)
-        logging.debug(f"Pencere ortalandı: {center_point}")
+        #logging.debug(f"Pencere ortalandı: {center_point}")
     except Exception as e:
         logging.error(f"Pencere ortalanırken hata: {e}")
     # --- --- --- --- --- --- --- -- #

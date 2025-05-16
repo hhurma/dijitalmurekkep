@@ -91,28 +91,34 @@ def handle_node_selector_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTa
                         # Düzenlenebilir çizgiyi seç
                         canvas.selected_item_indices = [('shapes', shape_index)]
                         canvas.update()
-                        logging.debug(f"Node Selector Press: Editable line {shape_index} selected")
+                        #logging.debug(f"Node Selector Press: Editable line {shape_index} selected")
                     else:
-                        logging.debug(f"Node Selector Press: Shape is not an editable line, type={shape_data[0]}")
+                        #logging.debug(f"Node Selector Press: Shape is not an editable line, type={shape_data[0]}")
+                        pass
                 else:
-                    logging.debug(f"Node Selector Press: Shape index {shape_index} out of range (shapes count: {len(canvas.shapes)})")
+                    #logging.debug(f"Node Selector Press: Shape index {shape_index} out of range (shapes count: {len(canvas.shapes)})")
+                    pass
             else:
                 if item_at_click:
-                    logging.debug(f"Node Selector Press: Item is not a shape, type={item_at_click[0]}")
+                    #logging.debug(f"Node Selector Press: Item is not a shape, type={item_at_click[0]}")
+                    pass
                 else:
-                    logging.debug("Node Selector Press: No item found at click position")
+                    #logging.debug("Node Selector Press: No item found at click position")
+                    pass
     else:
-        logging.debug(f"Node Selector Press: Already have selected items: {canvas.selected_item_indices}")
+        #logging.debug(f"Node Selector Press: Already have selected items: {canvas.selected_item_indices}")
+        pass
     
     # Seçili bir şekil varsa, noktalara bakma
     if canvas.selected_item_indices and len(canvas.selected_item_indices) == 1:
         item_type, index = canvas.selected_item_indices[0]
-        logging.debug(f"Node Selector Press: Checking selected item: {item_type}, index={index}")
-        
+        #logging.debug(f"Node Selector Press: Checking selected item: {item_type}, index={index}")
+        pass
         if item_type == 'shapes' and 0 <= index < len(canvas.shapes):
             shape_data = canvas.shapes[index]
             if shape_data[0] == ToolType.EDITABLE_LINE:
-                logging.debug(f"Node Selector Press: Found editable line with {len(shape_data[3])} control points")
+                #logging.debug(f"Node Selector Press: Found editable line with {len(shape_data[3])} control points")
+                pass
                 # Bezier kontrol noktaları
                 control_points = shape_data[3]
                 

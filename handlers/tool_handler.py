@@ -15,9 +15,11 @@ def handle_set_active_tool(page_manager, tool):
     if current_page:
         canvas = current_page.get_canvas()
         if canvas:
-            logging.debug(f"Handling set active tool: {tool}")
+            #logging.debug(f"Handling set active tool: {tool}")
             canvas.set_tool(tool)
         else:
-             logging.error("handle_set_active_tool: Aktif sayfanın canvas'ı bulunamadı.")
+             #logging.error("handle_set_active_tool: Aktif sayfanın canvas'ı bulunamadı.")
+             pass
     else:
-        logging.warning("handle_set_active_tool: Aktif sayfa bulunamadı.") 
+        #logging.warning("handle_set_active_tool: Aktif sayfa bulunamadı.") 
+        pass

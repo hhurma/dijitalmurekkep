@@ -539,7 +539,7 @@ class DrawingCanvas(QWidget):
                     u_params = stroke_data.get('u')
                     
                     if control_points_np is None or knots is None or degree is None or u_params is None:
-                        logging.warning(f"DrawingCanvas paintEvent: B-Spline stroke data missing for a stroke. Skipping.")
+                        #logging.warning(f"DrawingCanvas paintEvent: B-Spline stroke data missing for a stroke. Skipping.")
                         continue
 
                     stroke_thickness_from_data = stroke_data.get('thickness')
@@ -553,7 +553,7 @@ class DrawingCanvas(QWidget):
                         pen = QPen(current_pen_color, float(effective_thickness), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
                         painter.setPen(pen)
                     except Exception as e:
-                        logging.error(f"DrawingCanvas paintEvent: Error creating QPen for B-Spline stroke with thickness {effective_thickness}: {e}")
+                        #logging.error(f"DrawingCanvas paintEvent: Error creating QPen for B-Spline stroke with thickness {effective_thickness}: {e}")
                         default_pen_for_error = QPen(Qt.GlobalColor.magenta, 1) # Hata durumunda farklı renkte çiz
                         painter.setPen(default_pen_for_error)
                     
@@ -564,18 +564,18 @@ class DrawingCanvas(QWidget):
                         # Kontrol noktalarını (2, N) formatına getir
                         # Önce kontrol noktalarının geçerliliğini kontrol edelim
                         if not control_points_np or not isinstance(control_points_np, list) or not all(isinstance(cp, np.ndarray) and cp.shape == (2,) for cp in control_points_np):
-                            logging.error(f"DrawingCanvas paintEvent: Invalid control_points_np for tck creation. Stroke index {i}. Skipping. CP Data: {control_points_np}") # stroke_data'nın indexini logla
+                            #logging.error(f"DrawingCanvas paintEvent: Invalid control_points_np for tck creation. Stroke index {i}. Skipping. CP Data: {control_points_np}") # stroke_data'nın indexini logla
                             continue
                         if len(control_points_np) < degree + 1: # k+1 kontrol noktası olmalı (scipy için)
-                            logging.error(f"DrawingCanvas paintEvent: Not enough control points for degree {degree}. Need {degree+1}, got {len(control_points_np)}. Stroke index {i}. Skipping.")
+                            #logging.error(f"DrawingCanvas paintEvent: Not enough control points for degree {degree}. Need {degree+1}, got {len(control_points_np)}. Stroke index {i}. Skipping.")
                             continue
 
                         control_points_for_scipy = np.array(control_points_np).T 
                         tck = (knots, control_points_for_scipy, degree)
 
                         # YENİ LOGLAR BAŞLANGIÇ (Doğru Konum)
-                        logging.debug(f"DrawingCanvas paintEvent: Stroke {i} - About to call splev.") # i'yi stroke_data'nın indexi olarak kullan
-                        logging.debug(f"  knots (t): shape={knots.shape if hasattr(knots, 'shape') else 'N/A'}, len={len(knots) if knots is not None else 'N/A'}")
+                        #logging.debug(f"DrawingCanvas paintEvent: Stroke {i} - About to call splev.") # i'yi stroke_data'nın indexi olarak kullan
+                        #logging.debug(f"  knots (t): shape={knots.shape if hasattr(knots, 'shape') else 'N/A'}, len={len(knots) if knots is not None else 'N/A'}")
                         
                         cp_shape_str = 'N/A'
                         N_cp_str = 'N/A'
@@ -584,23 +584,24 @@ class DrawingCanvas(QWidget):
                             if len(control_points_for_scipy.shape) == 2: # (ndim, n_control_points)
                                 N_cp_str = str(control_points_for_scipy.shape[1])
                         
-                        logging.debug(f"  control_points_for_scipy (c): shape={cp_shape_str}, N_cp={N_cp_str}")
-                        logging.debug(f"  degree (k): {degree}")
+                        #logging.debug(f"  control_points_for_scipy (c): shape={cp_shape_str}, N_cp={N_cp_str}")
+                        #logging.debug(f"  degree (k): {degree}")
                         
                         if u_params is not None and len(u_params) > 0:
                              # u_params'ın son elemanının varlığını ve içeriğini kontrol et
                              if u_params[-1] is not None:
-                                 logging.debug(f"  u_params for splev: min_u={np.min(u_params)}, max_u={np.max(u_params)}, num_eval_points=100, u_last={u_params[-1]}")
+                                 #logging.debug(f"  u_params for splev: min_u={np.min(u_params)}, max_u={np.max(u_params)}, num_eval_points=100, u_last={u_params[-1]}")
+                                 pass
                              else:
-                                 logging.error(f"  u_params for splev: u_params[-1] is None. Stroke index {i}. Skipping splev.")
+                                 #logging.error(f"  u_params for splev: u_params[-1] is None. Stroke index {i}. Skipping splev.")
                                  continue # splev'i atla
                         else:
-                             logging.error(f"  u_params for splev: u_params is None or empty. Stroke index {i}. Skipping splev.")
+                             #logging.error(f"  u_params for splev: u_params is None or empty. Stroke index {i}. Skipping splev.")
                              continue # splev'i atla
                         # YENİ LOGLAR BİTİŞ
 
                     except Exception as e:
-                        logging.error(f"DrawingCanvas paintEvent: Error reconstructing tck for B-Spline (Stroke index {i}): {e}. Control Points: {control_points_np}, Knots: {knots}, Degree: {degree}") # stroke_data'nın indexini logla
+                        #logging.error(f"DrawingCanvas paintEvent: Error reconstructing tck for B-Spline (Stroke index {i}): {e}. Control Points: {control_points_np}, Knots: {knots}, Degree: {degree}") # stroke_data'nın indexini logla
                         continue
 
 
@@ -621,7 +622,7 @@ class DrawingCanvas(QWidget):
                                 path.lineTo(self.world_to_screen(QPointF(x_fine[i], y_fine[i]))) 
                             painter.drawPath(path)
                     except Exception as e:
-                        logging.error(f"DrawingCanvas paintEvent: Error drawing B-Spline path: {e}")
+                        #logging.error(f"DrawingCanvas paintEvent: Error drawing B-Spline path: {e}")
                         continue
 
                     # B-Spline kontrol noktalarını çiz (kırmızı)
@@ -824,7 +825,7 @@ class DrawingCanvas(QWidget):
                         new_stroke_data_ref = self.b_spline_strokes[added_stroke_index_by_widget] # Widget'ın eklediği referansı al
                         
                         # Komuta, widget'ın eklediği stroke'un referansını ve indeksini ver.
-                        logging.debug(f"DrawBsplineCommand oluşturuluyor. Widget ekledi. Index: {added_stroke_index_by_widget}")
+                        #logging.debug(f"DrawBsplineCommand oluşturuluyor. Widget ekledi. Index: {added_stroke_index_by_widget}")
                         command = DrawBsplineCommand(self, new_stroke_data_ref, stroke_index=added_stroke_index_by_widget)
                         self.undo_manager.execute(command)
                         # Komut execute olduğunda, _added_index vs. ayarlanacak.                    
@@ -967,13 +968,15 @@ class DrawingCanvas(QWidget):
                         # B-Spline stroke_data genellikle numpy array'ler içerir, deepcopy güvenli olmalı.
                         current_item_state = copy.deepcopy(item_data_source) if item_data_source else None
                     else:
-                        logging.warning(f"_get_current_selection_states: Geçersiz bspline_strokes index: {index}")
+                        #logging.warning(f"_get_current_selection_states: Geçersiz bspline_strokes index: {index}")
+                        pass
                 else:
-                    logging.warning(f"_get_current_selection_states: Bilinmeyen öğe tipi: {item_type}[{index}]")
+                    #logging.warning(f"_get_current_selection_states: Bilinmeyen öğe tipi: {item_type}[{index}]")
+                    pass
 
                 states.append(current_item_state)
             except Exception as e:
-                logging.error(f"_get_current_selection_states hatası ({item_type}[{index}] için veri alınırken): {e}", exc_info=True)
+                #logging.error(f"_get_current_selection_states hatası ({item_type}[{index}] için veri alınırken): {e}", exc_info=True)
                 states.append(None) 
         return states
 
@@ -994,12 +997,12 @@ class DrawingCanvas(QWidget):
                     bbox = item_data['rect']
             elif item_type == 'bspline_strokes' and 0 <= index < len(self.b_spline_strokes):
                 item_data = self.b_spline_strokes[index]
-                logging.debug(f"[_get_combined_bbox] bspline_strokes[{index}] item_data: {item_data}")
+                #logging.debug(f"[_get_combined_bbox] bspline_strokes[{index}] item_data: {item_data}")
                 bbox = geometry_helpers.get_bspline_bounding_box(item_data)
-                logging.debug(f"[_get_combined_bbox] bspline_strokes[{index}] bbox: {bbox}")
+                #logging.debug(f"[_get_combined_bbox] bspline_strokes[{index}] bbox: {bbox}")
             else:
                 bbox = QRectF()
-            logging.debug(f"[_get_combined_bbox] {item_type}[{index}] bbox: {bbox}")
+            #logging.debug(f"[_get_combined_bbox] {item_type}[{index}] bbox: {bbox}")
             if not bbox.isNull():
                 if combined_bbox.isNull():
                     combined_bbox = bbox
@@ -1014,7 +1017,7 @@ class DrawingCanvas(QWidget):
 
     def is_point_on_selection(self, point: QPointF, tolerance: float = 5.0) -> bool:
         """Verilen noktanın seçili öğe üzerinde olup olmadığını kontrol eder."""
-        logging.debug(f"--- is_point_on_selection checking point {point} ---")
+        #logging.debug(f"--- is_point_on_selection checking point {point} ---")
         result = False
 
         if not self.selected_item_indices:  # Seçili bir öğe yoksa, noktada bir şey olamaz
@@ -1047,7 +1050,7 @@ class DrawingCanvas(QWidget):
                                 p1, p2 = points[i], points[i+1]
                                 if geometry_helpers.is_point_on_line(point, p1, p2, effective_tolerance):
                                     result = True
-                                    logging.debug(f"  >>> Point IS on line: {item_type}[{index}], segment between points {i} and {i+1}")
+                                    #logging.debug(f"  >>> Point IS on line: {item_type}[{index}], segment between points {i} and {i+1}")
                                     break
             
                 elif item_type == 'shapes' and 0 <= index < len(self.shapes):
@@ -1083,17 +1086,17 @@ class DrawingCanvas(QWidget):
                                 is_in_or_near_circle = distance_normalized <= 1.0 + (effective_tolerance / min(rx, ry))
                                 if is_in_or_near_circle:
                                     result = True
-                                    logging.debug(f"  >>> Point IS in or near CIRCLE: {item_type}[{index}]")
+                                    #logging.debug(f"  >>> Point IS in or near CIRCLE: {item_type}[{index}]")
                                     break
                         # Dikdörtgen için genişletilmiş dikdörtgen içinde mi kontrolü
                         elif extended_bbox.contains(point):
                             result = True
-                            logging.debug(f"  >>> Point IS in RECTANGLE: {item_type}[{index}]")
+                            #logging.debug(f"  >>> Point IS in RECTANGLE: {item_type}[{index}]")
                             break
                     # Önce genişletilmiş bbox ile hızlı kontrol
                     elif extended_bbox.contains(point):
                         result = True
-                        logging.debug(f"  >>> Point IS on shape's extended bbox: {item_type}[{index}], type={tool_type}")
+                        #logging.debug(f"  >>> Point IS on shape's extended bbox: {item_type}[{index}], type={tool_type}")
                         break
                     
                     # PATH şekli için özel kontrol
@@ -1116,7 +1119,7 @@ class DrawingCanvas(QWidget):
         except Exception as e:
             logging.error(f"Error in is_point_on_selection: {e}")
                         
-        logging.debug(f"--- is_point_on_selection result: {result} ---")
+        #logging.debug(f"--- is_point_on_selection result: {result} ---")
         return result
 
     def _reposition_selected_items_from_initial(self, total_dx: float, total_dy: float):
@@ -1137,21 +1140,22 @@ class DrawingCanvas(QWidget):
             return
 
         # LOG: Taşıma başında hangi öğeler taşınacak?
-        logging.debug(f"[TAŞIMA BAŞLANGICI] Seçili öğeler: {self.selected_item_indices}")
+        #logging.debug(f"[TAŞIMA BAŞLANGICI] Seçili öğeler: {self.selected_item_indices}")
         for i, (item_type, item_original_idx) in enumerate(self.selected_item_indices):
-            logging.debug(f"  {i}: type={item_type}, index={item_original_idx}")
+            #logging.debug(f"  {i}: type={item_type}, index={item_original_idx}")
+            pass
 
         something_moved = False
         for i, (item_type, item_original_idx) in enumerate(self.selected_item_indices):
             original_item_data_from_drag_start = self.move_original_states[i]
             if original_item_data_from_drag_start is None:
-                logging.warning(
+                """ logging.warning(
                     f"_reposition_selected_items_from_initial: "
                     f"{item_type}[{item_original_idx}] için orijinal veri (move_original_states[{i}]) None, atlanıyor."
-                )
+                ) """
                 continue
             data_to_move = copy.deepcopy(original_item_data_from_drag_start)
-            logging.debug(f"[TAŞIMA] {item_type}[{item_original_idx}] taşınıyor.")
+            #logging.debug(f"[TAŞIMA] {item_type}[{item_original_idx}] taşınıyor.")
             from utils import moving_helpers
             moving_helpers.move_item(data_to_move, total_dx, total_dy, item_type=item_type)
             something_moved = True
@@ -1588,29 +1592,30 @@ class DrawingCanvas(QWidget):
         """Verilen dünya koordinatındaki en üstteki öğeyi (varsa) döndürür.
            'lines', 'shapes', 'images' tiplerini kontrol eder.
         """
-        logging.debug(f"--- _get_item_at called for World Pos: {world_pos}, tolerance: {tolerance} ---")
+        #logging.debug(f"--- _get_item_at called for World Pos: {world_pos}, tolerance: {tolerance} ---")
         
         # 1. Resimleri Kontrol Et (Sondan başa doğru)
         if self._parent_page and hasattr(self._parent_page, 'images') and self._parent_page.images:
-            logging.debug(f"  _get_item_at: Checking {len(self._parent_page.images)} images...")
+            #logging.debug(f"  _get_item_at: Checking {len(self._parent_page.images)} images...")
             for i in range(len(self._parent_page.images) - 1, -1, -1):
                 img_data = self._parent_page.images[i]
                 rect = img_data.get('rect')
                 angle = img_data.get('angle', 0.0)
                 if rect and isinstance(rect, QRectF):
                     contains = geometry_helpers.is_point_in_rotated_rect(world_pos, rect, angle)
-                    logging.debug(f"    _get_item_at: Checking image {i} with rect: {rect}, angle: {angle:.1f}. Contains point? {contains}")
+                    #logging.debug(f"    _get_item_at: Checking image {i} with rect: {rect}, angle: {angle:.1f}. Contains point? {contains}")
                     if contains:
-                        logging.debug(f"  >>> _get_item_at: Image found at index {i}")
+                        #logging.debug(f"  >>> _get_item_at: Image found at index {i}")
                         return ('images', i)
                 else:
-                    logging.warning(f"_get_item_at: images[{i}] içinde geçerli 'rect' yok.")
+                    #logging.warning(f"_get_item_at: images[{i}] içinde geçerli 'rect' yok.")
+                    pass
 
         # 2. Şekilleri Kontrol Et (Sondan başa doğru)
-        logging.debug(f"  _get_item_at: Checking {len(self.shapes)} shapes...")
+        #logging.debug(f"  _get_item_at: Checking {len(self.shapes)} shapes...")
         for i in range(len(self.shapes) - 1, -1, -1):
             shape_data = self.shapes[i]
-            logging.debug(f"    _get_item_at: Checking shape index {i}, data type: {type(shape_data[0])}, data: {shape_data}")
+            #logging.debug(f"    _get_item_at: Checking shape index {i}, data type: {type(shape_data[0])}, data: {shape_data}")
 
             item_tool_type = shape_data[0]
 
@@ -1620,12 +1625,13 @@ class DrawingCanvas(QWidget):
                 line_width = shape_data[2]
                 effective_tolerance = tolerance + (line_width / 2.0)
                 
-                logging.debug(f"      _get_item_at (Shape as Line): Checking line {i} with p1={p1}, p2={p2}, width={line_width}, eff_tol={effective_tolerance}, world_pos={world_pos}")
+                #logging.debug(f"      _get_item_at (Shape as Line): Checking line {i} with p1={p1}, p2={p2}, width={line_width}, eff_tol={effective_tolerance}, world_pos={world_pos}")
                 if geometry_helpers.is_point_on_line(world_pos, p1, p2, effective_tolerance):
-                    logging.debug(f"  >>> _get_item_at: Shape (Line) found at index {i} by is_point_on_line")
+                    #logging.debug(f"  >>> _get_item_at: Shape (Line) found at index {i} by is_point_on_line")
                     return ('shapes', i)
                 else:
-                    logging.debug(f"      _get_item_at (Shape as Line): Line {i} NOT matched by is_point_on_line.")
+                    #logging.debug(f"      _get_item_at (Shape as Line): Line {i} NOT matched by is_point_on_line.")
+                    pass
             elif item_tool_type == ToolType.EDITABLE_LINE:
                 # Düzenlenebilir çizgi için özel kontrol
                 control_points = shape_data[3]  # Kontrol noktaları
@@ -1666,63 +1672,66 @@ class DrawingCanvas(QWidget):
                             return ('shapes', i)
             else:
                 bbox = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
-                logging.debug(f"    _get_item_at (Shape as Other): Checking shape {i} (type: {item_tool_type}) with bbox: {bbox}. Point: {world_pos}")
+                #logging.debug(f"    _get_item_at (Shape as Other): Checking shape {i} (type: {item_tool_type}) with bbox: {bbox}. Point: {world_pos}")
                 if bbox.contains(world_pos):
-                    logging.debug(f"  >>> _get_item_at: Shape (Other) found at index {i} by bbox.contains")
+                    #logging.debug(f"  >>> _get_item_at: Shape (Other) found at index {i} by bbox.contains")
                     return ('shapes', i)
                 else:
-                    logging.debug(f"      _get_item_at (Shape as Other): Shape {i} NOT matched by bbox.contains.")
-
+                    #logging.debug(f"      _get_item_at (Shape as Other): Shape {i} NOT matched by bbox.contains.")
+                    pass
         # 3. Çizgileri Kontrol Et (Sondan başa doğru)
-        logging.debug(f"  _get_item_at: Checking {len(self.lines)} lines...")
+        #logging.debug(f"  _get_item_at: Checking {len(self.lines)} lines...")
         for i in range(len(self.lines) - 1, -1, -1):
             line_data = self.lines[i]
             bbox = geometry_helpers.get_item_bounding_box(line_data, 'lines')
-            logging.debug(f"    [GET_ITEM_AT_DEBUG] Line {i}: BBox={bbox}, BBox.width={bbox.width():.2f}, BBox.height={bbox.height():.2f}")
+            #logging.debug(f"    [GET_ITEM_AT_DEBUG] Line {i}: BBox={bbox}, BBox.width={bbox.width():.2f}, BBox.height={bbox.height():.2f}")
             contains_bbox = bbox.contains(world_pos)
-            logging.debug(f"    [GET_ITEM_AT_DEBUG]   Line {i}: world_pos={world_pos}, bbox_contains_world_pos={contains_bbox}")
+            #logging.debug(f"    [GET_ITEM_AT_DEBUG]   Line {i}: world_pos={world_pos}, bbox_contains_world_pos={contains_bbox}")
             if contains_bbox: 
                 points = line_data[2]
                 line_width = line_data[1]
                 effective_tolerance = tolerance + line_width / 2.0
-                logging.debug(f"      [GET_ITEM_AT_DEBUG]     Line {i}: Calling is_point_on_line with effective_tolerance={effective_tolerance:.2f}")
+                #logging.debug(f"      [GET_ITEM_AT_DEBUG]     Line {i}: Calling is_point_on_line with effective_tolerance={effective_tolerance:.2f}")
                 for j in range(len(points) - 1):
                     if geometry_helpers.is_point_on_line(world_pos, points[j], points[j+1], effective_tolerance):
-                        logging.debug(f"  >>> _get_item_at: Line found at index {i} (segment {j}-{j+1} check PASSED)")
+                        #logging.debug(f"  >>> _get_item_at: Line found at index {i} (segment {j}-{j+1} check PASSED)")
                         return ('lines', i)
                     else: 
-                        logging.debug(f"      [GET_ITEM_AT_DEBUG]       Line {i}, Segment {j}-{j+1}: is_point_on_line FAILED.")
-                logging.debug(f"    [GET_ITEM_AT_DEBUG]     Line {i}: BBox contained point, but all segment checks failed.")
-        
+                        #logging.debug(f"      [GET_ITEM_AT_DEBUG]       Line {i}, Segment {j}-{j+1}: is_point_on_line FAILED.")
+                #logging.debug(f"    [GET_ITEM_AT_DEBUG]     Line {i}: BBox contained point, but all segment checks failed.")
+                        pass
         # 3. B-Spline Eğrilerini Kontrol Et (Sondan başa doğru)
         # Not: B-spline'lar self.b_spline_strokes içinde saklanıyor.
         # Eğer normal şekil seçimiyle çakışmaması için ayrı bir tool ile yönetilecekse
         # bu kısım sadece ilgili tool aktifken çalışmalı veya hiç olmamalı.
         # Şimdilik genel seçici (_get_item_at) içinde deneyelim.
         if hasattr(self, 'b_spline_strokes') and self.b_spline_strokes:
-            logging.debug(f"  _get_item_at: Checking {len(self.b_spline_strokes)} B-Spline strokes...")
+            #logging.debug(f"  _get_item_at: Checking {len(self.b_spline_strokes)} B-Spline strokes...")
             for i in range(len(self.b_spline_strokes) - 1, -1, -1):
                 stroke_data = self.b_spline_strokes[i]
-                logging.debug(f"    _get_item_at: For B-Spline stroke {i}, attempting to get bbox. World pos: {world_pos}") # YENİ LOG
+                #logging.debug(f"    _get_item_at: For B-Spline stroke {i}, attempting to get bbox. World pos: {world_pos}") # YENİ LOG
                 # B-spline'ın sınırlayıcı kutusunu al
                 # Bu fonksiyonun utils.geometry_helpers içinde tanımlı olması gerekiyor.
                 try:
                     bbox = geometry_helpers.get_bspline_bounding_box(stroke_data)
-                    logging.debug(f"    _get_item_at: B-Spline stroke {i} bbox: {bbox}. IsNull: {bbox.isNull() if bbox else 'N/A'}") # YENİ LOG
+                    #logging.debug(f"    _get_item_at: B-Spline stroke {i} bbox: {bbox}. IsNull: {bbox.isNull() if bbox else 'N/A'}") # YENİ LOG
                     if not bbox.isNull() and bbox.contains(world_pos):
-                        logging.debug(f"  >>> _get_item_at: B-Spline stroke {i} CONTAINS world_pos. Returning ('bspline_strokes', {i})") # YENİ LOG
+                        #logging.debug(f"  >>> _get_item_at: B-Spline stroke {i} CONTAINS world_pos. Returning ('bspline_strokes', {i})") # YENİ LOG
                         # TODO: Daha hassas bir "nokta eğri üzerinde mi" kontrolü eklenebilir.
                         # Şimdilik sadece bbox yeterli.
                         # logging.debug(f"  >>> _get_item_at: B-Spline stroke found at index {i} by bbox.contains") # ESKİ LOG
                         return ('bspline_strokes', i) # Yeni bir item_type tanımlıyoruz
                     elif bbox.isNull():
-                        logging.debug(f"    _get_item_at: B-Spline stroke {i} bbox isNull. Skipping contains check.") # YENİ LOG
+                        #logging.debug(f"    _get_item_at: B-Spline stroke {i} bbox isNull. Skipping contains check.") # YENİ LOG
+                        pass
                     else:
-                        logging.debug(f"    _get_item_at: B-Spline stroke {i} bbox DOES NOT contain world_pos.") # YENİ LOG
+                        #logging.debug(f"    _get_item_at: B-Spline stroke {i} bbox DOES NOT contain world_pos.") # YENİ LOG
+                        pass
                 except Exception as e:
-                    logging.error(f"_get_item_at: B-Spline bbox alınırken hata (stroke {i}): {e}", exc_info=True)
+                    #logging.error(f"_get_item_at: B-Spline bbox alınırken hata (stroke {i}): {e}", exc_info=True)
+                    pass
 
-        logging.debug("--- _get_item_at: No item found. ---")
+        #logging.debug("--- _get_item_at: No item found. ---")
         return None
     # --- --- --- --- --- --- --- --- --- --- --- --- -- #
 

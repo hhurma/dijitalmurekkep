@@ -76,7 +76,7 @@ class DrawLineCommand(Command):
                 self.canvas.lines.append(copy.deepcopy(self.line_data))
                 self._added_index = len(self.canvas.lines) - 1
                 self._line_added = True
-                logging.debug(f"DrawLineCommand: Çizgi eklendi, _added_index={self._added_index}")
+                #logging.debug(f"DrawLineCommand: Çizgi eklendi, _added_index={self._added_index}")
             else:
                 return
 
@@ -534,17 +534,17 @@ class EraseCommand(Command):
         self._shapes_before_erase = copy.deepcopy(canvas.shapes)
         self._b_splines_before_erase = copy.deepcopy(getattr(canvas, 'b_spline_strokes', []))
         
-        logging.debug(
+        """ logging.debug(
             f"EraseCommand created. Stored current state (lines: {len(self._lines_before_erase)}, "
             f"shapes: {len(self._shapes_before_erase)}, b_splines: {len(self._b_splines_before_erase)}). "
             f"Changes to apply: lines={list(changes.get('lines', {}).keys())}, "
             f"shapes={list(changes.get('shapes', {}).keys())}, "
             f"b_splines={list(changes.get('b_spline_strokes', {}).keys())}"
-        )
+        ) """
 
     def execute(self):
         """Hesaplanan değişiklikleri canvas'a uygular (asıl silme işlemi burada yapılır)."""
-        logging.debug(f"Executing EraseCommand...")
+        #logging.debug(f"Executing EraseCommand...")
         lines_applied = 0
         shapes_applied = 0
         b_splines_applied = 0
@@ -605,10 +605,10 @@ class EraseCommand(Command):
             except Exception as e:
                 logging.error(f"Error removing B-Spline stroke {index} during execute: {e}", exc_info=True)
 
-        logging.debug(
+        """ logging.debug(
             f"EraseCommand execute finished. Applied changes to {lines_applied} lines, "
             f"removed {shapes_applied} shapes, removed {b_splines_applied} b-splines."
-        )
+        ) """
         self.canvas.update()
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
@@ -1211,7 +1211,7 @@ class DrawBsplineCommand(Command):
         # Bu, widget'ın stroke'u ilk eklediği indekstir.
         self.target_index = stroke_index
         self._was_executed_at_least_once = False # İlk execute çağrısını takip etmek için bayrak
-        logging.debug(f"DrawBsplineCommand initialized. Target index: {self.target_index}")
+        #logging.debug(f"DrawBsplineCommand initialized. Target index: {self.target_index}")
 
     def execute(self):
         if not self._was_executed_at_least_once:
@@ -1223,7 +1223,7 @@ class DrawBsplineCommand(Command):
             else:
                 # İsteğe bağlı: self.canvas.b_spline_strokes[self.target_index] ile self.stroke_to_add_or_restore arasında derinlemesine karşılaştırma yapılabilir.
                 pass # Şimdilik bir şey yapma
-            logging.debug(f"DrawBsplineCommand: İlk çalıştırma. Stroke widget tarafından zaten {self.target_index} indeksine eklendi.")
+            #logging.debug(f"DrawBsplineCommand: İlk çalıştırma. Stroke widget tarafından zaten {self.target_index} indeksine eklendi.")
             self._was_executed_at_least_once = True
         else:
             # Bu bir YENİDEN ÇALIŞTIRMA (REDO). Sakladığımız kopyayı yeniden eklemeliyiz.

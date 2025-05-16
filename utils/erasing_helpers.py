@@ -109,7 +109,7 @@ def _erase_points_from_line(line_points: List[QPointF], erase_path: List[QPointF
         return line_points, False
 
     final_points = [p for i, p in enumerate(line_points) if i not in points_to_remove_indices]
-    logging.debug(f"Erasing points check: Original count={len(line_points)}, To remove count={len(points_to_remove_indices)}, Final count={len(final_points)}")
+    #logging.debug(f"Erasing points check: Original count={len(line_points)}, To remove count={len(points_to_remove_indices)}, Final count={len(final_points)}")
     return final_points, True
 
 
@@ -127,14 +127,16 @@ def calculate_erase_changes(lines: List[List[Any]], shapes: List[List[Any]], b_s
     from utils import geometry_helpers # Helperları burada import et
     from gui.enums import ToolType  # ToolType'a erişim için import eklendi
 
-    logging.debug("[DEBUG] calculate_erase_changes çağrıldı")
-    logging.debug(f"[DEBUG] SHAPES: {len(shapes)} öğe mevcut")
+    #logging.debug("[DEBUG] calculate_erase_changes çağrıldı")
+    #logging.debug(f"[DEBUG] SHAPES: {len(shapes)} öğe mevcut")
     for i, s in enumerate(shapes):
         if s and len(s) > 0:
             if isinstance(s[0], ToolType):
-                logging.debug(f"[DEBUG] SHAPE[{i}]: type={s[0].name}, color={s[1]}, width={s[2]}")
+                #logging.debug(f"[DEBUG] SHAPE[{i}]: type={s[0].name}, color={s[1]}, width={s[2]}")
+                pass
             else:
-                logging.debug(f"[DEBUG] SHAPE[{i}]: type={s[0]}, color={s[1]}, width={s[2]}")
+                ##logging.debug(f"[DEBUG] SHAPE[{i}]: type={s[0]}, color={s[1]}, width={s[2]}")
+                pass
 
     changes: EraseChanges = {'lines': {}, 'shapes': {}, 'b_spline_strokes': {}}
 
@@ -142,17 +144,17 @@ def calculate_erase_changes(lines: List[List[Any]], shapes: List[List[Any]], b_s
         return changes # Değişiklik yok
 
     eraser_rect = _get_eraser_bounding_rect(erase_path, eraser_width)
-    logging.debug(f"[Eraser] Eraser Rect: {eraser_rect}")
+    #logging.debug(f"[Eraser] Eraser Rect: {eraser_rect}")
 
     # 1. Lines (Nokta Bazlı Silme Hesaplaması)
     lines_to_delete = []
     for i, line_data in enumerate(lines):
         # BBox hesapla
         bbox = geometry_helpers.get_item_bounding_box(line_data, 'lines')
-        logging.debug(f"[Eraser-Line {i}] BBox={bbox}")
+        #logging.debug(f"[Eraser-Line {i}] BBox={bbox}")
         # Silgi ile kesişiyor mu?
         if not bbox.isNull() and eraser_rect.intersects(bbox):
-            logging.debug(f"[Eraser-Line {i}] Kesişim tespit edildi, silme değerlendirilecek")
+            #logging.debug(f"[Eraser-Line {i}] Kesişim tespit edildi, silme değerlendirilecek")
             lines_to_delete.append(i)
 
     for i in lines_to_delete:
@@ -160,7 +162,7 @@ def calculate_erase_changes(lines: List[List[Any]], shapes: List[List[Any]], b_s
         final_points, points_were_erased = _erase_points_from_line(current_points, erase_path, eraser_width)
 
         if points_were_erased:
-            logging.debug(f"Line {i} intersects with erase path. Marking for complete deletion.")
+            #logging.debug(f"Line {i} intersects with erase path. Marking for complete deletion.")
             final_points = [] 
 
             changes['lines'][i] = {
@@ -173,24 +175,24 @@ def calculate_erase_changes(lines: List[List[Any]], shapes: List[List[Any]], b_s
     # 2. Shapes (Tamamen Silinecekleri Hesapla)
     for i, shape_data in enumerate(shapes):
         if not shape_data or len(shape_data) < 3:
-            logging.debug(f"[Eraser-Shape {i}] Geçersiz shape verisi, atlanıyor")
+            #logging.debug(f"[Eraser-Shape {i}] Geçersiz shape verisi, atlanıyor")
             continue
             
         # PATH türü shape'ler için özel kontrol
         if isinstance(shape_data[0], ToolType) and shape_data[0] == ToolType.PATH:
-            logging.debug(f"[Eraser-Shape {i}] PATH tipi şekil tespit edildi")
+            #logging.debug(f"[Eraser-Shape {i}] PATH tipi şekil tespit edildi")
             
             # PATH için points verisini doğru indeksten al
             path_points = None
             if len(shape_data) > 3 and isinstance(shape_data[3], list):
                 path_points = shape_data[3]
-                logging.debug(f"[Eraser-Shape {i}] PATH points verisi bulundu: {len(path_points)} nokta")
+                #logging.debug(f"[Eraser-Shape {i}] PATH points verisi bulundu: {len(path_points)} nokta")
             else:
-                logging.debug(f"[Eraser-Shape {i}] PATH için points verisi doğru formatta değil")
+                #logging.debug(f"[Eraser-Shape {i}] PATH için points verisi doğru formatta değil")
                 continue
                 
             if not path_points or len(path_points) < 2:
-                logging.debug(f"[Eraser-Shape {i}] PATH noktaları yetersiz, atlanıyor")
+                #logging.debug(f"[Eraser-Shape {i}] PATH noktaları yetersiz, atlanıyor")
                 continue
                 
             # Noktalardan sınırlayıcı kutu oluştur
@@ -200,11 +202,11 @@ def calculate_erase_changes(lines: List[List[Any]], shapes: List[List[Any]], b_s
             max_y = max(p.y() for p in path_points)
             path_rect = QRectF(QPointF(min_x, min_y), QPointF(max_x, max_y))
             
-            logging.debug(f"[Eraser-Shape {i}] PATH sınırlayıcı kutusu: {path_rect}")
+            #logging.debug(f"[Eraser-Shape {i}] PATH sınırlayıcı kutusu: {path_rect}")
             
             # Kesişim kontrolü
             if not path_rect.isNull() and eraser_rect.intersects(path_rect):
-                logging.debug(f"[Eraser-Shape {i}] PATH silgi ile kesişiyor, silinecek!")
+                #logging.debug(f"[Eraser-Shape {i}] PATH silgi ile kesişiyor, silinecek!")
                 changes['shapes'][i] = copy.deepcopy(shape_data)
         else:
             # Normal şekiller için mevcut mantığı kullan
@@ -215,11 +217,11 @@ def calculate_erase_changes(lines: List[List[Any]], shapes: List[List[Any]], b_s
             else:
                 shape_type_name = str(shape_data[0])
                 
-            logging.debug(f"[Eraser-Shape {i}] Type={shape_type_name}, BBox={shape_rect}")
+            #logging.debug(f"[Eraser-Shape {i}] Type={shape_type_name}, BBox={shape_rect}")
             
             # Kesişim kontrolü
             if not shape_rect.isNull() and eraser_rect.intersects(shape_rect):
-                logging.debug(f"[Eraser-Shape {i}] {shape_type_name} silgi ile kesişiyor, silinecek!")
+                #logging.debug(f"[Eraser-Shape {i}] {shape_type_name} silgi ile kesişiyor, silinecek!")
                 changes['shapes'][i] = copy.deepcopy(shape_data)
 
     # 3. B-Spline Strokes
@@ -227,10 +229,10 @@ def calculate_erase_changes(lines: List[List[Any]], shapes: List[List[Any]], b_s
         spline_rect = geometry_helpers.get_bspline_bounding_box(spline_data)
         
         if not spline_rect.isNull() and eraser_rect.intersects(spline_rect):
-            logging.debug(f"[Eraser-BSpline {i}] BSpline silgi ile kesişiyor, silinecek!")
+            #logging.debug(f"[Eraser-BSpline {i}] BSpline silgi ile kesişiyor, silinecek!")
             changes['b_spline_strokes'][i] = copy.deepcopy(spline_data)
 
-    logging.debug(f"[Eraser] Sonuç: {len(changes['lines'])} çizgi, {len(changes['shapes'])} şekil, {len(changes['b_spline_strokes'])} B-Spline silinecek")
+    #logging.debug(f"[Eraser] Sonuç: {len(changes['lines'])} çizgi, {len(changes['shapes'])} şekil, {len(changes['b_spline_strokes'])} B-Spline silinecek")
     return changes
 
 # Eski erase_items_along_path fonksiyonunu kaldırabiliriz veya yorumda bırakabiliriz.

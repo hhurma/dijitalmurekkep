@@ -653,7 +653,7 @@ class DrawingCanvas(QWidget):
             logging.error(f"tabletEvent received but self._parent_page is None! Ignoring event type: {event.type()}")
             event.ignore()
             return
-        logging.debug(f"tabletEvent received: Type={event.type()}, ParentPage={self._parent_page.page_number}, ScreenPos={event.position()}")
+        #logging.debug(f"tabletEvent received: Type={event.type()}, ParentPage={self._parent_page.page_number}, ScreenPos={event.position()}")
         # --- >>> <<< ---
         
         # ScreenPos'u DÜNYA KOORDİNATINA çevir (parent_page artık None değil)
@@ -1292,7 +1292,7 @@ class DrawingCanvas(QWidget):
             self.current_eraser_path = [pos]
             self.drawing = False
         else:
-            logging.debug("Pen Press: Start drawing line.")
+            #logging.debug("Pen Press: Start drawing line.")
             self.drawing = True
             self.temporary_erasing = False
             self.current_line_points = [pos]
@@ -1339,7 +1339,7 @@ class DrawingCanvas(QWidget):
 
         # --- NORMAL ÇİZİM KONTROLÜ --- #
         elif self.drawing and self.current_line_points:
-            logging.debug("Pen Release: Finalizing drawing line.")
+            #logging.debug("Pen Release: Finalizing drawing line.")
             if len(self.current_line_points) > 1: # En az 2 nokta varsa çiz
                 # --- YENİ: Noktaları manuel kopyala --- #
                 final_points = [QPointF(p.x(), p.y()) for p in self.current_line_points]
@@ -1443,7 +1443,7 @@ class DrawingCanvas(QWidget):
         # --- Tutamaç Yakalanmadıysa Öğeyi Kontrol Et --- #
         if not self.grabbed_handle_type:
             point_on_selection = self.is_point_on_selection(pos)
-            logging.debug(f"Selector Press: No handle grabbed. Checking point on selection (World Pos: {pos.x():.1f}, {pos.y():.1f})... Result: {point_on_selection}")
+            #logging.debug(f"Selector Press: No handle grabbed. Checking point on selection (World Pos: {pos.x():.1f}, {pos.y():.1f})... Result: {point_on_selection}")
             if point_on_selection:
                 self.moving_selection = True
                 self.drawing = False
@@ -1728,7 +1728,7 @@ class DrawingCanvas(QWidget):
     def _handle_selector_select_release(self, pos: QPointF, event: QTabletEvent):
         self.shape_end_point = pos
         selection_world_rect = QRectF(self.shape_start_point, self.shape_end_point).normalized()
-        logging.debug(f"Selection rectangle finished: {selection_world_rect}")
+        #logging.debug(f"Selection rectangle finished: {selection_world_rect}")
         
         newly_selected = []
         for i, line_data in enumerate(self.lines):
@@ -1751,7 +1751,7 @@ class DrawingCanvas(QWidget):
         else:
             self.selected_item_indices = newly_selected
             
-        logging.debug(f"Selection updated: {len(self.selected_item_indices)} items selected.")
+        #logging.debug(f"Selection updated: {len(self.selected_item_indices)} items selected.")
         QApplication.restoreOverrideCursor()
         self.drawing = False
         self.selecting = False
@@ -1894,7 +1894,7 @@ class DrawingCanvas(QWidget):
         return combined_bbox
 
     def is_point_on_selection(self, point: QPointF, tolerance: float = 5.0) -> bool:
-        logging.debug(f"--- is_point_on_selection checking point {point} ---")
+        #logging.debug(f"--- is_point_on_selection checking point {point} ---")
         result = False
         for item_type, index in self.selected_item_indices:
             item_data = None
@@ -2309,7 +2309,7 @@ class DrawingCanvas(QWidget):
         """Verilen dünya koordinatındaki en üstteki öğeyi (varsa) döndürür.
            'lines', 'shapes', 'images' tiplerini kontrol eder.
         """
-        logging.debug(f"--- _get_item_at called for World Pos: {world_pos} ---")
+        #logging.debug(f"--- _get_item_at called for World Pos: {world_pos} ---")
         
         # 1. Resimleri Kontrol Et (Sondan başa doğru)
         if self._parent_page and hasattr(self._parent_page, 'images') and self._parent_page.images:
@@ -2358,7 +2358,7 @@ class DrawingCanvas(QWidget):
                          return ('lines', i)
                  logging.debug(f"    Line {i} bbox contains point, but segment check failed.")
         
-        logging.debug("--- _get_item_at: No item found. ---")
+        #logging.debug("--- _get_item_at: No item found. ---")
         return None
     # --- --- --- --- --- --- --- --- --- --- --- --- -- #
 
@@ -2433,7 +2433,7 @@ class DrawingCanvas(QWidget):
     # --- YENİ: is_point_on_selection güncellendi ---
     def is_point_on_selection(self, point: QPointF, tolerance: float = 5.0) -> bool:
         """Verilen noktanın seçili öğelerden birinin üzerinde olup olmadığını kontrol eder."""
-        logging.debug(f"--- is_point_on_selection checking point {point} ---")
+        #logging.debug(f"--- is_point_on_selection checking point {point} ---")
         result = False
         for item_type, index in self.selected_item_indices:
             if item_type == 'images':

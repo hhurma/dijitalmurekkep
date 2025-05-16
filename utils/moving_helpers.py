@@ -17,7 +17,7 @@ def move_item(item_data: Any, dx: float, dy: float, item_type: str | None = None
     Belirtilmezse, item_data'nın yapısına göre tipini tahmin etmeye çalışır.
     """
     if item_data is None: # None kontrolü eklendi
-        logging.warning("move_item: Boş öğe verisi (None), taşıma yapılamadı.")
+        #logging.warning("move_item: Boş öğe verisi (None), taşıma yapılamadı.")
         return
 
     # Eğer item_type dışarıdan belirtilmişse onu kullan
@@ -49,7 +49,8 @@ def move_item(item_data: Any, dx: float, dy: float, item_type: str | None = None
                     # NumPy array'ini tekrar QPointF listesine dönüştür
                     item_data[2] = [QPointF(p[0], p[1]) for p in moved_points_np]
             else:
-                logging.warning(f"move_item: 'lines' tipi için beklenmeyen veri formatı: {item_data}")
+                #logging.warning(f"move_item: 'lines' tipi için beklenmeyen veri formatı: {item_data}")
+                pass
 
         elif type_to_process == 'shapes':
             # item_data: [ToolType, color, width, p1, p2, style?, fill?]
@@ -70,9 +71,11 @@ def move_item(item_data: Any, dx: float, dy: float, item_type: str | None = None
                         # NumPy array'ini tekrar QPointF listesine dönüştür
                         item_data[3] = [QPointF(p[0], p[1]) for p in moved_points_np]
                 else:
-                    logging.warning(f"move_item: Desteklenmeyen veya eksik verili şekil tipi '{tool_type}' için taşıma atlandı.")
+                    #logging.warning(f"move_item: Desteklenmeyen veya eksik verili şekil tipi '{tool_type}' için taşıma atlandı.")
+                    pass
             else:
-                logging.warning(f"move_item: 'shapes' tipi için beklenmeyen veri formatı: {item_data}")
+                #logging.warning(f"move_item: 'shapes' tipi için beklenmeyen veri formatı: {item_data}")
+                pass
 
         elif type_to_process == 'bspline_strokes':
             # item_data: B-Spline stroke sözlüğü (dict)
@@ -82,18 +85,25 @@ def move_item(item_data: Any, dx: float, dy: float, item_type: str | None = None
                     # Her bir kontrol noktasını (N,2) array'de kaydır
                     item_data['control_points'] = control_points_np + delta_np
                 else:
-                    logging.warning(f"move_item: 'bspline_strokes' için 'control_points' beklenen formatta değil (numpy array N,2). Veri: {control_points_np}")
+                    #logging.warning(f"move_item: 'bspline_strokes' için 'control_points' beklenen formatta değil (numpy array N,2). Veri: {control_points_np}")
+                    pass
             else:
-                logging.warning(f"move_item: 'bspline_strokes' tipi için beklenmeyen veri formatı veya 'control_points' eksik. Veri: {item_data}")
+                #logging.warning(f"move_item: 'bspline_strokes' tipi için beklenmeyen veri formatı veya 'control_points' eksik. Veri: {item_data}")
+                pass
         
         elif type_to_process is None:
-            logging.warning(f"move_item: Öğe tipi belirlenemedi, taşıma yapılamadı. Veri: {item_data}")
+            #logging.warning(f"move_item: Öğe tipi belirlenemedi, taşıma yapılamadı. Veri: {item_data}")
+            pass
         else:
-            logging.warning(f"move_item: Bilinmeyen öğe tipi '{type_to_process}', taşıma yapılamadı.")
+            #logging.warning(f"move_item: Bilinmeyen öğe tipi '{type_to_process}', taşıma yapılamadı.")
+            pass
 
     except IndexError as e:
-        logging.error(f"move_item: Öğe verisi işlenirken Index hatası ({type_to_process=}): {e}. Veri: {item_data}", exc_info=True)
+        #logging.error(f"move_item: Öğe verisi işlenirken Index hatası ({type_to_process=}): {e}. Veri: {item_data}", exc_info=True)
+        pass
     except TypeError as e:
-        logging.error(f"move_item: Öğe verisi işlenirken Type hatası ({type_to_process=}, örn. QPointF bekleniyordu): {e}. Veri: {item_data}", exc_info=True)
+        #logging.error(f"move_item: Öğe verisi işlenirken Type hatası ({type_to_process=}, örn. QPointF bekleniyordu): {e}. Veri: {item_data}", exc_info=True)
+        pass
     except Exception as e:
-        logging.error(f"move_item: Taşıma sırasında beklenmedik hata ({type_to_process=}): {e}. Veri: {item_data}", exc_info=True) 
+        #logging.error(f"move_item: Taşıma sırasında beklenmedik hata ({type_to_process=}): {e}. Veri: {item_data}", exc_info=True) 
+        pass

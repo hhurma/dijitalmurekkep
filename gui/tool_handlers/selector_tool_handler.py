@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 def handle_selector_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
     """Seçici aracı için basma olayını yönetir."""
-    logging.debug(f"[selector_tool_handler] handle_selector_press: Tool={canvas.current_tool.name}, WorldPos={pos}")
+    #logging.debug(f"[selector_tool_handler] handle_selector_press: Tool={canvas.current_tool.name}, WorldPos={pos}")
     screen_pos = event.position() 
     canvas.grabbed_handle_type = None
     # click_tolerance, _get_handle_at içinde ve _get_item_at içinde zaten tanımlı, burada genel bir belirleme yapalım
@@ -30,10 +30,10 @@ def handle_selector_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
     canvas.grabbed_handle_type = canvas._get_handle_at(screen_pos, tolerance=canvas.RESIZE_MOVE_THRESHOLD * 2) # Daha büyük tolerans
 
     if not canvas.grabbed_handle_type:
-        logging.debug("Selector Press: No handle grabbed. Checking for item selection or starting drag.")
+        #logging.debug("Selector Press: No handle grabbed. Checking for item selection or starting drag.")
         # Eğer zaten seçilmiş öğeler varsa ve tıklama bu seçimin üzerindeyse, taşıma başlat
         if canvas.selected_item_indices and canvas.is_point_on_selection(pos, tolerance=canvas.RESIZE_MOVE_THRESHOLD * 2):
-            logging.debug("Selector Press: Point is on existing selection. Starting move.")
+            #logging.debug("Selector Press: Point is on existing selection. Starting move.")
             canvas.moving_selection = True
             canvas.drawing = False
             canvas.resizing_selection = False
@@ -42,9 +42,11 @@ def handle_selector_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
             # canvas.last_move_pos KULLANIMDAN KALDIRILDI
             canvas.move_original_states = canvas._get_current_selection_states(canvas._parent_page)
             if not canvas.move_original_states and canvas.selected_item_indices:
-                logging.warning("Selector Press (Move): move_original_states boş ama selected_item_indices dolu!")
+                #logging.warning("Selector Press (Move): move_original_states boş ama selected_item_indices dolu!")
+                pass
             elif len(canvas.move_original_states) != len(canvas.selected_item_indices):
-                logging.warning(f"Selector Press (Move): move_original_states ({len(canvas.move_original_states)}) ve selected_item_indices ({len(canvas.selected_item_indices)}) uzunlukları farklı!")
+                #logging.warning(f"Selector Press (Move): move_original_states ({len(canvas.move_original_states)}) ve selected_item_indices ({len(canvas.selected_item_indices)}) uzunlukları farklı!")
+                pass
 
             QApplication.setOverrideCursor(Qt.CursorShape.ClosedHandCursor) # YENİ İMLEÇ
             canvas.update()
@@ -121,7 +123,7 @@ def handle_selector_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
                  logging.warning(f"Selector Press (Final Move Check): Mismatch between move_original_states ({len(canvas.move_original_states)}) and selected_item_indices ({len(canvas.selected_item_indices)}). Re-fetching states.")
                  canvas.move_original_states = canvas._get_current_selection_states(canvas._parent_page)
             
-            logging.debug(f"Selector Press: Starting move for newly/re-confirmed selection: {item_at_click}")
+            #logging.debug(f"Selector Press: Starting move for newly/re-confirmed selection: {item_at_click}")
             canvas.moving_selection = True
             canvas.drawing = False; canvas.resizing_selection = False; canvas.selecting = False
             canvas.move_start_point = QPointF(pos)
@@ -130,7 +132,7 @@ def handle_selector_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
         # Boş bir alana tıklandıysa ve seçim temizlendiyse veya hiç seçim yoksa dikdörtgenle seçim başlat
         # (Ctrl+Shift durumu hariç)
         if not canvas.grabbed_handle_type and not item_at_click and not canvas.selected_item_indices and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier and ctrl_pressed):
-            logging.debug(f"Selector Press: Selection rectangle started at world_pos: {pos}")
+            #logging.debug(f"Selector Press: Selection rectangle started at world_pos: {pos}")
             canvas.shape_start_point = pos # BAŞLANGIÇ NOKTASINI AYARLA
             canvas.drawing = True 
             canvas.selecting = True 
@@ -199,9 +201,9 @@ def handle_selector_rect_select_move(canvas: 'DrawingCanvas', pos: QPointF, even
 
 def handle_selector_resize_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
     """Seçili öğelerin (çizim/şekil) yeniden boyutlandırılmasını yönetir."""
-    logging.debug(f"[handle_selector_resize_move] Çağrıldı. Seçili öğe sayısı: {len(canvas.selected_item_indices)}, Tutamaç: {canvas.grabbed_handle_type}, resizing_selection: {canvas.resizing_selection}")
-    logging.debug(f"[handle_selector_resize_move] original_resize_states: {len(canvas.original_resize_states)}, resize_original_bbox: {canvas.resize_original_bbox}")
-    logging.debug(f"[selector_tool_handler] handle_selector_resize_move: shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
+    #logging.debug(f"[handle_selector_resize_move] Çağrıldı. Seçili öğe sayısı: {len(canvas.selected_item_indices)}, Tutamaç: {canvas.grabbed_handle_type}, resizing_selection: {canvas.resizing_selection}")
+    #logging.debug(f"[handle_selector_resize_move] original_resize_states: {len(canvas.original_resize_states)}, resize_original_bbox: {canvas.resize_original_bbox}")
+    #logging.debug(f"[selector_tool_handler] handle_selector_resize_move: shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
     
     # --- YENİ: DÜZENLENEBILIR ÇIZGI için özel tutamaç işlemi --- #
     if (
@@ -395,11 +397,11 @@ def handle_selector_resize_move(canvas: 'DrawingCanvas', pos: QPointF, event: QT
                         scaled_cps.append(new_cp)
                     # Canvas'taki kontrol noktalarını güncelle
                     canvas.b_spline_strokes[index]['control_points'] = np.array(scaled_cps)
-                    logging.debug(f"[handle_selector_resize_move] bspline_strokes[{index}] scaled control_points: {scaled_cps}")
+                    #logging.debug(f"[handle_selector_resize_move] bspline_strokes[{index}] scaled control_points: {scaled_cps}")
 
 def handle_selector_move_selection_release(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
     """Seçili öğelerin taşınmasının bırakılmasını yönetir."""
-    logging.debug(f"[selector_tool_handler] handle_selector_move_selection_release: WorldPos={pos}")
+    #logging.debug(f"[selector_tool_handler] handle_selector_move_selection_release: WorldPos={pos}")
 
     if not canvas.moving_selection:
         # logging.debug("handle_selector_move_selection_release: Not in moving_selection mode.")
@@ -423,7 +425,7 @@ def handle_selector_move_selection_release(canvas: 'DrawingCanvas', pos: QPointF
     # Eğer gerçekten bir taşıma yapıldıysa ve orijinal durumlar mevcutsa komut oluştur
     # REVERT_THRESHOLD gibi bir eşik kullanılabilir veya direkt 0.1
     if (abs(total_dx) > 0.1 or abs(total_dy) > 0.1) and canvas.move_original_states:
-        logging.debug(f"  Actual move detected. Creating MoveItemsCommand. Original states count: {len(canvas.move_original_states)}")
+        #logging.debug(f"  Actual move detected. Creating MoveItemsCommand. Original states count: {len(canvas.move_original_states)}")
         
         initial_states_for_command = canvas.move_original_states 
         # selected_refs, move_original_states alındığı andaki selected_item_indices olmalı.
@@ -492,7 +494,7 @@ def handle_selector_move_selection_release(canvas: 'DrawingCanvas', pos: QPointF
                 # content_changed.emit() komutun execute'u içinde yapılabilir veya burada.
                 # Şimdilik komuta bırakalım veya command execute sonrası canvas'tan emit edilebilir.
                 # canvas.content_changed.emit() # Sayfa içeriği değişti
-                logging.debug("  MoveItemsCommand executed.")
+                #logging.debug("  MoveItemsCommand executed.")
 
     else:
         logging.debug("  No significant move detected or no original states. No command created.")
@@ -505,8 +507,8 @@ def handle_selector_move_selection_release(canvas: 'DrawingCanvas', pos: QPointF
 
 def handle_selector_resize_release(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
     """Seçili öğelerin yeniden boyutlandırılmasının bittiği olayı yönetir."""
-    logging.debug(f"[selector_tool_handler] handle_selector_resize_release: shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
-    logging.debug(f"Resize selection finished. Handle: {canvas.grabbed_handle_type}, End World Pos: {pos}")
+    #logging.debug(f"[selector_tool_handler] handle_selector_resize_release: shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
+    #logging.debug(f"Resize selection finished. Handle: {canvas.grabbed_handle_type}, End World Pos: {pos}")
     
     # --- YENİ: DÜZENLENEBILIR ÇIZGI için özel tutamaç işlemi --- #
     if (
@@ -608,10 +610,10 @@ def handle_selector_resize_release(canvas: 'DrawingCanvas', pos: QPointF, event:
 
 def handle_selector_select_release(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
     """Dikdörtgen ile seçim yapmanın bittiği olayı yönetir."""
-    logging.debug(f"[selector_tool_handler] handle_selector_select_release: shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
+    #logging.debug(f"[selector_tool_handler] handle_selector_select_release: shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
     canvas.shape_end_point = pos
     selection_world_rect = QRectF(canvas.shape_start_point, canvas.shape_end_point).normalized()
-    logging.debug(f"Selection rectangle finished: {selection_world_rect}")
+    #logging.debug(f"Selection rectangle finished: {selection_world_rect}")
     selected_item_refs = []
     for i, line_data in enumerate(canvas.lines):
         line_bbox = geometry_helpers.get_item_bounding_box(line_data, 'lines')
@@ -627,7 +629,7 @@ def handle_selector_select_release(canvas: 'DrawingCanvas', pos: QPointF, event:
             continue
         
         if selection_world_rect.intersects(bbox):
-            logging.debug(f"  SHAPE {i} (type: {shape_data[0]}): BBox={bbox}, SelRect={selection_world_rect}, QtIntersects={selection_world_rect.intersects(bbox)}")
+            #logging.debug(f"  SHAPE {i} (type: {shape_data[0]}): BBox={bbox}, SelRect={selection_world_rect}, QtIntersects={selection_world_rect.intersects(bbox)}")
             
             # Tüm şekilleri normal şekilde seç, EdiatbleLine şekilleri için özel işlem yapma
             selected_item_refs.append(('shapes', i))
@@ -652,27 +654,30 @@ def handle_selector_select_release(canvas: 'DrawingCanvas', pos: QPointF, event:
     
     # YENİ: B-Spline çizgilerini kontrol et
     if hasattr(canvas, 'b_spline_strokes') and canvas.b_spline_strokes:
-        logging.debug(f"  handle_selector_select_release: Checking {len(canvas.b_spline_strokes)} B-Spline strokes for selection rect: {selection_world_rect}")
+        #logging.debug(f"  handle_selector_select_release: Checking {len(canvas.b_spline_strokes)} B-Spline strokes for selection rect: {selection_world_rect}")
         for i, stroke_data in enumerate(canvas.b_spline_strokes):
             try:
                 item_bbox = geometry_helpers.get_bspline_bounding_box(stroke_data)
-                logging.debug(f"    B-Spline stroke {i} bbox: {item_bbox}")
+                #logging.debug(f"    B-Spline stroke {i} bbox: {item_bbox}")
                 if not item_bbox.isNull() and selection_world_rect.intersects(item_bbox):
-                    logging.debug(f"      >>> B-Spline stroke {i} INTERSECTS selection rect.")
+                    #logging.debug(f"      >>> B-Spline stroke {i} INTERSECTS selection rect.")
                     selected_item_refs.append(('bspline_strokes', i))
                 elif item_bbox.isNull():
-                    logging.debug(f"      B-Spline stroke {i} bbox isNull.")
+                    #logging.debug(f"      B-Spline stroke {i} bbox isNull.")
+                    pass
                 else:
-                    logging.debug(f"      B-Spline stroke {i} does NOT intersect selection rect.")
+                    #logging.debug(f"      B-Spline stroke {i} does NOT intersect selection rect.")
+                    pass    
             except Exception as e:
-                logging.error(f"handle_selector_select_release: B-Spline bbox alınırken/kontrol edilirken hata (stroke {i}): {e}", exc_info=True)
+                #logging.error(f"handle_selector_select_release: B-Spline bbox alınırken/kontrol edilirken hata (stroke {i}): {e}", exc_info=True)
+                pass
     # YENİ KONTROL SONU
 
     # Yeni seçimleri ayarla
     if selected_item_refs:
         canvas.selected_item_indices = selected_item_refs
         canvas.update()
-        logging.debug(f"Selection updated: {len(selected_item_refs)} items selected.")
+        #logging.debug(f"Selection updated: {len(selected_item_refs)} items selected.")
     
     canvas.selecting = False
     

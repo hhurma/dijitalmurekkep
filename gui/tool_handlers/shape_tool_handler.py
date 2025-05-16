@@ -84,7 +84,7 @@ def handle_shape_move(canvas: 'DrawingCanvas', pos: QPointF):
         canvas.update() # Geçici şekli göstermek için canvas'ı güncelle
 
 def handle_shape_release(canvas: 'DrawingCanvas', pos: QPointF):
-    logging.debug("handle_shape_release: fonksiyon başı")
+    #logging.debug("handle_shape_release: fonksiyon başı")
     """Şekil çizimi için bırakma olayını yönetir."""
     if canvas.drawing_shape:
         # --- YENİ: Grid'e snap --- #
@@ -127,7 +127,7 @@ def handle_shape_release(canvas: 'DrawingCanvas', pos: QPointF):
             if command:
                 # logging.debug("UndoManager: execute çağrılıyor (DrawShapeCommand).")
                 canvas.undo_manager.execute(command)
-                logging.debug("UndoManager: execute çağrısı bitti (DrawShapeCommand).")
+                #logging.debug("UndoManager: execute çağrısı bitti (DrawShapeCommand).")
                 if canvas._parent_page: 
                     canvas._parent_page.mark_as_modified()
                 # Sayfanın değiştiğini belirten sinyali gönderelim

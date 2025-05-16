@@ -72,7 +72,7 @@ def handle_set_pen_width(page_manager: 'PageManager', width: int):
     if current_page:
         canvas = current_page.get_canvas()
         if canvas:
-            logging.debug(f"Handling set pen width: {width}")
+            #logging.debug(f"Handling set pen width: {width}")
             canvas.set_pen_width(float(width)) # DrawingCanvas float bekliyor
         else:
             logging.error("handle_set_pen_width: Aktif sayfanın canvas'ı bulunamadı.")
@@ -89,7 +89,7 @@ def handle_set_eraser_width(page_manager: 'PageManager', width: int):
     if current_page:
         canvas = current_page.get_canvas()
         if canvas:
-            logging.debug(f"Handling set eraser width: {width}")
+            #logging.debug(f"Handling set eraser width: {width}")
             canvas.set_eraser_width(float(width)) # DrawingCanvas float bekliyor
         else:
             logging.error("handle_set_eraser_width: Aktif sayfanın canvas'ı bulunamadı.")

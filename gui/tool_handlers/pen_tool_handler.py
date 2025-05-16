@@ -71,7 +71,7 @@ def handle_pen_move(canvas: 'DrawingCanvas', pos: QPointF):
         # canvas.update() # Çizgiyi anlık olarak göstermek için güncelle
 
 def handle_pen_release(canvas: 'DrawingCanvas', pos: QPointF, event):
-    logging.debug(f"[pen_tool_handler] handle_pen_release çağrıldı. Drawing={canvas.drawing}, TempErasing={canvas.temporary_erasing}, WorldPos={pos}")
+    #logging.debug(f"[pen_tool_handler] handle_pen_release çağrıldı. Drawing={canvas.drawing}, TempErasing={canvas.temporary_erasing}, WorldPos={pos}")
     """Kalem bırakma olayını yönetir."""
     # logging.debug(f"handle_pen_release: Drawing={canvas.drawing}, TempErasing={canvas.temporary_erasing}, WorldPos={pos}")
     
@@ -112,7 +112,7 @@ def handle_pen_release(canvas: 'DrawingCanvas', pos: QPointF, event):
 
     # --- NORMAL ÇİZİM KONTROLÜ --- #
     elif canvas.drawing and canvas.current_line_points:
-        logging.debug("Pen Release: Finalizing drawing line.")
+        #logging.debug("Pen Release: Finalizing drawing line.")
         if len(canvas.current_line_points) > 1: # En az 2 nokta varsa çizgi oluştur
             final_points = [QPointF(p.x(), p.y()) for p in canvas.current_line_points]
             line_data = [
@@ -124,7 +124,7 @@ def handle_pen_release(canvas: 'DrawingCanvas', pos: QPointF, event):
             # DrawLineCommand'a canvas referansını doğru şekilde veriyoruz.
             command = DrawLineCommand(canvas, line_data)
             canvas.undo_manager.execute(command)
-            logging.debug(f"Pen Release: DrawLineCommand executed with {len(final_points)} points.")
+            #logging.debug(f"Pen Release: DrawLineCommand executed with {len(final_points)} points.")
             
             # Sayfayı değiştirilmiş olarak işaretle ve sinyal gönder
             if canvas._parent_page:

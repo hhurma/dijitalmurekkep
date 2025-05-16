@@ -69,11 +69,11 @@ class PageManager(QTabWidget):
                             template_settings=self.template_settings, 
                             main_window=self.main_window,
                             default_orientation_str=default_orientation) # YENİ: Yön parametresi
-            logging.debug(f"Yeni sayfa oluşturuldu: {new_page_number} (Yön: {default_orientation}, Ayarlarla)")
+            #logging.debug(f"Yeni sayfa oluşturuldu: {new_page_number} (Yön: {default_orientation}, Ayarlarla)")
         elif page:
             new_page = page # Verilen sayfayı kullan
             new_page_number = page.page_number # Sayfa numarasını al
-            logging.debug(f"Varolan sayfa eklendi: {new_page_number}")
+            #logging.debug(f"Varolan sayfa eklendi: {new_page_number}")
         else:
              logging.error("add_page: Ne yeni sayfa oluşturulacak ne de var olan sayfa verildi.")
              return None

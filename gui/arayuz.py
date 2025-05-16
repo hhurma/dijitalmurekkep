@@ -196,7 +196,7 @@ class MainWindow(QMainWindow):
 
         self.update_actions_state()
 
-        logging.info("MainWindow başlatıldı, Page Manager ve Handler yapısı entegre edildi.")
+        #logging.info("MainWindow başlatıldı, Page Manager ve Handler yapısı entegre edildi.")
 
         # self._setup_signals() # Hata veren satır kaldırıldı
         self._load_settings() # Ayarları yükle
@@ -620,7 +620,7 @@ class MainWindow(QMainWindow):
         # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
         # Renk butonları eklenecek
-        logging.debug("Toolbar oluşturuldu.")
+        #logging.debug("Toolbar oluşturuldu.")
 
         # --- Doldurma Rengi ve Şeffaflık --- #
         self.fill_color_button = QPushButton()
@@ -741,7 +741,7 @@ class MainWindow(QMainWindow):
         template_menu.addAction(self.lined_template_action)
         template_menu.addAction(self.grid_template_action)
         
-        logging.debug("Menüler oluşturuldu.")
+        #logging.debug("Menüler oluşturuldu.")
 
         # Düzenleme Menüsü
         edit_menu = self.menuBar().addMenu("&Düzenle")
@@ -763,7 +763,7 @@ class MainWindow(QMainWindow):
     def _update_active_page_connections(self, current_page: Page | None):
         """Aktif sayfa değiştiğinde genel actionların bağlantılarını günceller (handler kullanarak)."""
         # --- DEĞİŞİKLİK: Log mesajını güncelle --- #
-        logging.debug(f"Aktif sayfa bağlantıları güncelleniyor (PageManager içinden gelen): {current_page}")
+        #logging.debug(f"Aktif sayfa bağlantıları güncelleniyor (PageManager içinden gelen): {current_page}")
         # --- --- --- --- --- --- --- --- --- --- #
 
         # Önceki bağlantıları temizle (özellikle başlık için)
@@ -851,7 +851,7 @@ class MainWindow(QMainWindow):
 
             # --- YENİ: Canvas'ın başlangıç kalınlıklarını ayarla --- #
             # MainWindow'dan yüklenen/tutulan değerleri canvas'a uygula
-            logging.debug(f"  Setting initial canvas widths: Pen={self.current_pen_width}, Eraser={self.current_eraser_width}")
+            #logging.debug(f"  Setting initial canvas widths: Pen={self.current_pen_width}, Eraser={self.current_eraser_width}")
             canvas_handler.handle_set_pen_width(self.page_manager, self.current_pen_width)
             canvas_handler.handle_set_eraser_width(self.page_manager, self.current_eraser_width)
             # --- --- --- --- --- --- --- --- --- --- --- --- --- -- #
@@ -951,13 +951,13 @@ class MainWindow(QMainWindow):
         # Aç her zaman aktif olabilir
         self.load_action.setEnabled(True) 
         
-        logging.debug(f"[update_actions_state] Çağrıldı. page_count={page_count}, has_pages={has_pages}, current_page_undo_manager={self.current_page_undo_manager}")
+        #logging.debug(f"[update_actions_state] Çağrıldı. page_count={page_count}, has_pages={has_pages}, current_page_undo_manager={self.current_page_undo_manager}")
 
         # --- YENİ: Undo/Redo butonlarını her zaman yığın durumuna göre güncelle --- #
         if self.current_page_undo_manager:
             enabled_undo = self.current_page_undo_manager.can_undo()
             enabled_redo = self.current_page_undo_manager.can_redo()
-            logging.debug(f"[update_actions_state] Undo butonu setEnabled({enabled_undo}), Redo butonu setEnabled({enabled_redo})")
+            #logging.debug(f"[update_actions_state] Undo butonu setEnabled({enabled_undo}), Redo butonu setEnabled({enabled_redo})")
             self._update_undo_action_enabled(enabled_undo) # GÜNCELLENDİ
             self._update_redo_action_enabled(enabled_redo) # GÜNCELLENDİ
         else:
@@ -968,13 +968,13 @@ class MainWindow(QMainWindow):
         blocked = self.undo_action.blockSignals(True)
         self.undo_action.setEnabled(can_undo)
         self.undo_action.blockSignals(blocked)
-        logging.debug(f"Undo action enabled: {can_undo} (signals blocked/restored)")
+        #logging.debug(f"Undo action enabled: {can_undo} (signals blocked/restored)")
 
     def _update_redo_action_enabled(self, can_redo: bool):
         blocked = self.redo_action.blockSignals(True)
         self.redo_action.setEnabled(can_redo)
         self.redo_action.blockSignals(blocked)
-        logging.debug(f"Redo action enabled: {can_redo} (signals blocked/restored)")
+        #logging.debug(f"Redo action enabled: {can_redo} (signals blocked/restored)")
 
     def _load_settings(self):
         """Uygulama ayarlarını (pencere boyutu, son dosyalar vb.) JSON'dan yükler."""
@@ -1061,11 +1061,11 @@ class MainWindow(QMainWindow):
         self.settings['quick_access_colors'] = validated_quick_colors[:max_quick_colors]
         self.current_pen_width = self.settings.get('pen_width', 2)
         self.current_eraser_width = self.settings.get('eraser_width', 10)
-        logging.debug(f"Kalınlıklar yüklendi: Pen={self.current_pen_width}, Eraser={self.current_eraser_width}")
+        #logging.debug(f"Kalınlıklar yüklendi: Pen={self.current_pen_width}, Eraser={self.current_eraser_width}")
         for key, default_value in DEFAULT_GRID_SETTINGS.items():
             self.settings[key] = self.settings.get(key, default_value)
         loaded_grid_settings = {k: self.settings.get(k) for k in DEFAULT_GRID_SETTINGS if k in self.settings}
-        logging.debug(f"Grid ayarları yüklendi/varsayılanlar atandı: {loaded_grid_settings}")
+        #logging.debug(f"Grid ayarları yüklendi/varsayılanlar atandı: {loaded_grid_settings}")
 
     def _save_settings(self, settings: dict):
         """Mevcut uygulama ayarlarını (pencere boyutu, son dosyalar vb.) JSON'a kaydeder."""
@@ -1223,9 +1223,10 @@ class MainWindow(QMainWindow):
             canvas = current_page.drawing_canvas
             # Canvas'a ayarları uygulayacak yeni bir metod ekleyeceğiz
             canvas.apply_pointer_settings(settings)
-            logging.debug(f"İşaretçi ayarları aktif canvas'a uygulandı: {settings}")
+            #logging.debug(f"İşaretçi ayarları aktif canvas'a uygulandı: {settings}")
         else:
-            logging.warning("İşaretçi ayarları uygulanacak aktif canvas bulunamadı.")
+            #logging.warning("İşaretçi ayarları uygulanacak aktif canvas bulunamadı.")
+            pass
     # --- --- --- --- --- --- --- --- --- --- --- --- -- #
 
     # --- YENİ: Son Açılan Menüsü --- #
@@ -1335,7 +1336,7 @@ class MainWindow(QMainWindow):
         self.pressed_color_button = button
         self.was_long_press = False # Her basışta sıfırla
         self.long_press_timer.start()
-        logging.debug(f"Quick color button pressed, timer started for index: {button.property('color_index')}")
+        #logging.debug(f"Quick color button pressed, timer started for index: {button.property('color_index')}")
 
     def _handle_quick_color_released(self):
         """Hızlı renk butonu bırakıldığında işlemleri yapar."""
@@ -1344,7 +1345,7 @@ class MainWindow(QMainWindow):
             if self.long_press_timer.isActive():
                 # Zamanlayıcı hala aktifse, kısa basmaydı
                 self.long_press_timer.stop()
-                logging.debug("Timer stopped, was a short press.")
+                #logging.debug("Timer stopped, was a short press.")
                 if not self.was_long_press: # Zaman aşımı tetiklenmediyse rengi seç
                      color = self.pressed_color_button.property("qcolor")
                      if color and isinstance(color, QColor):
@@ -1362,13 +1363,14 @@ class MainWindow(QMainWindow):
         if self.pressed_color_button:
             index = self.pressed_color_button.property("color_index")
             if index is not None:
-                logging.info(f"Long press detected on index {index}, opening color editor.")
+                #logging.info(f"Long press detected on index {index}, opening color editor.")
                 self.was_long_press = True # Düzenleyici açıldı, kısa basma işlemini engelle
                 self._handle_edit_quick_color(index)
             # Zaman aşımından sonra butonu temizlemek doğru mu? Belki release'de temizlemek daha iyi.
             # self.pressed_color_button = None # Belki burada temizlememeliyiz?
         else:
-            logging.warning("Long press timeout but no button was stored.")
+            #logging.warning("Long press timeout but no button was stored.")
+            pass
     # --- --- --- --- --- --- --- --- --- ---
 
     def _handle_add_color_click(self):
@@ -1391,7 +1393,7 @@ class MainWindow(QMainWindow):
                     
             # if new_color_list not in quick_colors and len(quick_colors) < max_colors:
             if not color_exists and len(quick_colors) < max_colors:
-                logging.debug(f"Yeni renk listeye ekleniyor: {new_color_list}")
+                #logging.debug(f"Yeni renk listeye ekleniyor: {new_color_list}")
                 quick_colors.append(new_color_list)
                 self.settings['quick_access_colors'] = quick_colors
                 self._save_settings(self.settings)
@@ -1403,15 +1405,16 @@ class MainWindow(QMainWindow):
                 # else:
                 #      logging.error("'AnaAraçlar' isimli toolbar bulunamadı!")
                 self._update_quick_color_buttons() # Sadece layout'u güncellemek yeterli
-                logging.info(f"Yeni hızlı erişim rengi eklendi: {new_color.name()}")
+                #logging.info(f"Yeni hızlı erişim rengi eklendi: {new_color.name()}")
             elif color_exists:
                  logging.debug("Seçilen renk zaten listede var.")
                  QMessageBox.information(self, "Renk Zaten Var", "Seçtiğiniz renk zaten hızlı erişim listesinde.")
             elif len(quick_colors) >= max_colors:
-                 logging.debug("Hızlı renk limiti dolu.")
+                 #logging.debug("Hızlı renk limiti dolu.")
                  QMessageBox.information(self, "Limit Dolu", f"Maksimum hızlı erişim rengi sayısına ({max_colors}) ulaşıldı.")
             else:
-                 logging.warning("Renk eklenemedi, bilinmeyen durum.")
+                 #logging.warning("Renk eklenemedi, bilinmeyen durum.")
+                 pass
 
     def _handle_edit_quick_color(self, index: int):
         """Belirli bir index'teki hızlı erişim rengini düzenler."""
@@ -1431,10 +1434,11 @@ class MainWindow(QMainWindow):
                 # --- YENİ: Düzenlenen rengi aktif renk yap --- #
                 self.current_pen_color = new_color
                 canvas_handler.handle_set_pen_color(self.page_manager, new_color)
-                logging.debug(f"Düzenlenen renk ({new_color.name()}) aktif kalem rengi olarak ayarlandı.")
+                #logging.debug(f"Düzenlenen renk ({new_color.name()}) aktif kalem rengi olarak ayarlandı.")
                 # --- --- --- --- --- --- --- --- --- --- ---
         else:
-             logging.error(f"Düzenlenecek renk index'i geçersiz: {index}")
+             #logging.error(f"Düzenlenecek renk index'i geçersiz: {index}")
+             pass
 
     def _handle_quick_color_click(self, color: QColor):
         """Hızlı erişim renk butonlarından birine tıklandığında çağrılır."""
@@ -1451,17 +1455,17 @@ class MainWindow(QMainWindow):
         current_page = self.page_manager.get_current_page()
 
         if not current_page:
-            logging.warning("_handle_width_change: Aktif sayfa bulunamadı.")
+            #logging.warning("_handle_width_change: Aktif sayfa bulunamadı.")
             return
             
         if not checked_action:
-            logging.warning("_handle_width_change: Aktif araç (checkedAction) bulunamadı.")
+            #logging.warning("_handle_width_change: Aktif araç (checkedAction) bulunamadı.")
             return
 
         drawing_canvas = current_page.get_canvas() # DrawingCanvas örneğini al
 
         if not drawing_canvas:
-            logging.error("_handle_width_change: Aktif sayfanın DrawingCanvas'ı bulunamadı.")
+            #logging.error("_handle_width_change: Aktif sayfanın DrawingCanvas'ı bulunamadı.")
             return
 
         # Düzenlenebilir çizgi aracı için özel işlem
@@ -1469,27 +1473,30 @@ class MainWindow(QMainWindow):
             # DrawingCanvas içinde b_spline_widget (DrawingWidget) var mı kontrol et
             if hasattr(drawing_canvas, 'b_spline_widget') and drawing_canvas.b_spline_widget:
                 drawing_canvas.b_spline_widget.setDefaultLineThickness(value)
-                logging.debug(f"DrawingWidget (b_spline_widget) için varsayılan kalınlık ayarlandı: {value}")
+                #logging.debug(f"DrawingWidget (b_spline_widget) için varsayılan kalınlık ayarlandı: {value}")
+                pass
             else:
-                logging.warning("Düzenlenebilir çizgi aracı aktif ancak DrawingCanvas içinde b_spline_widget bulunamadı.")
+                #logging.warning("Düzenlenebilir çizgi aracı aktif ancak DrawingCanvas içinde b_spline_widget bulunamadı.")
+                pass
         elif checked_action == self.pen_tool_action:
             self.current_pen_width = value
             # canvas_handler.handle_set_pen_width(self.page_manager, value) # Bu metod DrawingCanvas'ı hedef almalı
             drawing_canvas.set_pen_width(value) # Doğrudan DrawingCanvas metodunu çağıralım
-            logging.debug(f"Genel kalem kalınlığı (PEN aracı) DrawingCanvas üzerinde ayarlandı: {value}")
+            #logging.debug(f"Genel kalem kalınlığı (PEN aracı) DrawingCanvas üzerinde ayarlandı: {value}")
         elif checked_action == self.eraser_tool_action:
             self.current_eraser_width = value
             # canvas_handler.handle_set_eraser_width(self.page_manager, value)
             drawing_canvas.set_eraser_width(value) # Doğrudan DrawingCanvas metodunu çağıralım
-            logging.debug(f"Silgi kalınlığı DrawingCanvas üzerinde ayarlandı: {value}")
+            #logging.debug(f"Silgi kalınlığı DrawingCanvas üzerinde ayarlandı: {value}")
         elif checked_action in [self.line_tool_action, self.rect_tool_action, self.circle_tool_action]:
             self.current_pen_width = value
             # Bu araçlar için DrawingCanvas'ın set_pen_width metodu kullanılır
             drawing_canvas.set_pen_width(value)
             tool_name = checked_action.text()
-            logging.debug(f"{tool_name} aracı için kalınlık (DrawingCanvas.set_pen_width) ayarlandı: {value}")
+            #logging.debug(f"{tool_name} aracı için kalınlık (DrawingCanvas.set_pen_width) ayarlandı: {value}")
         else:
-            logging.debug(f"Kalınlık ayarı '{checked_action.text()}' aracı için DrawingCanvas üzerinde uygulanmadı.")
+            #logging.debug(f"Kalınlık ayarı '{checked_action.text()}' aracı için DrawingCanvas üzerinde uygulanmadı.")
+            pass
 
 
     @pyqtSlot(QAction)
@@ -1498,21 +1505,21 @@ class MainWindow(QMainWindow):
         if not action:
             self.width_spinbox.setEnabled(False)
             self.width_spinbox.setToolTip("")
-            logging.debug("_update_width_spinbox_for_tool: Boş action geldi, spinbox pasif.")
+            #logging.debug("_update_width_spinbox_for_tool: Boş action geldi, spinbox pasif.")
             return
 
         current_page = self.page_manager.get_current_page()
         if not current_page:
             self.width_spinbox.setEnabled(False)
             self.width_spinbox.setToolTip("")
-            logging.debug("_update_width_spinbox_for_tool: Aktif sayfa yok, spinbox pasif.")
+            #logging.debug("_update_width_spinbox_for_tool: Aktif sayfa yok, spinbox pasif.")
             return
 
         drawing_canvas = current_page.get_canvas() # DrawingCanvas örneğini al
         if not drawing_canvas:
             self.width_spinbox.setEnabled(False)
             self.width_spinbox.setToolTip("")
-            logging.debug("_update_width_spinbox_for_tool: DrawingCanvas yok, spinbox pasif.")
+            #logging.debug("_update_width_spinbox_for_tool: DrawingCanvas yok, spinbox pasif.")
             return
         
         self.width_spinbox.setEnabled(False) # Varsayılan olarak pasif
@@ -1525,10 +1532,10 @@ class MainWindow(QMainWindow):
                 self.width_spinbox.setValue(drawing_canvas.b_spline_widget.default_line_thickness)
                 self.width_spinbox.blockSignals(False)
                 self.width_spinbox.setEnabled(True)
-                logging.debug(f"Spinbox, Düzenlenebilir Çizgi (b_spline_widget) için ayarlandı: {drawing_canvas.b_spline_widget.default_line_thickness}")
+                #logging.debug(f"Spinbox, Düzenlenebilir Çizgi (b_spline_widget) için ayarlandı: {drawing_canvas.b_spline_widget.default_line_thickness}")
             else:
                 self.width_spinbox.setValue(self.settings.get('pen_width', 2))
-                logging.debug("Spinbox, Düzenlenebilir Çizgi için ayarlandı (b_spline_widget yok, varsayılan pen_width).")
+                #logging.debug("Spinbox, Düzenlenebilir Çizgi için ayarlandı (b_spline_widget yok, varsayılan pen_width).")
                 self.width_spinbox.setEnabled(True) 
 
         elif action == self.pen_tool_action:
@@ -1538,7 +1545,7 @@ class MainWindow(QMainWindow):
             self.width_spinbox.setValue(int(drawing_canvas.current_pen_width)) # DrawingCanvas'ın kendi kalem kalınlığı
             self.width_spinbox.blockSignals(False)
             self.width_spinbox.setEnabled(True)
-            logging.debug(f"Spinbox, Kalem aracı için (DrawingCanvas) ayarlandı: {drawing_canvas.current_pen_width}")
+            #logging.debug(f"Spinbox, Kalem aracı için (DrawingCanvas) ayarlandı: {drawing_canvas.current_pen_width}")
 
         elif action == self.line_tool_action:
             self.width_spinbox.setToolTip("Çizgi Kalınlığı")
@@ -1546,7 +1553,7 @@ class MainWindow(QMainWindow):
             self.width_spinbox.setValue(int(drawing_canvas.current_pen_width))
             self.width_spinbox.blockSignals(False)
             self.width_spinbox.setEnabled(True)
-            logging.debug(f"Spinbox, Çizgi aracı için (DrawingCanvas) ayarlandı: {drawing_canvas.current_pen_width}")
+            #logging.debug(f"Spinbox, Çizgi aracı için (DrawingCanvas) ayarlandı: {drawing_canvas.current_pen_width}")
 
         elif action == self.rect_tool_action:
             self.width_spinbox.setToolTip("Dikdörtgen Çizgi Kalınlığı")
@@ -1554,7 +1561,7 @@ class MainWindow(QMainWindow):
             self.width_spinbox.setValue(int(drawing_canvas.current_pen_width))
             self.width_spinbox.blockSignals(False)
             self.width_spinbox.setEnabled(True)
-            logging.debug(f"Spinbox, Dikdörtgen aracı için (DrawingCanvas) ayarlandı: {drawing_canvas.current_pen_width}")
+            #logging.debug(f"Spinbox, Dikdörtgen aracı için (DrawingCanvas) ayarlandı: {drawing_canvas.current_pen_width}")
 
         elif action == self.circle_tool_action:
             self.width_spinbox.setToolTip("Daire Çizgi Kalınlığı")
@@ -1562,7 +1569,7 @@ class MainWindow(QMainWindow):
             self.width_spinbox.setValue(int(drawing_canvas.current_pen_width))
             self.width_spinbox.blockSignals(False)
             self.width_spinbox.setEnabled(True)
-            logging.debug(f"Spinbox, Daire aracı için (DrawingCanvas) ayarlandı: {drawing_canvas.current_pen_width}")
+            #logging.debug(f"Spinbox, Daire aracı için (DrawingCanvas) ayarlandı: {drawing_canvas.current_pen_width}")
 
         elif action == self.eraser_tool_action:
             self.width_spinbox.setToolTip("Silgi Kalınlığı")
@@ -1571,7 +1578,7 @@ class MainWindow(QMainWindow):
             self.width_spinbox.setValue(int(drawing_canvas.eraser_width)) # DrawingCanvas'ın kendi silgi kalınlığı
             self.width_spinbox.blockSignals(False)
             self.width_spinbox.setEnabled(True)
-            logging.debug(f"Spinbox, Silgi aracı için (DrawingCanvas) ayarlandı: {drawing_canvas.eraser_width}")
+            #logging.debug(f"Spinbox, Silgi aracı için (DrawingCanvas) ayarlandı: {drawing_canvas.eraser_width}")
         
         elif action == self.select_tool_action:
             # Bu kısım, projenizin orijinal mantığına göre daha detaylı ele alınmalıdır.
@@ -1580,7 +1587,7 @@ class MainWindow(QMainWindow):
             # Şimdilik genel bir mesajla bırakıyorum.
             self.width_spinbox.setToolTip("Seçili Öğenin Kalınlığı (Detaylı implementasyon gerekli)")
             self.width_spinbox.setEnabled(False) # Veya seçili öğenin tipine göre aktif edilebilir
-            logging.debug("Spinbox, Seçim aracı için ayarlandı (detaylı mantık eklenebilir).")
+            #logging.debug("Spinbox, Seçim aracı için ayarlandı (detaylı mantık eklenebilir).")
 
         # --- Doldurma rengi ve şeffaflık kontrollerinin aktifliği ---
         if hasattr(self, 'fill_color_button') and hasattr(self, 'fill_alpha_slider') and hasattr(self, 'fill_enable_checkbox'):
