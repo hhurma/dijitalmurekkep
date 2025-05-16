@@ -506,9 +506,19 @@ class DrawingCanvas(QWidget):
             elif self.current_tool in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE]:
                 if self.drawing_shape and not self.shape_start_point.isNull() and not self.shape_end_point.isNull():
                     temp_shape_data = [
-                        self.current_tool, self.current_color, self.current_pen_width,
-                        self.shape_start_point, self.shape_end_point
+                        self.current_tool, 
+                        self.current_color, 
+                        self.current_pen_width,
+                        self.shape_start_point, 
+                        self.shape_end_point,
+                        self.line_style if hasattr(self, 'line_style') else 'solid'
                     ]
+                    # Dolgu bilgisi, eğer araç ve fill_enabled uygunsa eklenir
+                    if self.current_tool in [ToolType.RECTANGLE, ToolType.CIRCLE] and self.fill_enabled:
+                        # self.current_fill_rgba'nın alfa değeri gerçekten 0'dan büyükse ekleyelim.
+                        # Aslında self.fill_enabled kontrolü yeterli olmalı.
+                        temp_shape_data.append(self.current_fill_rgba) 
+                    
                     utils_drawing_helpers.draw_shape(painter, temp_shape_data)
 
         # YENİ: B-Spline çizgilerini ve kontrol noktalarını çiz (DrawingWidget'tan alınan mantıkla)

@@ -43,12 +43,12 @@
   ],
   "window_width": 1280,
   "window_height": 729,
-  "pen_width": 7,
+  "pen_width": 2,
   "eraser_width": 10,
   "fill_color": [
-    1.0,
-    1.0,
-    1.0,
+    0.6666666865348816,
+    0.3333333432674408,
+    0.0,
     1.0
   ],
   "template_settings": {
