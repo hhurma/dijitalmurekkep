@@ -9,7 +9,19 @@ import re # Sayfa aralığı ayrıştırma için eklendi
 import os # Dosya işlemleri için eklendi
 import time # Zaman işlemleri için eklendi
 
-# Helperları import etfrom utils import file_io_helpers, pdf_export_helpers# from utils.pdf_export_helpers import REPORTLAB_AVAILABLE # Kaldırıldıfrom utils.pdf_export_helpers import PYMUPDF_AVAILABLE, export_notebook_to_pdf, export_selected_pages_to_pdf, export_page_to_pdf # PYMUPDF bayrağı ve fonksiyonlarfrom gui.enums import Orientation # Orientation enum'unu import et# from gui.drawing_canvas import DrawingCanvas # DrawingCanvas import edildi - Döngüsel import sorunu yaratabilir# from gui.arayuz import MAX_RECENT_FILES # Sabiti import et - KALDIRILDIif TYPE_CHECKING:    from gui.arayuz import MainWindow    from gui.page_manager import PageManager    from gui.page import Page  # Type hinting için Page sınıfını buraya taşıdık    from gui.drawing_canvas import DrawingCanvas  # Type hinting için buraya taşıdık
+# Helperları import et
+from utils import file_io_helpers, pdf_export_helpers
+# from utils.pdf_export_helpers import REPORTLAB_AVAILABLE # Kaldırıldı
+from utils.pdf_export_helpers import PYMUPDF_AVAILABLE, export_notebook_to_pdf, export_selected_pages_to_pdf, export_page_to_pdf # PYMUPDF bayrağı ve fonksiyonlar
+from gui.enums import Orientation # Orientation enum'unu import et
+# from gui.drawing_canvas import DrawingCanvas # DrawingCanvas import edildi - Döngüsel import sorunu yaratabilir
+# from gui.arayuz import MAX_RECENT_FILES # Sabiti import et - KALDIRILDI
+
+if TYPE_CHECKING:
+    from gui.arayuz import MainWindow
+    from gui.page_manager import PageManager
+    from gui.page import Page  # Type hinting için Page sınıfını buraya taşıdık
+    from gui.drawing_canvas import DrawingCanvas  # Type hinting için buraya taşıdık
 
 # Dosya uzantıları ve filtreler
 NOTEBOOK_EXTENSION = ".dnd" # Digital Notes Data
@@ -66,7 +78,7 @@ def handle_save_notebook(main_window: 'MainWindow', page_manager: 'PageManager',
             # Döngüsel importu önlemek için isinstance yerine sınıf adını kontrol ediyoruz
             if widget_inside.__class__.__name__ == 'Page':
                 page = widget_inside
-        # --- --- --- --- --- --- --- --- --- --- -- #
+        # --- --- --- --- --- --- --- --- --- --- --- -- #
 
         if page: # Sadece geçerli Page nesnelerini ekle
             pages_to_save.append(page)
@@ -178,6 +190,12 @@ def handle_load_notebook(main_window: 'MainWindow', page_manager: 'PageManager')
             # Yüklenen veriyi canvas'a ata
             new_page.get_canvas().lines = page_content.get('lines', [])
             new_page.get_canvas().shapes = page_content.get('shapes', [])
+            
+            # --- YENİ: B-Spline strokes verilerini canvas'a ata --- #
+            if 'bspline_strokes' in page_content and hasattr(new_page.get_canvas(), 'b_spline_strokes'):
+                new_page.get_canvas().b_spline_strokes = page_content.get('bspline_strokes', [])
+                logging.debug(f"B-Spline strokes yüklendi: {len(new_page.get_canvas().b_spline_strokes)} adet")
+            # --- --- --- --- --- --- --- --- --- --- --- --- --- --- #
 
             # --- YENİ: Resim verisini Page nesnesine ata --- #
             loaded_images_data = page_content.get('images', [])
@@ -495,6 +513,12 @@ def handle_open_recent_file(main_window: 'MainWindow', page_manager: 'PageManage
             canvas = new_page.get_canvas()
             canvas.lines = page_content.get('lines', [])
             canvas.shapes = page_content.get('shapes', [])
+            
+            # --- YENİ: B-Spline strokes verilerini canvas'a ata --- #
+            if 'bspline_strokes' in page_content and hasattr(canvas, 'b_spline_strokes'):
+                canvas.b_spline_strokes = page_content.get('bspline_strokes', [])
+                logging.debug(f"B-Spline strokes yüklendi: {len(canvas.b_spline_strokes)} adet")
+            # --- --- --- --- --- --- --- --- --- --- --- --- --- --- #
 
             # --- YENİ: Resim verisini Page nesnesine ata --- #
             loaded_images_data = page_content.get('images', [])
@@ -555,7 +579,7 @@ def handle_open_recent_file(main_window: 'MainWindow', page_manager: 'PageManage
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     main_window.statusBar().showMessage(f"Dosya başarıyla yüklendi (Son Açılanlardan): {filepath}", 5000)
     if page_manager.count() > 0:
-        page_manager.setCurrentIndex(0) 
+        page_manager.setCurrentIndex(0)
 
     # Mevcut çizimi ve ayarları kaydet - BU BLOK HATALI VE GEREKSİZ
     # main_window.page_manager.save_to_file(filepath) # HATALI SATIR - YORUMA ALINDI

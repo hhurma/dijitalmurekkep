@@ -4,6 +4,7 @@
 import json
 import logging
 from typing import List, Dict, Any, Tuple
+import numpy as np  # NumPy dizileri için gerekli
 from PyQt6.QtCore import QPointF, QRectF
 from gui.enums import ToolType, Orientation # Orientation eklendi
 
@@ -246,6 +247,72 @@ def _deserialize_item(item_dict: Dict[str, Any]) -> List[Any] | None:
         logging.warning(f"Bilinmeyen öğe türü: {item_type}")
         return None
 
+# --- YENİ: B-Spline Serialize/Deserialize ---
+def _serialize_bspline(stroke_data: Dict[str, Any]) -> Dict[str, Any]:
+    """B-Spline stroke verisini JSON uyumlu sözlüğe dönüştürür."""
+    try:
+        serialized = {
+            'type': 'bspline',
+            'degree': stroke_data.get('degree', 3)
+        }
+        
+        # NumPy dizilerini Python listelerine dönüştür
+        if 'control_points' in stroke_data and isinstance(stroke_data['control_points'], np.ndarray):
+            serialized['control_points'] = stroke_data['control_points'].tolist() 
+        else:
+            logging.warning(f"B-Spline serialize: control_points eksik veya NumPy dizisi değil")
+            return None
+            
+        if 'knots' in stroke_data and isinstance(stroke_data['knots'], np.ndarray):
+            serialized['knots'] = stroke_data['knots'].tolist()
+        else:
+            logging.warning(f"B-Spline serialize: knots eksik veya NumPy dizisi değil")
+            return None
+            
+        if 'u' in stroke_data and isinstance(stroke_data['u'], np.ndarray):
+            serialized['u'] = stroke_data['u'].tolist()
+        else:
+            logging.warning(f"B-Spline serialize: u parametresi eksik veya NumPy dizisi değil")
+            return None
+            
+        # Ek olarak renk, çizgi stili ve kalınlık bilgilerini de ekleyelim
+        serialized['color'] = stroke_data.get('color', [0.0, 0.0, 0.0, 1.0])
+        serialized['width'] = stroke_data.get('width', 2.0)
+        serialized['line_style'] = stroke_data.get('line_style', 'solid')
+        
+        return serialized
+    except Exception as e:
+        logging.error(f"B-Spline serialize edilirken hata: {e}", exc_info=True)
+        return None
+
+def _deserialize_bspline(stroke_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """JSON uyumlu sözlükten B-Spline stroke verisi oluşturur."""
+    if stroke_dict.get('type') != 'bspline':
+        logging.warning(f"Deserialize bspline: Geçersiz tip: {stroke_dict.get('type')}")
+        return None
+        
+    try:
+        # Python listelerini NumPy dizilerine dönüştür
+        control_points = np.array(stroke_dict.get('control_points'))
+        knots = np.array(stroke_dict.get('knots'))
+        u_params = np.array(stroke_dict.get('u'))
+        
+        deserialized = {
+            'control_points': control_points,
+            'knots': knots,
+            'u': u_params,
+            'degree': stroke_dict.get('degree', 3),
+            'color': stroke_dict.get('color', [0.0, 0.0, 0.0, 1.0]),
+            'width': stroke_dict.get('width', 2.0),
+            'line_style': stroke_dict.get('line_style', 'solid')
+        }
+        
+        return deserialized
+    except Exception as e:
+        logging.error(f"B-Spline deserialize edilirken hata: {e}", exc_info=True)
+        return None
+# --- --- --- --- --- --- --- --- --- --- --- ---
+
 # --- Ana Kaydet/Yükle Fonksiyonları ---
 
 def save_notebook(filepath: str, pages: List['Page']):
@@ -277,13 +344,22 @@ def save_notebook(filepath: str, pages: List['Page']):
             pdf_bg_path = None
             if canvas and hasattr(canvas, '_pdf_background_source_path'):
                 pdf_bg_path = canvas._pdf_background_source_path
+                
+            # YENİ: B-Spline strokes verilerini al
+            bspline_strokes_to_serialize = []
+            if canvas and hasattr(canvas, 'b_spline_strokes') and canvas.b_spline_strokes:
+                for stroke_data in canvas.b_spline_strokes:
+                    serialized_stroke = _serialize_bspline(stroke_data)
+                    if serialized_stroke:
+                        bspline_strokes_to_serialize.append(serialized_stroke)
 
             serialized_page = {
                 'lines': [_serialize_item(line) for line in canvas.lines if line],
                 'shapes': [_serialize_item(shape) for shape in canvas.shapes if shape],
                 'images': images_to_serialize, # Serileştirilmiş resimleri ekle
                 'orientation': orientation.name, # Yön ismini kaydet
-                'pdf_background_source_path': pdf_bg_path # YENİ: PDF arka plan yolunu kaydet
+                'pdf_background_source_path': pdf_bg_path, # YENİ: PDF arka plan yolunu kaydet
+                'bspline_strokes': bspline_strokes_to_serialize # YENİ: B-Spline verilerini ekle
             }
             notebook_to_save.append(serialized_page)
 
@@ -327,13 +403,22 @@ def load_notebook(filepath: str) -> List[Dict[str, Any]] | None:
                       deserialized_images.append(deserialized_img)
             # --- --- --- --- --- --- --- --- --- --- --- ---
 
+            # --- YENİ: B-Spline stroke verilerini deserialize et ---
+            deserialized_bsplines = []
+            for bspline_dict in page_dict.get('bspline_strokes', []):
+                deserialized_bspline = _deserialize_bspline(bspline_dict)
+                if deserialized_bspline:
+                    deserialized_bsplines.append(deserialized_bspline)
+            # --- --- --- --- --- --- --- --- --- --- --- ---
+
             # --- YENİ: orientation'ı tuple yerine string olarak sakla ---
             deserialized_page = {
                 'lines': [],
                 'shapes': [],
                 'images': deserialized_images, # Deserialize edilmiş resimleri ekle
                 'orientation': page_dict.get('orientation', Orientation.PORTRAIT.name), # String olarak al
-                'pdf_background_source_path': page_dict.get('pdf_background_source_path') # YENİ: PDF arka plan yolunu oku
+                'pdf_background_source_path': page_dict.get('pdf_background_source_path'), # YENİ: PDF arka plan yolunu oku
+                'bspline_strokes': deserialized_bsplines # YENİ: B-Spline verilerini ekle
             }
             # --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
