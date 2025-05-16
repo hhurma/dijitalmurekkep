@@ -3,23 +3,13 @@
 
 import logging
 from typing import TYPE_CHECKING, List
-from PyQt6.QtWidgets import QFileDialog, QMessageBox, QApplication, QInputDialog, QScrollArea # QInputDialog eklendi, QScrollArea eklendi
+from PyQt6.QtWidgets import QFileDialog, QMessageBox, QApplication, QInputDialog, QScrollArea
+from PyQt6.QtCore import QRectF, QPointF # QRectF ve QPointF importları eksik
 import re # Sayfa aralığı ayrıştırma için eklendi
 import os # Dosya işlemleri için eklendi
 import time # Zaman işlemleri için eklendi
 
-# Helperları import et
-from utils import file_io_helpers, pdf_export_helpers
-# from utils.pdf_export_helpers import REPORTLAB_AVAILABLE # Kaldırıldı
-from utils.pdf_export_helpers import PYMUPDF_AVAILABLE, export_notebook_to_pdf, export_selected_pages_to_pdf, export_page_to_pdf # PYMUPDF bayrağı ve fonksiyonlar
-from gui.page import Page # Yeni sayfa oluşturmak için
-from gui.enums import Orientation # Orientation enum'unu import et
-from gui.drawing_canvas import DrawingCanvas # DrawingCanvas import edildi
-# from gui.arayuz import MAX_RECENT_FILES # Sabiti import et - KALDIRILDI
-
-if TYPE_CHECKING:
-    from gui.arayuz import MainWindow
-    from gui.page_manager import PageManager
+# Helperları import etfrom utils import file_io_helpers, pdf_export_helpers# from utils.pdf_export_helpers import REPORTLAB_AVAILABLE # Kaldırıldıfrom utils.pdf_export_helpers import PYMUPDF_AVAILABLE, export_notebook_to_pdf, export_selected_pages_to_pdf, export_page_to_pdf # PYMUPDF bayrağı ve fonksiyonlarfrom gui.enums import Orientation # Orientation enum'unu import et# from gui.drawing_canvas import DrawingCanvas # DrawingCanvas import edildi - Döngüsel import sorunu yaratabilir# from gui.arayuz import MAX_RECENT_FILES # Sabiti import et - KALDIRILDIif TYPE_CHECKING:    from gui.arayuz import MainWindow    from gui.page_manager import PageManager    from gui.page import Page  # Type hinting için Page sınıfını buraya taşıdık    from gui.drawing_canvas import DrawingCanvas  # Type hinting için buraya taşıdık
 
 # Dosya uzantıları ve filtreler
 NOTEBOOK_EXTENSION = ".dnd" # Digital Notes Data
@@ -65,14 +55,16 @@ def handle_save_notebook(main_window: 'MainWindow', page_manager: 'PageManager',
     main_window.statusBar().showMessage(f"Not defteri kaydediliyor: {filepath}...", 3000)
 
     # Sayfa verilerini topla (Page nesneleri olarak)
-    pages_to_save: List[Page] = []
+    pages_to_save = []  # Type hinting için import'u Type_CHECKING içine taşıdık
     for i in range(page_manager.count()):
         # --- DEĞİŞİKLİK: ScrollArea'dan Page'i al --- #
         scroll_area = page_manager.widget(i)
         page = None
         if isinstance(scroll_area, QScrollArea):
             widget_inside = scroll_area.widget()
-            if isinstance(widget_inside, Page):
+            # Tip kontrolü için doğrudan sınıf ismini kontrol etmek daha güvenli olabilir
+            # Döngüsel importu önlemek için isinstance yerine sınıf adını kontrol ediyoruz
+            if widget_inside.__class__.__name__ == 'Page':
                 page = widget_inside
         # --- --- --- --- --- --- --- --- --- --- -- #
 

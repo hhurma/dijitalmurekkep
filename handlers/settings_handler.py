@@ -5,20 +5,17 @@ from PyQt6.QtGui import QGuiApplication
 
 # Dialogları import et
 from gui.settings_dialog import TemplateSettingsDialog, PointerSettingsDialog
-# Canvas importu (tip kontrolü ve metod çağırmak için)
-from gui.drawing_canvas import DrawingCanvas
-# --- YENİ: Page importu --- #
-from gui.page import Page
-# --- --- --- --- --- --- --- #
 # Yardımcı fonksiyonlar için import
 from utils.pdf_export_helpers import generate_template_image_for_screen, TEMPLATE_OUTPUT_DIR
 # Enums
 from gui.enums import TemplateType, Orientation
 
-# MainWindow importu (tip kontrolü için)
+# Type checking importları
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from gui.arayuz import MainWindow
+    from gui.drawing_canvas import DrawingCanvas
+    from gui.page import Page
 
 PT_TO_PX = 96 / 72.0 # Varsayılan 96 DPI için punto -> piksel çevrimi
 
@@ -103,7 +100,7 @@ def handle_open_template_settings(main_window: 'MainWindow'):
             page = None
             if isinstance(scroll_area, QScrollArea):
                 widget_inside = scroll_area.widget()
-                if isinstance(widget_inside, Page):
+                if widget_inside.__class__.__name__ == 'Page':
                     page = widget_inside
             # --- --- --- --- --- --- --- --- --- --- -- #
 

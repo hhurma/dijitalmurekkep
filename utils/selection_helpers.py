@@ -296,3 +296,234 @@ def get_resize_cursor(handle_type: Optional[str]) -> Qt.CursorShape:
     # --- --- --- --- --- --- --- ---
     else:
         return Qt.CursorShape.ArrowCursor # Bilinmeyen tutamaç tipi 
+
+# --- YENİ: Döndürülmüş Dikdörtgen Poligonunu Hesapla ---
+def get_rotated_rect_polygon(rect: QRectF, angle: float) -> QPolygonF:
+    """
+    Verilen dikdörtgenin merkez etrafında döndürülmüş köşe noktalarını QPolygonF olarak döndürür.
+    Bu fonksiyon görsel seçim için döndürülmüş dikdörtgeni çizmek için kullanılır.
+    
+    Args:
+        rect (QRectF): Döndürülecek dikdörtgen
+        angle (float): Derece cinsinden döndürme açısı
+        
+    Returns:
+        QPolygonF: Döndürülmüş dikdörtgeni temsil eden poligon
+    """
+    rotated_corners = get_rotated_corners(rect, angle)
+    return QPolygonF(rotated_corners)
+# --- --- --- --- --- --- --- --- --- --- --- 
+
+# --- YENİ: Döndürülmüş Dikdörtgen İçin Tutamaç Pozisyonlarını Hesapla ---
+def calculate_handle_positions_for_rotated_rect(rect: QRectF, angle: float) -> Dict[str, QPointF]:
+    """
+    Döndürülmüş dikdörtgen için tutamaç pozisyonlarını hesaplar.
+    
+    Args:
+        rect: Dikdörtgen
+        angle: Derece cinsinden döndürme açısı
+        
+    Returns:
+        Dict[str, QPointF]: Tutamaç ismi ve konumları içeren sözlük
+    """
+    rotated_corners = get_rotated_corners(rect, angle)
+    
+    handle_positions = {
+        'top-left': rotated_corners[0],
+        'top-right': rotated_corners[1],
+        'bottom-right': rotated_corners[2], 
+        'bottom-left': rotated_corners[3],
+        
+        'middle-top': (rotated_corners[0] + rotated_corners[1]) / 2.0,
+        'middle-right': (rotated_corners[1] + rotated_corners[2]) / 2.0,
+        'middle-bottom': (rotated_corners[2] + rotated_corners[3]) / 2.0,
+        'middle-left': (rotated_corners[3] + rotated_corners[0]) / 2.0,
+    }
+    
+    # Döndürme tutamacını ekle
+    bottom_mid_point = handle_positions['middle-bottom']
+    center = rect.center()
+    vec_center_to_bottom = bottom_mid_point - center
+    
+    # Güvenli bir şekilde vektörü normalleştirip uzat
+    rotation_handle_offset = ROTATION_HANDLE_OFFSET
+    if vec_center_to_bottom.manhattanLength() > 1e-6:  # Sıfır vektör değilse
+        vec_center_to_bottom = vec_center_to_bottom * (1 + rotation_handle_offset / vec_center_to_bottom.manhattanLength())
+    
+    rotation_handle_center = center + vec_center_to_bottom
+    handle_positions['rotate'] = rotation_handle_center
+    
+    return handle_positions 
+# --- --- --- --- --- --- --- --- --- --- --- 
+
+# --- Döndürülmüş dikdörtgen için boyutlandırma hesaplama --- #
+def calculate_rotated_bbox_from_handle(
+    original_rect: QRectF,
+    original_angle: float,
+    mouse_world: QPointF,
+    handle_type: str,
+    aspect_ratio_locked: bool,
+    min_size: float = 10.0
+) -> QRectF:
+    """
+    Döndürülmüş bir resmin herhangi bir tutamacı ile yeni bbox'unu hesaplar.
+    Köşe tutamaçlarında aspect_ratio_locked ise calculate_rotated_bbox_aspect_locked fonksiyonunu çağırır.
+    Kenar (middle-*) tutamaçlarında ilgili kenarı mouse ile değiştirir, diğer kenarları sabit tutar.
+    """
+    # Köşe tutamaçları için aspect_ratio_locked ise özel fonksiyonu çağır
+    if handle_type in ['top-left', 'top-right', 'bottom-right', 'bottom-left'] and aspect_ratio_locked:
+        return calculate_rotated_bbox_aspect_locked(
+            original_rect, original_angle, mouse_world, handle_type, min_size
+        )
+
+    center = original_rect.center()
+    corners = [
+        original_rect.topLeft(),
+        original_rect.topRight(),
+        original_rect.bottomRight(),
+        original_rect.bottomLeft()
+    ]
+    # Dünya -> yerel (döndürülmemiş, merkezli)
+    transform = QTransform()
+    transform.translate(-center.x(), -center.y())
+    transform.rotate(-original_angle)
+    mouse_local = transform.map(mouse_world)
+    # Orijinal bbox'u da yerel koordinata çevir (merkezi 0,0 olacak şekilde)
+    local_bbox = QRectF(
+        -original_rect.width() / 2,
+        -original_rect.height() / 2,
+        original_rect.width(),
+        original_rect.height()
+    )
+    # Kenar tutamaçları için
+    new_bbox_local = QRectF(local_bbox)
+    if handle_type == 'middle-left':
+        new_left = mouse_local.x()
+        if new_left > new_bbox_local.right() - min_size:
+            new_left = new_bbox_local.right() - min_size
+        new_bbox_local.setLeft(new_left)
+    elif handle_type == 'middle-right':
+        new_right = mouse_local.x()
+        if new_right < new_bbox_local.left() + min_size:
+            new_right = new_bbox_local.left() + min_size
+        new_bbox_local.setRight(new_right)
+    elif handle_type == 'middle-top':
+        new_top = mouse_local.y()
+        if new_top > new_bbox_local.bottom() - min_size:
+            new_top = new_bbox_local.bottom() - min_size
+        new_bbox_local.setTop(new_top)
+    elif handle_type == 'middle-bottom':
+        new_bottom = mouse_local.y()
+        if new_bottom < new_bbox_local.top() + min_size:
+            new_bottom = new_bbox_local.top() + min_size
+        new_bbox_local.setBottom(new_bottom)
+    # Yerel (0,0 merkezli) -> Dünya koordinatına dönüştür
+    transform_to_world = QTransform()
+    transform_to_world.rotate(original_angle)
+    transform_to_world.translate(center.x(), center.y())
+    poly = QPolygonF()
+    poly.append(new_bbox_local.topLeft())
+    poly.append(new_bbox_local.topRight())
+    poly.append(new_bbox_local.bottomRight())
+    poly.append(new_bbox_local.bottomLeft())
+    mapped_poly = transform_to_world.map(poly)
+    new_bbox_world = mapped_poly.boundingRect()
+    # Son kontrol: bbox geçerli mi?
+    if new_bbox_world.isNull() or not new_bbox_world.isValid() or new_bbox_world.width() < min_size or new_bbox_world.height() < min_size:
+        return original_rect
+    return new_bbox_world
+
+# --- En-boy oranını koruyan özel hesaplama --- #
+def calculate_rotated_bbox_aspect_locked(
+    original_rect: QRectF,
+    original_angle: float,
+    mouse_world: QPointF,
+    handle_type: str,
+    min_size: float = 10.0
+) -> QRectF:
+    """
+    Döndürülmüş bir resmin köşe tutamacı ile, en-boy oranı kilitli şekilde yeni bbox'unu hesaplar.
+    BASİTLEŞTİRİLMİŞ YAKLAŞIM: Vektörü yerel eksene çevir, boyutu hesapla, sonra merkezi koruyarak dünyaya döndür.
+    """
+    if original_rect.isNull() or not original_rect.isValid():
+        return original_rect
+
+    center = original_rect.center()
+    width = original_rect.width()
+    height = original_rect.height()
+    aspect = width / height if height > 1e-6 else 1.0
+
+    handle_map = {
+        'top-left': (0, 2), 'top-right': (1, 3),
+        'bottom-right': (2, 0), 'bottom-left': (3, 1)
+    }
+    if handle_type not in handle_map:
+        return original_rect
+
+    # Sabit köşeyi dünya koordinatlarında bul
+    corners_world = [
+        original_rect.topLeft(), original_rect.topRight(),
+        original_rect.bottomRight(), original_rect.bottomLeft()
+    ]
+    # Dikkat: Köşeler QRectF'ten alınmalı, ancak QRectF döndürülmüş değil.
+    # Önce köşeleri döndürmemiz lazım.
+    transform_world = QTransform()
+    transform_world.translate(center.x(), center.y())
+    transform_world.rotate(original_angle)
+    transform_world.translate(-center.x(), -center.y()) # Merkezi referans alarak döndür
+    rotated_corners = [
+        transform_world.map(original_rect.topLeft()),
+        transform_world.map(original_rect.topRight()),
+        transform_world.map(original_rect.bottomRight()),
+        transform_world.map(original_rect.bottomLeft())
+    ]
+    if len(rotated_corners) < 4: return original_rect # Hata durumu
+
+    moving_idx, fixed_idx = handle_map[handle_type]
+    fixed_corner_world = rotated_corners[fixed_idx]
+
+    # Sabit köşeden mouse'a olan dünya vektörü
+    delta_world = mouse_world - fixed_corner_world
+
+    # Bu vektörü resmin yerel (döndürülmemiş) eksenlerine çevir
+    transform_vec_to_local = QTransform()
+    transform_vec_to_local.rotate(-original_angle)
+    delta_local = transform_vec_to_local.map(delta_world)
+
+    # Mouse'un, resmin DÖNDÜRÜLMÜŞ eksenlerindeki projeksiyonuna bakalım.
+    mouse_relative_to_center = mouse_world - center
+    # Mouse'un yerel koordinatını bul (merkeze göre, döndürülmüş)
+    transform_center_to_local = QTransform().rotate(-original_angle)
+    mouse_local_from_center = transform_center_to_local.map(mouse_relative_to_center)
+
+    # Mouse'un merkezden uzaklığına göre boyut belirle
+    dist_x = abs(mouse_local_from_center.x())
+    dist_y = abs(mouse_local_from_center.y())
+    
+    # En-boy oranını koru
+    if (dist_x / aspect) > dist_y:
+        new_local_width = dist_x * 2
+        new_local_height = new_local_width / aspect
+    else:
+        new_local_height = dist_y * 2
+        new_local_width = new_local_height * aspect
+
+    # Minimum boyut kontrolü
+    if new_local_width < min_size:
+        new_local_width = min_size
+        new_local_height = new_local_width / aspect
+    if new_local_height < min_size:
+        new_local_height = min_size
+        new_local_width = new_local_height * aspect
+        
+    # Yeni dünya bbox'unu oluştur (merkezi orijinal merkezde)
+    half_w = new_local_width / 2.0
+    half_h = new_local_height / 2.0
+    new_bbox_world = QRectF(center.x() - half_w, center.y() - half_h, new_local_width, new_local_height)
+
+    # Son geçerlilik kontrolü
+    if new_bbox_world.isNull() or not new_bbox_world.isValid() or \
+       new_bbox_world.width() < min_size / 2 or new_bbox_world.height() < min_size / 2:
+        return original_rect
+
+    return new_bbox_world

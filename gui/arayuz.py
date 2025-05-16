@@ -29,6 +29,7 @@ from handlers import page_handler, tool_handler, canvas_handler, action_handler,
 # --- --- --- --- --- --- --- --- --- --- -- #
 from handlers import clipboard_handler
 from handlers import shape_pool_handler
+from handlers import resim_islem_handler # YENİ: Resim işlem handler'ını ekle
 
 def get_config_file_path():
     import sys
@@ -1665,102 +1666,127 @@ class MainWindow(QMainWindow):
             current_page.drawing_canvas.set_fill_enabled(enabled)
 
     def _handle_select_image_action(self):
-        """
-        Resim ekle butonuna tıklandığında resmi seçip handler'a yönlendirir.
-        """
-        dosya_yolu, _ = QFileDialog.getOpenFileName(self, "Resim Seç", "", "Resim Dosyaları (*.png *.jpg *.jpeg *.bmp *.gif)")
-        if dosya_yolu:
-            from handlers import resim_islem_handler
-            secilen_yol = resim_islem_handler.handle_select_image(dosya_yolu)
-            logging.info(f"Seçilen resim yolu: {secilen_yol}")
+        """Resim seçme iletişim kutusu aç ve seçimi işle."""
+        try:
+            secilen_yol, _ = QFileDialog.getOpenFileName(
+                self,
+                "Resim Seç",
+                os.path.expanduser("~"),
+                "Resim Dosyaları (*.png *.jpg *.jpeg *.bmp *.gif)"
+            )
+            if secilen_yol:
+                logging.info(f"Seçilen resim yolu: {secilen_yol}")
+                canvas = self.page_manager.get_current_page().get_canvas()
+                if canvas is None:
+                    logging.error("Canvas bulunamadı!")
+                    return
+                
+                # Canvas için add_image_from_path metodu yoksa ekle
+                import types
+                
+                # --- Dosyanın MD5 özetini hesaplayan fonksiyon --- #
+                def get_file_md5(file_path):
+                    """Dosyanın MD5 özetini hesaplar"""
+                    hash_md5 = hashlib.md5()
+                    try:
+                        with open(file_path, 'rb') as f:
+                            for chunk in iter(lambda: f.read(4096), b""):
+                                hash_md5.update(chunk)
+                        return hash_md5.hexdigest()
+                    except Exception as e:
+                        logging.error(f"MD5 hesaplanırken hata: {e}")
+                        return None
+                
+                if not hasattr(canvas, 'add_image_from_path'):
+                    def add_image_from_path(self, original_image_path):
+                        """Verilen yoldaki resmi aktif sayfaya ekler."""
+                        try:
+                            if not os.path.exists(original_image_path):
+                                logging.error(f"Resim dosyası bulunamadı: {original_image_path}")
+                                return
 
-            # --- YENİ: Resmi canvas'a ekle ---
-            current_page = self.page_manager.get_current_page()
-            if current_page and hasattr(current_page, 'drawing_canvas'):
-                canvas = current_page.drawing_canvas
-                if hasattr(canvas, 'add_image_from_path'):
-                    canvas.add_image_from_path(secilen_yol)
-                else:
-                    # Fonksiyon yoksa ekleyeceğiz
-                    from PyQt6.QtGui import QPixmap
-                    def add_image_from_path(self, image_path):
-                        import shutil
-                        import os
-                        import hashlib
-                        from uuid import uuid4
-                        from PyQt6.QtGui import QPixmap
-                        # Proje klasöründe images/ alt klasörünü oluştur
-                        images_dir = os.path.join(os.getcwd(), "images")
-                        os.makedirs(images_dir, exist_ok=True)
-                        ext = os.path.splitext(image_path)[1]
-                        # --- HASH KONTROLÜ ---
-                        def get_file_md5(file_path):
-                            hash_md5 = hashlib.md5()
-                            try:
-                                with open(file_path, 'rb') as f:
-                                    for chunk in iter(lambda: f.read(4096), b""):
-                                        hash_md5.update(chunk)
-                                return hash_md5.hexdigest()
-                            except Exception as e:
-                                import logging
-                                logging.error(f"MD5 hesaplanırken hata: {e}")
-                                return None
-                        new_file_hash = get_file_md5(image_path)
-                        existing_path = None
-                        if new_file_hash:
-                            for fname in os.listdir(images_dir):
-                                fpath = os.path.join(images_dir, fname)
-                                if os.path.isfile(fpath):
-                                    if get_file_md5(fpath) == new_file_hash:
-                                        existing_path = fpath
-                                        break
-                        if existing_path:
-                            new_path = existing_path
-                        else:
-                            new_filename = f"{uuid4().hex}{ext}"
-                            new_path = os.path.join(images_dir, new_filename)
-                            shutil.copy2(image_path, new_path)
-                        pixmap = QPixmap(new_path)
-                        if pixmap.isNull():
-                            logging.error(f"Resim yüklenemedi: {new_path}")
-                            return
-                        # --- Sadece rect'i küçük ayarla, pixmap'i küçültme! ---
-                        max_height = 300
-                        scale = 1.0
-                        if pixmap.height() > max_height:
-                            scale = max_height / pixmap.height()
-                        new_width = int(pixmap.width() * scale)
-                        new_height = int(pixmap.height() * scale)
-                        canvas_width = self.width() if hasattr(self, 'width') else 1200
-                        canvas_height = self.height() if hasattr(self, 'height') else 800
-                        x = (canvas_width - new_width) // 2
-                        y = (canvas_height - new_height) // 2
-                        from PyQt6.QtCore import QRectF
-                        img_data = {
-                            'path': new_path,
-                            'pixmap': pixmap,  # Orijinal çözünürlükte pixmap
-                            'original_pixmap_for_scaling': pixmap,
-                            'rect': QRectF(x, y, new_width, new_height),  # Sadece gösterim alanı küçük
-                            'angle': 0.0
-                        }
-                        if hasattr(self, '_parent_page') and hasattr(self._parent_page, 'images'):
-                            self._parent_page.images.append(img_data)
-                            if hasattr(self, '_load_qgraphics_pixmap_items_from_page'):
-                                self._load_qgraphics_pixmap_items_from_page()
+                            # images klasörünü oluştur (yoksa)
+                            images_dir = os.path.join(os.getcwd(), "images")
+                            os.makedirs(images_dir, exist_ok=True)
+                            
+                            # Resmin MD5 özetini hesapla
+                            img_hash = get_file_md5(original_image_path)
+                            if img_hash is None:
+                                logging.error("Resmin hash değeri hesaplanamadı.")
+                                return
+                                
+                            # Resmin uzantısını al
+                            _, ext = os.path.splitext(original_image_path)
+                            
+                            # Hedef dosya adı oluştur (MD5 + orijinal uzantı)
+                            target_filename = f"{img_hash}{ext.lower()}"
+                            target_path = os.path.join(images_dir, target_filename)
+                            
+                            # Resim zaten images klasöründe var mı kontrol et
+                            if not os.path.exists(target_path):
+                                # Resmi images klasörüne kopyala
+                                shutil.copy2(original_image_path, target_path)
+                                logging.info(f"Resim images klasörüne kopyalandı: {target_path}")
+                            else:
+                                logging.info(f"Resim zaten images klasöründe mevcut: {target_path}")
+
+                            # Resmin QPixmap'ini yükle
+                            from PyQt6.QtGui import QPixmap
+                            pixmap = QPixmap(target_path)
+                            if pixmap.isNull():
+                                logging.error(f"Resim dosyası yüklenemedi: {target_path}")
+                                return
+
+                            # Benzersiz bir UUID oluştur
+                            img_uuid = str(uuid.uuid4())
+                            
+                            # Aktif sayfanın merkezini hesapla
+                            page = self._parent_page if hasattr(self, '_parent_page') else None
+                            if not page:
+                                logging.error("add_image_from_path: page bulunamadı")
+                                return
+
+                            # Resmin özelliklerini belirle
+                            target_size = min(pixmap.width(), pixmap.height())  # Max 300px veya orijinal boyut
+                            if target_size > 300:
+                                target_size = 300
+                                
+                            # Canvas'ın ortasına yerleştir
+                            canvas_width = self.width()
+                            canvas_height = self.height()
+                            x = (canvas_width - target_size) / 2
+                            y = (canvas_height - target_size) / 2
+                            
+                            # Resim verisini oluştur
+                            rect = QRectF(x, y, target_size, target_size)
+                            image_data = {
+                                'rect': rect,
+                                'angle': 0.0,
+                                'path': target_path,  # Kopyalanan dosyanın yolu
+                                'pixmap': pixmap,    # Geçici QPixmap nesnesi (Performans için)
+                                'uuid': img_uuid,    # Benzersiz tanımlayıcı
+                                'hash': img_hash,    # İçerik özeti
+                                'original_path': original_image_path,  # Orijinal yol (bilgi amaçlı)
+                                'filepath': target_path  # YENİ: resim_islem_handler için dosya yolu
+                            }
+                            
+                            # Resmi sayfanın images listesine ekle
+                            page.images.append(image_data)
+                            
+                            # YENİ: resim_islem_handler kullan
+                            resim_islem_handler.handle_select_image(target_path)
+                            
+                            # Sayfayı değişti olarak işaretle ve güncelle
+                            page.mark_as_modified()
                             self.update()
-                            # --- YENİ: Sayfayı değişti olarak işaretle ---
-                            if hasattr(self._parent_page, 'mark_as_modified'):
-                                self._parent_page.mark_as_modified()
-                    import types
+                        except Exception as e:
+                            logging.error(f"Resim eklenirken hata: {e}", exc_info=True)
+                    
                     canvas.add_image_from_path = types.MethodType(add_image_from_path, canvas)
-                    canvas.add_image_from_path(secilen_yol)
-                # --- YENİ: IMAGE_SELECTOR aracını otomatik aktif et ---
-                from gui.enums import ToolType
-                if hasattr(self, 'tool_actions') and hasattr(self, 'image_select_action'):
-                    self.image_select_action.setChecked(True)
-                    canvas.set_tool(ToolType.IMAGE_SELECTOR)
-            else:
-                logging.error("Aktif sayfa veya canvas bulunamadı!")
+                
+                canvas.add_image_from_path(secilen_yol)
+        except Exception as e:
+            logging.error(f"Resim seçme işleminde hata: {e}", exc_info=True)
 
     def _handle_cut_action(self):
         current_page = self.page_manager.get_current_page()
@@ -1780,6 +1806,7 @@ class MainWindow(QMainWindow):
     def _handle_delete_image_action(self):
         """
         Resmi sil butonuna tıklandığında seçili resmi undo/redo ile siler.
+        Disk üzerindeki dosya kaydedilmemiş notla birlikte çıkışta silinir.
         """
         current_page = self.page_manager.get_current_page()
         if not current_page or not hasattr(current_page, 'drawing_canvas'):
@@ -1790,6 +1817,15 @@ class MainWindow(QMainWindow):
             if selected[0] == 'images':
                 img_index = selected[1]
                 if hasattr(canvas._parent_page, 'images') and 0 <= img_index < len(canvas._parent_page.images):
+                    # YENİ: Resim dosya yolunu al ve handler'a bildir
+                    image_data = canvas._parent_page.images[img_index]
+                    image_path = image_data.get('filepath') or image_data.get('path')
+                    
+                    # Resim bilgisini handler'a bildir (dosyayı SİLMEZ)
+                    if image_path:
+                        resim_islem_handler.handle_delete_image(image_path)
+                    
+                    # Undo/redo ile silme işlemi yap (sadece veritabanı referansını siler)
                     from utils.commands import DeleteItemsCommand
                     command = DeleteItemsCommand(canvas, [selected])
                     canvas.undo_manager.execute(command)
@@ -1798,26 +1834,44 @@ class MainWindow(QMainWindow):
     def _delete_unused_images_on_exit(self):
         """
         Uygulama kapatılırken, images klasöründeki kullanılmayan dosyaları siler.
+        Eğer not defteri kaydedilmemişse, içindeki resimler de silinir.
         """
         import os
         images_dir = os.path.join(os.getcwd(), "images")
         if not os.path.exists(images_dir):
             return
+
+        # Not defteri kaydedilmemişse ve değişiklikler varsa, resimlerin silinmesi gerekir
+        is_notebook_saved = self.current_notebook_path is not None
+        notebook_has_changes = self.page_manager.has_unsaved_changes()
+        delete_all_current_images = not is_notebook_saved or (is_notebook_saved and notebook_has_changes)
+        
+        if delete_all_current_images:
+            logging.info(f"Not defteri kaydedilmemiş veya değişiklikler var. Resimler silinecek.")
+
+        # Mevcut sayfalardan tüm dosya yollarını topla
         all_image_paths = set()
-        for page in self.page_manager.pages:
-            if hasattr(page, 'images'):
-                for img in page.images:
-                    path = img.get('path')
-                    if path:
-                        all_image_paths.add(os.path.abspath(path))
+        if not delete_all_current_images:  # Eğer not kaydedilmişse, kullanılan resimleri koru
+            for i in range(self.page_manager.count()):
+                scroll_area = self.page_manager.widget(i)
+                if hasattr(scroll_area, 'widget') and scroll_area.widget():
+                    page = scroll_area.widget()
+                    if hasattr(page, 'images'):
+                        for img in page.images:
+                            path = img.get('path')
+                            if path and os.path.exists(path):
+                                all_image_paths.add(os.path.abspath(path))
+        
+        # images klasöründeki her dosyayı kontrol et
         for fname in os.listdir(images_dir):
-            fpath = os.path.abspath(os.path.join(images_dir, fname))
-            if os.path.isfile(fpath) and fpath not in all_image_paths:
-                try:
-                    os.remove(fpath)
-                    logging.info(f"[EXIT] Kullanılmayan resim dosyası silindi: {fpath}")
-                except Exception as e:
-                    logging.error(f"[EXIT] Resim dosyası silinirken hata: {e}")
+            if not fname.startswith('.'):  # Gizli dosyaları atla
+                fpath = os.path.abspath(os.path.join(images_dir, fname))
+                if os.path.isfile(fpath) and (delete_all_current_images or fpath not in all_image_paths):
+                    try:
+                        os.remove(fpath)
+                        logging.info(f"[EXIT] Kullanılmayan resim dosyası silindi: {fpath}")
+                    except Exception as e:
+                        logging.error(f"[EXIT] Resim dosyası silinirken hata: {e}")
 
     def _handle_zoom_in_pdf_only(self):
         current_page = self.page_manager.get_current_page()

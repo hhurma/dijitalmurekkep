@@ -1929,8 +1929,72 @@ class DrawingCanvas(QWidget):
 
     def update(self, *args, **kwargs):
         # logging.debug(f"[drawing_canvas] update: shapes id={id(self.shapes)}, içerik={self.shapes}")
-        return super().update(*args, **kwargs)
-
+        super().update(*args, **kwargs)
+        
+    # --- YENİ: Tutamaçları güncelle ---
+    def update_current_handles(self):
+        """
+        Seçili öğelerin tutamaçlarını hesaplar ve current_handles sözlüğüne ekler.
+        Bu metot, seçilmiş öğelerin boyutu veya konumu değiştiğinde çağrılmalıdır.
+        """
+        self.current_handles.clear()  # Mevcut tutamaçları temizle
+        
+        if not self.selected_item_indices:
+            return  # Seçili öğe yoksa işlem yapma
+            
+        # Kombine bbox'u hesapla
+        bbox = self._get_combined_bbox([])
+        if bbox.isNull() or not bbox.isValid():
+            return
+            
+        # Eğer tek bir resim seçiliyse ve açısı varsa, döndürülmüş tutamaçları hesapla
+        if len(self.selected_item_indices) == 1 and self.selected_item_indices[0][0] == 'images':
+            item_type, index = self.selected_item_indices[0]
+            if self._parent_page and index < len(self._parent_page.images):
+                img_data = self._parent_page.images[index]
+                angle = img_data.get('angle', 0.0)
+                rect = img_data.get('rect')
+                
+                if rect and not rect.isNull() and rect.isValid():
+                    # Döndürülmüş tutamaçları hesapla
+                    from utils import selection_helpers
+                    handle_positions_world = selection_helpers.calculate_handle_positions_for_rotated_rect(rect, angle)
+                    
+                    # Tutamaçları ekrana dönüştür ve sakla
+                    handle_size_screen = selection_helpers.HANDLE_SIZE
+                    half_handle_screen = handle_size_screen / 2.0
+                    
+                    for handle_type, pos_world in handle_positions_world.items():
+                        pos_screen = self.world_to_screen(pos_world)
+                        handle_rect_screen = QRectF(
+                            pos_screen.x() - half_handle_screen,
+                            pos_screen.y() - half_handle_screen,
+                            handle_size_screen,
+                            handle_size_screen
+                        )
+                        self.current_handles[handle_type] = handle_rect_screen
+                    return
+                
+        # Normal dikdörtgen tutamaçları hesapla (standart öğeler için)
+        from utils import geometry_helpers
+        handle_positions_world = geometry_helpers.get_standard_handle_positions(bbox)
+        
+        # Tutamaçları ekrana dönüştür ve sakla
+        from utils import selection_helpers
+        handle_size_screen = selection_helpers.HANDLE_SIZE
+        half_handle_screen = handle_size_screen / 2.0
+        
+        for handle_type, pos_world in handle_positions_world.items():
+            pos_screen = self.world_to_screen(pos_world)
+            handle_rect_screen = QRectF(
+                pos_screen.x() - half_handle_screen,
+                pos_screen.y() - half_handle_screen,
+                handle_size_screen,
+                handle_size_screen
+            )
+            self.current_handles[handle_type] = handle_rect_screen
+    # --- --- --- --- --- --- --- ---
+        
     def _snap_point_to_grid(self, point: QPointF) -> QPointF:
         """Verilen noktayı grid'e en yakın noktaya yuvarlar."""
         spacing = self.grid_spacing_pt * PT_TO_PX

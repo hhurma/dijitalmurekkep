@@ -30,8 +30,9 @@ except ImportError:
 if TYPE_CHECKING:
     from gui.drawing_canvas import DrawingCanvas
     from gui.page_manager import PageManager
-from gui.page import Page
-    # Enumu normal import et (veya TYPE_CHECKING içine al)
+    from gui.page import Page  # Page sınıfı import'u TYPE_CHECKING bloğuna taşındı
+    
+# Enumu normal import et (veya TYPE_CHECKING içine al)
 from gui.enums import ToolType, Orientation, TemplateType
 
 # Gerekli enumları import et

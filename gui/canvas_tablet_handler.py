@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import QApplication, QGraphicsPixmapItem
 from utils import selection_helpers
 from gui.enums import ToolType
 from utils.commands import MoveItemsCommand, ResizeItemsCommand, RotateItemsCommand # Moved import
+from handlers import resim_islem_handler  # YENİ: Resim işlem handler'ını ekle
 from .tool_handlers import pen_tool_handler # YENİ: Pen tool handler importu
 from .tool_handlers import shape_tool_handler # YENİ: Shape tool handler importu
 from .tool_handlers import selector_tool_handler # YENİ: Selector tool handler importu
@@ -35,7 +36,7 @@ def handle_canvas_click(canvas: 'DrawingCanvas', world_pos: QPointF, event: QTab
     DrawingCanvas üzerinde bir tıklama olayını yönetir.
     Seçim aracındayken öğe seçimi veya seçim dışı bırakma için kullanılır.
     """
-    logging.debug(f"handle_canvas_click: Tool={canvas.current_tool.name}, Pos={world_pos}")
+    logging.debug(f"handle_canvas_click: Tool={canvas.current_tool}, Pos={world_pos}")
     
     # Canvas içeriğini güncelleyebileceğinden, önce sayfadaki resimleri QGraphicsItem olarak yükle/güncelle
     if canvas._parent_page and hasattr(canvas._parent_page, 'ensure_pixmaps_loaded'):
@@ -334,20 +335,57 @@ def handle_tablet_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEve
 
     # --- RESİM SEÇME ARACI İÇİN BASKI --- #
     if canvas.current_tool == ToolType.IMAGE_SELECTOR:
-        # İmaj seçme modunda, resimleri seçebilir/taşıyabiliriz
-        item_at_click = canvas._get_item_at(pos)
-        if item_at_click:
-            item_type, index = item_at_click
-            if item_type == 'images':
-                # Resmi seç
-                canvas.selected_item_indices = [(item_type, index)]
-                canvas.move_start_point = pos
-                canvas.last_move_pos = pos
-                canvas.selection_changed.emit()
-                # logging.debug(f"Resim seçildi: Image #{index}")
-                canvas.moving_selection = True
-                QApplication.setOverrideCursor(Qt.CursorShape.SizeAllCursor)
-                action_performed = True
+        # Önce tutamaç kontrolü yap
+        screen_pos = event.position()
+        canvas.grabbed_handle_type = canvas._get_handle_at(screen_pos, tolerance=10.0)
+        
+        if canvas.grabbed_handle_type:
+            # Tutamaç yakalandı - boyutlandırma veya döndürmeye başla
+            logging.debug(f"IMAGE_SELECTOR: Tutamaç yakalandı: {canvas.grabbed_handle_type}")
+            
+            # Döndürme tutamacı mı kontrol et
+            if canvas.grabbed_handle_type == 'rotation':
+                canvas.rotating_selection = True
+                canvas.rotation_start_point = pos
+            else:
+                # Boyutlandırma tutamacı
+                canvas.resizing_selection = True
+                canvas.resize_start_pos = pos
+
+            # Her durumda orijinal durumları ve bbox'u al
+            if canvas.selected_item_indices:
+                canvas.original_resize_states = canvas._get_current_selection_states(canvas._parent_page)
+                # Seçilen resmin orijinal bbox'ını al
+                item_type, index = canvas.selected_item_indices[0]
+                if item_type == 'images' and canvas._parent_page and index < len(canvas._parent_page.images):
+                    img_data = canvas._parent_page.images[index]
+                    canvas.resize_original_bbox = QRectF(img_data.get('rect', QRectF()))
+                    canvas.original_angle = img_data.get('angle', 0.0)  # Orijinal açıyı kaydet
+            
+            # Uygun imleci ayarla
+            if canvas.grabbed_handle_type == 'rotation':
+                QApplication.setOverrideCursor(Qt.CursorShape.CrossCursor)
+            else:
+                QApplication.setOverrideCursor(selection_helpers.get_resize_cursor(canvas.grabbed_handle_type))
+                
+            canvas.update()
+            
+            action_performed = True
+        else:
+            # Tutamaç yakalanmadı, taşıma işlemi için devam et (mevcut kod)
+            item_at_click = canvas._get_item_at(pos)
+            if item_at_click:
+                item_type, index = item_at_click
+                if item_type == 'images':
+                    # Resmi seç
+                    canvas.selected_item_indices = [(item_type, index)]
+                    canvas.move_start_point = pos
+                    canvas.last_move_pos = pos
+                    canvas.selection_changed.emit()
+                    canvas.moving_selection = True
+                    QApplication.setOverrideCursor(Qt.CursorShape.SizeAllCursor)
+                    
+                    action_performed = True
     
     # --- KALEM ARACI İÇİN BASKI --- #
     elif canvas.current_tool == ToolType.PEN:
@@ -407,6 +445,10 @@ def handle_tablet_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEve
         logging.warning(f"handle_tablet_press: İşlem gerçekleştirilmedi! Araç: {canvas.current_tool}")
         event.ignore()
     else:
+        # Eğer IMAGE_SELECTOR aracıyla işlem gerçekleştildiyse, tutamaçları güncelle
+        if canvas.current_tool == ToolType.IMAGE_SELECTOR:
+            canvas.update_current_handles()
+            
         canvas.update()  # Çizimi güncelle
         event.accept()
 
@@ -421,20 +463,97 @@ def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEven
     action_performed = False
 
     # --- RESİM SEÇME ARACI İÇİN HAREKET --- #
-    if canvas.current_tool == ToolType.IMAGE_SELECTOR and canvas.moving_selection:
-        if canvas._parent_page and canvas.selected_item_indices:
-            # Kaydırma miktarını hesapla
-            dx = pos.x() - canvas.last_move_pos.x()
-            dy = pos.y() - canvas.last_move_pos.y()
-            
-            for item_type, index in canvas.selected_item_indices:
-                if item_type == 'images' and index < len(canvas._parent_page.images):
-                    # Resmi kaydır
-                    rect = canvas._parent_page.images[index]['rect']
-                    rect.translate(dx, dy)
-            
-            canvas.last_move_pos = pos
-            action_performed = True
+    if canvas.current_tool == ToolType.IMAGE_SELECTOR:
+        if canvas.resizing_selection and canvas.grabbed_handle_type and canvas._parent_page and canvas.selected_item_indices:
+            # Boyutlandırma işlemi
+            item_type, index = canvas.selected_item_indices[0]
+            if item_type == 'images' and index < len(canvas._parent_page.images):
+                # Yeni boyutu hesapla
+                if not canvas.resize_original_bbox.isNull():
+                    # Aspect ratio'yu koru
+                    aspect_ratio = canvas.resize_original_bbox.width() / canvas.resize_original_bbox.height() if canvas.resize_original_bbox.height() > 0 else 1.0
+                    
+                    new_bbox = selection_helpers.calculate_rotated_bbox_from_handle(
+                        canvas.resize_original_bbox, 
+                        canvas.original_angle or 0.0,
+                        pos, 
+                        canvas.grabbed_handle_type, 
+                        True,  # aspect_ratio_locked
+                        10.0   # min_size
+                    )
+                    
+                    if not new_bbox.isNull():
+                        canvas._parent_page.images[index]['rect'] = new_bbox
+                        
+                        # YENİ: resim_islem_handler'ı kullan
+                        if 'filepath' in canvas._parent_page.images[index]:
+                            img_path = canvas._parent_page.images[index]['filepath']
+                            resim_islem_handler.handle_resize_image(
+                                img_path, 
+                                int(new_bbox.width()), 
+                                int(new_bbox.height())
+                            )
+                        
+                        canvas.update()
+                        action_performed = True
+                        
+        elif canvas.rotating_selection and canvas.grabbed_handle_type == 'rotation' and canvas._parent_page and canvas.selected_item_indices:
+            # Döndürme işlemi
+            item_type, index = canvas.selected_item_indices[0]
+            if item_type == 'images' and index < len(canvas._parent_page.images):
+                img_data = canvas._parent_page.images[index]
+                rect = img_data.get('rect')
+                
+                if rect and not rect.isNull():
+                    # Resim merkezini al
+                    center = rect.center()
+                    
+                    # Orijinal açıyı al (veya 0 derece)
+                    original_angle = canvas.original_angle or 0.0
+                    
+                    # Başlangıç ve şu anki açıları hesapla
+                    start_angle = math.degrees(math.atan2(canvas.rotation_start_point.y() - center.y(), 
+                                                          canvas.rotation_start_point.x() - center.x()))
+                    current_angle = math.degrees(math.atan2(pos.y() - center.y(), 
+                                                           pos.x() - center.x()))
+                    
+                    # Açı farkını hesapla (başlangıçtan itibaren kaç derece döndü)
+                    angle_delta = current_angle - start_angle
+                    
+                    # Yeni açıyı hesapla ve uygula
+                    new_angle = original_angle + angle_delta
+                    img_data['angle'] = new_angle
+                    
+                    # YENİ: resim_islem_handler'ı kullan
+                    if 'filepath' in img_data:
+                        img_path = img_data['filepath']
+                        resim_islem_handler.handle_rotate_image(img_path, new_angle)
+                    
+                    canvas.update()
+                    action_performed = True
+                    
+        elif canvas.moving_selection:
+            # Mevcut taşıma kodunu koru (değişiklik yok)
+            if canvas._parent_page and canvas.selected_item_indices:
+                # Kaydırma miktarını hesapla
+                dx = pos.x() - canvas.last_move_pos.x()
+                dy = pos.y() - canvas.last_move_pos.y()
+                
+                for item_type, index in canvas.selected_item_indices:
+                    if item_type == 'images' and index < len(canvas._parent_page.images):
+                        # Resmi kaydır
+                        rect = canvas._parent_page.images[index]['rect']
+                        rect.translate(dx, dy)
+                        
+                        # YENİ: resim_islem_handler'ı kullan
+                        if 'filepath' in canvas._parent_page.images[index]:
+                            img_path = canvas._parent_page.images[index]['filepath']
+                            img_x = int(rect.x())
+                            img_y = int(rect.y())
+                            resim_islem_handler.handle_move_image(img_path, img_x, img_y)
+                
+                canvas.last_move_pos = pos
+                action_performed = True
     
     # --- KALEM ARACI İÇİN HAREKET --- #
     elif canvas.current_tool == ToolType.PEN:
@@ -461,6 +580,8 @@ def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEven
             # Seçili öğelerin boyutu değiştiriliyor
             selector_tool_handler.handle_selector_resize_move(canvas, pos, event)
             action_performed = True
+            # Handle'ları güncelle - tutamaçların ekran koordinatlarını güncelle
+            canvas.update_current_handles()
         elif canvas.rotating_selection:
             # Seçili öğeler döndürülüyor
             pass
@@ -525,13 +646,37 @@ def handle_tablet_release(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
     action_performed = False
 
     if canvas.current_tool == ToolType.IMAGE_SELECTOR:
-        # --- Taşıma logicini tamamla ---
+        # --- Taşıma, boyutlandırma veya döndürme logicini tamamla ---
         if canvas.moving_selection:
             # Seçim taşımasını bitir
             canvas.moving_selection = False
             QApplication.restoreOverrideCursor()
             if canvas._parent_page:
                 canvas._parent_page.mark_as_modified()
+            action_performed = True
+        elif canvas.resizing_selection:
+            # Boyutlandırmayı bitir
+            canvas.resizing_selection = False
+            canvas.grabbed_handle_type = None
+            QApplication.restoreOverrideCursor()
+            if canvas._parent_page:
+                canvas._parent_page.mark_as_modified()
+            
+            # Handle'ları güncelle - tutamaçların ekran koordinatlarını güncelle
+            canvas.update_current_handles()
+            
+            action_performed = True
+        elif canvas.rotating_selection:
+            # Döndürmeyi bitir
+            canvas.rotating_selection = False
+            canvas.grabbed_handle_type = None
+            QApplication.restoreOverrideCursor()
+            if canvas._parent_page:
+                canvas._parent_page.mark_as_modified()
+            
+            # Handle'ları güncelle - tutamaçların ekran koordinatlarını güncelle
+            canvas.update_current_handles()
+            
             action_performed = True
     
     # --- KALEM ARACI İÇİN BIRAKMA --- #

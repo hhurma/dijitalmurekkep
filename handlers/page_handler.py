@@ -1,8 +1,12 @@
 # handlers/page_handler.py
 import logging
+from typing import TYPE_CHECKING
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QScrollArea # Veya başka diyaloglar
-from gui.page import Page
 from gui.enums import Orientation # Orientation import et
+
+if TYPE_CHECKING:
+    from gui.page import Page
+    from gui.page_manager import PageManager
 
 # Gerekli importlar buraya eklenecek
 # from gui.page_manager import PageManager
@@ -39,7 +43,7 @@ def handle_previous_page(page_manager):
     else:
         logging.error("handle_previous_page çağrıldı ancak page_manager None.")
 
-def handle_set_orientation(page_manager: 'PageManager', orientation: Orientation):
+def handle_set_orientation(page_manager, orientation: Orientation):
     """Aktif sayfanın yönünü ayarlar."""
     if page_manager:
         current_page_index = page_manager.currentIndex()
