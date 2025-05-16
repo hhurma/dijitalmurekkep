@@ -10,8 +10,8 @@ from utils.undo_redo_manager import UndoRedoManager
 from .enums import Orientation, TemplateType
 
 # --- YENİ: MainWindow tipi --- #
-if TYPE_CHECKING:
-    from .arayuz import MainWindow
+# if TYPE_CHECKING:
+# from .arayuz import MainWindow
 # --- --- --- --- --- --- --- -- #
 
 class Page(QWidget):
@@ -79,11 +79,10 @@ class Page(QWidget):
         self._ensure_pixmaps_loaded()
         # --- QGraphicsPixmapItem yükleme kısmı zaten kaldırılmıştı ---
         if hasattr(self, 'drawing_canvas') and self.drawing_canvas:
-            # self.drawing_canvas._load_qgraphics_pixmap_items_from_page() # Bu satır zaten yorumlu/kaldırıldı
             return self.drawing_canvas
         else:
-            logging.error("Page.get_canvas(): drawing_canvas bulunamadı!") # Hata logu eklendi
-            return None # Canvas yoksa None döndür
+            logging.error("Page.get_canvas(): drawing_canvas bulunamadı!")
+            return None
 
     def get_undo_manager(self) -> UndoRedoManager:
         """Undo/Redo yöneticisini döndürür."""
@@ -122,8 +121,8 @@ class Page(QWidget):
             logging.debug(f"Page {self.page_number} orientation set to {orientation.name}")
             # Yön değişikliği canvas'ın yeni arkaplan resmini yüklemesini gerektirir
             if hasattr(self, 'drawing_canvas') and self.drawing_canvas:
-                self.drawing_canvas.load_background_template_image() # Burası self.update() idi
-            # self.drawing_canvas.update() # Bu satır kaldırıldı/yorum yapıldı
+                self.drawing_canvas.load_background_template_image()
+            # self.drawing_widget.update() # Bu satır kaldırıldı/yorum yapıldı
 
     # --- Template Property --- #
     # Gerekirse template için de benzer property/setter eklenebilir.

@@ -7,10 +7,18 @@ import numpy as np
 class DrawingWidget(QWidget):
     def __init__(self):
         super().__init__()
-        self.strokes = [] # Stores B-spline data ({'control_points', 'knots', 'degree', 'u'})
+        self.strokes = [] # Stores B-spline data ({'control_points', 'knots', 'degree', 'u', 'thickness'})
         self.current_stroke = [] # Stores raw points and pressure for the current stroke [(QPoint, pressure)]
         self.selected_control_point = None # (stroke_index, cp_index)
         self.setMouseTracking(True) # Enable tracking even when no button is pressed
+        self.default_line_thickness = 2 # Default thickness for new strokes
+
+    def setDefaultLineThickness(self, thickness):
+        """Sets the default thickness for new strokes."""
+        self.default_line_thickness = thickness
+        # Potentially update existing strokes or only new ones.
+        # For now, this will only affect new strokes.
+        # If you want to change selected stroke's thickness, a different mechanism is needed.
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -82,7 +90,8 @@ class DrawingWidget(QWidget):
                             'knots': tck[0],
                             'degree': tck[2],
                             'u': u,
-                            'original_points_with_pressure': downsampled_points_with_pressure # Store downsampled points with pressure
+                            'original_points_with_pressure': downsampled_points_with_pressure, # Store downsampled points with pressure
+                            'thickness': self.default_line_thickness # Store current default thickness
                         })
                     except ValueError as e:
                         print(f"Could not create B-spline with {len(points_only)} points after preprocessing (degree 2): {e}")
@@ -100,9 +109,9 @@ class DrawingWidget(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        # Default pen for B-splines
-        pen = QPen(Qt.GlobalColor.black, 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
-        painter.setPen(pen)
+        # Default pen for B-splines - This will be set per stroke now
+        # pen = QPen(Qt.GlobalColor.black, 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        # painter.setPen(pen)
 
         # Draw completed B-splines and control points
         for stroke_data in self.strokes:
@@ -110,12 +119,18 @@ class DrawingWidget(QWidget):
             knots = stroke_data['knots']
             degree = stroke_data['degree']
             u = stroke_data['u']
-            original_points_with_pressure = stroke_data.get('original_points_with_pressure', []) # Get original points with pressure
+            # Get original points with pressure (not directly used for B-spline path rendering here)
+            # original_points_with_pressure = stroke_data.get('original_points_with_pressure', [])
+            stroke_thickness = stroke_data.get('thickness', self.default_line_thickness) # Use stored thickness or default
 
             # Reconstruct tck from stored components
             tck = (knots, control_points.T, degree)
 
-            # Draw the B-spline curve (without pressure sensitivity for now)
+            # Define pen for this specific stroke
+            pen = QPen(Qt.GlobalColor.black, stroke_thickness, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+
+            # Draw the B-spline curve
             x_fine, y_fine = splev(np.linspace(0, u[-1], 100), tck)
             path = QPainterPath()
             path.moveTo(QPointF(x_fine[0], y_fine[0]))

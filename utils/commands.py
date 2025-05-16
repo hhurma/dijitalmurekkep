@@ -1154,121 +1154,127 @@ class DrawEditableLineCommand(Command):
 # TODO: ResizeItemsCommand, DeleteItemsCommand eklenecek
 
 class UpdateEditableLineCommand:
-    """Düzenlenebilir çizginin kontrol noktalarını güncelleyen komut."""
+    """Düzenlenebilir çizginin kontrol noktalarını, kalınlığını ve rengini güncelleyen komut."""
     
-    def __init__(self, canvas, shape_index, original_points, new_points):
+    def __init__(self, canvas, shape_index, original_points, new_points, original_width=None, new_width=None, original_color=None, new_color=None):
         """
         Args:
             canvas: Çizim canvas'ı referansı
             shape_index: Düzenlenen shape'in indeksi
             original_points: Orijinal kontrol noktaları listesi
             new_points: Yeni kontrol noktaları listesi
+            original_width: Orijinal çizgi kalınlığı (float)
+            new_width: Yeni çizgi kalınlığı (float)
+            original_color: Orijinal renk (tuple)
+            new_color: Yeni renk (tuple)
         """
         self.canvas = canvas
         self.shape_index = shape_index
         self.original_points = original_points.copy()
         self.new_points = new_points.copy()
+        self.original_width = original_width
+        self.new_width = new_width
+        self.original_color = original_color
+        self.new_color = new_color
         self.description = "Düzenlenebilir Çizgi Güncelleme"
     
     def execute(self):
-        """Komutu uygular: Düzenlenebilir çizginin kontrol noktalarını günceller."""
+        """Komutu uygular: Düzenlenebilir çizginin kontrol noktalarını, kalınlığını ve rengini günceller."""
         if 0 <= self.shape_index < len(self.canvas.shapes):
             self.canvas.shapes[self.shape_index][3] = self.new_points.copy()
+            if self.new_width is not None:
+                self.canvas.shapes[self.shape_index][2] = self.new_width
+            if self.new_color is not None:
+                self.canvas.shapes[self.shape_index][1] = self.new_color
             self.canvas.update()
     
     def undo(self):
-        """Komutu geri alır: Düzenlenebilir çizginin kontrol noktalarını orijinal haline döndürür."""
+        """Komutu geri alır: Düzenlenebilir çizginin kontrol noktalarını, kalınlığını ve rengini orijinal haline döndürür."""
         if 0 <= self.shape_index < len(self.canvas.shapes):
             self.canvas.shapes[self.shape_index][3] = self.original_points.copy()
+            if self.original_width is not None:
+                self.canvas.shapes[self.shape_index][2] = self.original_width
+            if self.original_color is not None:
+                self.canvas.shapes[self.shape_index][1] = self.original_color
             self.canvas.update()
     
     def redo(self):
-        """Komutu yeniden uygular: Düzenlenebilir çizginin kontrol noktalarını tekrar günceller."""
+        """Komutu yeniden uygular: Düzenlenebilir çizginin kontrol noktalarını, kalınlığını ve rengini tekrar günceller."""
         self.execute()
 
 class DrawBsplineCommand(Command):
     """Yeni bir B-Spline çizme işlemini temsil eder."""
-    def __init__(self, canvas: 'DrawingCanvas', stroke_data: dict):
-        """
-        Args:
-            canvas: İşlemin uygulanacağı DrawingCanvas örneği.
-            stroke_data: B-Spline verisi (control_points, knots, degree, u vb. içeren dict).
-        """
+    def __init__(self, canvas: 'DrawingCanvas', stroke_data_ref_from_widget: dict, stroke_index: int):
         self.canvas = canvas
-        self.stroke_data = copy.deepcopy(stroke_data)
-        self._stroke_added = False
-        self._added_index = -1
+        # Komut, geri alma/yineleme için stroke'un bir kopyasını saklar.
+        self.stroke_to_add_or_restore = copy.deepcopy(stroke_data_ref_from_widget)
+        # Bu, widget'ın stroke'u ilk eklediği indekstir.
+        self.target_index = stroke_index
+        self._was_executed_at_least_once = False # İlk execute çağrısını takip etmek için bayrak
+        logging.debug(f"DrawBsplineCommand initialized. Target index: {self.target_index}")
 
     def execute(self):
-        """B-Spline'ı canvas.b_spline_strokes listesine ekler."""
-        if not hasattr(self.canvas, 'b_spline_strokes') or not isinstance(self.canvas.b_spline_strokes, list):
-            logging.error("DrawBsplineCommand: Canvas.b_spline_strokes bulunamadı veya liste değil.")
-            self._stroke_added = False
-            return
+        if not self._was_executed_at_least_once:
+            # Bu ilk çalıştırma, widget stroke'u zaten ekledi.
+            # Stroke (stroke_data_ref_from_widget) zaten canvas.b_spline_strokes[self.target_index] adresinde.
+            # Sadece logla ve ilk çalıştırmanın yapıldığını işaretle.
+            if not (0 <= self.target_index < len(self.canvas.b_spline_strokes)):
+                logging.error(f"DrawBsplineCommand: İlk çalıştırma, ancak target_index {self.target_index} geçersiz. Liste boyutu: {len(self.canvas.b_spline_strokes)}")
+            else:
+                # İsteğe bağlı: self.canvas.b_spline_strokes[self.target_index] ile self.stroke_to_add_or_restore arasında derinlemesine karşılaştırma yapılabilir.
+                pass # Şimdilik bir şey yapma
+            logging.debug(f"DrawBsplineCommand: İlk çalıştırma. Stroke widget tarafından zaten {self.target_index} indeksine eklendi.")
+            self._was_executed_at_least_once = True
+        else:
+            # Bu bir YENİDEN ÇALIŞTIRMA (REDO). Sakladığımız kopyayı yeniden eklemeliyiz.
+            if 0 <= self.target_index <= len(self.canvas.b_spline_strokes): # Sonuna eklemeye izin ver
+                # stroke_to_add_or_restore'un bir kopyasını ekle, böylece komut kendi verisini korur.
+                self.canvas.b_spline_strokes.insert(self.target_index, copy.deepcopy(self.stroke_to_add_or_restore))
+                logging.debug(f"DrawBsplineCommand: Yeniden çalıştırma. Stroke {self.target_index} indeksine yeniden eklendi.")
+            else:
+                logging.error(f"DrawBsplineCommand: Yeniden çalıştırma, target_index {self.target_index} geçersiz. Liste boyutu: {len(self.canvas.b_spline_strokes)}")
 
-        if self._stroke_added and 0 <= self._added_index <= len(self.canvas.b_spline_strokes):
-            self.canvas.b_spline_strokes.insert(self._added_index, copy.deepcopy(self.stroke_data))
-        else: 
-            self.canvas.b_spline_strokes.append(copy.deepcopy(self.stroke_data))
-            self._added_index = len(self.canvas.b_spline_strokes) - 1
-        
-        self._stroke_added = True
         self.canvas.update()
-        if hasattr(self.canvas, 'content_changed'):
-            self.canvas.content_changed.emit()
-        logging.debug(f"DrawBsplineCommand executed. Stroke index: {self._added_index}")
+        if self.canvas._parent_page:
+            self.canvas._parent_page.mark_as_modified()
+        # logging.debug(f"DrawBsplineCommand executed. Stroke index in b_spline_strokes now (potentially): {self.target_index}") # Bu log artık çok anlamlı değil
 
     def undo(self):
-        """Eklenen B-Spline'ı canvas.b_spline_strokes listesinden kaldırır."""
-        if not self._stroke_added or self._added_index < 0:
-            return
+        # Stroke'u self.target_index'ten kaldır.
+        if 0 <= self.target_index < len(self.canvas.b_spline_strokes):
+            # Silmeden önce, self.target_index'teki öğenin beklediğimiz öğe olduğunu doğrulamak isteyebiliriz.
+            # Ancak basitlik adına, doğru geri alma yığını sırasını varsayıyoruz.
+            del self.canvas.b_spline_strokes[self.target_index]
+            logging.debug(f"DrawBsplineCommand: Geri alındı. Stroke {self.target_index} indeksinden kaldırıldı.")
+        else:
+            logging.warning(f"DrawBsplineCommand: Geri alma, target_index {self.target_index} geçersiz. Liste boyutu: {len(self.canvas.b_spline_strokes)}")
         
-        try:
-            if 0 <= self._added_index < len(self.canvas.b_spline_strokes):
-                del self.canvas.b_spline_strokes[self._added_index]
-                self.canvas.update()
-                if hasattr(self.canvas, 'content_changed'):
-                    self.canvas.content_changed.emit()
-                logging.debug(f"DrawBsplineCommand undone. Stroke removed from index: {self._added_index}")
-            else:
-                logging.warning(f"DrawBsplineCommand undo: Geçersiz index ({self._added_index}) veya stroke bulunamadı.")
-        except IndexError:
-            logging.error(f"DrawBsplineCommand undo: Index hatası. Index: {self._added_index}", exc_info=True)
-        except Exception as e:
-            logging.error(f"DrawBsplineCommand undo: Beklenmeyen hata. {e}", exc_info=True)
-
+        self.canvas.update()
+        if self.canvas._parent_page:
+            self.canvas._parent_page.mark_as_modified()
 
 class UpdateBsplineControlPointCommand(Command):
     """Bir B-Spline kontrol noktasının pozisyonunu güncelleme işlemini temsil eder."""
-    def __init__(self, canvas: 'DrawingCanvas', stroke_index: int, cp_index: int, 
-                 old_pos_array: np.ndarray, new_pos_array: np.ndarray):
-        """
-        Args:
-            canvas: DrawingCanvas örneği.
-            stroke_index: Güncellenecek stroke'un indeksi (canvas.b_spline_strokes içinde).
-            cp_index: Güncellenecek kontrol noktasının indeksi (stroke_data['control_points'] içinde).
-            old_pos_array: Kontrol noktasının eski pozisyonu (numpy array [x,y]).
-            new_pos_array: Kontrol noktasının yeni pozisyonu (numpy array [x,y]).
-        """
+    def __init__(self, canvas: 'DrawingCanvas', stroke_idx: int, cp_idx: int, old_pos_np, new_pos_np):
         self.canvas = canvas
-        self.stroke_index = stroke_index
-        self.cp_index = cp_index
-        self.old_pos_array = old_pos_array.copy()
-        self.new_pos_array = new_pos_array.copy()
+        self.stroke_idx = stroke_idx
+        self.cp_idx = cp_idx
+        self.old_pos_np = old_pos_np.copy() # Pozisyonları kopyala
+        self.new_pos_np = new_pos_np.copy()
 
     def _set_control_point_position(self, pos_array: np.ndarray):
         """Belirtilen pozisyonu stroke'taki kontrol noktasına atar."""
         try:
-            if 0 <= self.stroke_index < len(self.canvas.b_spline_strokes):
-                stroke_data = self.canvas.b_spline_strokes[self.stroke_index]
+            if 0 <= self.stroke_idx < len(self.canvas.b_spline_strokes):
+                stroke_data = self.canvas.b_spline_strokes[self.stroke_idx]
                 if 'control_points' in stroke_data and \
-                   0 <= self.cp_index < len(stroke_data['control_points']):
-                    stroke_data['control_points'][self.cp_index] = pos_array.copy()
+                   0 <= self.cp_idx < len(stroke_data['control_points']):
+                    stroke_data['control_points'][self.cp_idx] = pos_array.copy()
                     self.canvas.update()
                     if hasattr(self.canvas, 'content_changed'):
                         self.canvas.content_changed.emit()
                     return True
-            logging.warning(f"UpdateBsplineControlPointCommand: Geçersiz stroke_index ({self.stroke_index}) veya cp_index ({self.cp_index}).")
+            logging.warning(f"UpdateBsplineControlPointCommand: Geçersiz stroke_index ({self.stroke_idx}) veya cp_index ({self.cp_idx}).")
             return False
         except Exception as e:
             logging.error(f"UpdateBsplineControlPointCommand _set_control_point_position: Hata. {e}", exc_info=True)
@@ -1276,10 +1282,10 @@ class UpdateBsplineControlPointCommand(Command):
 
     def execute(self):
         """Kontrol noktasının pozisyonunu yeni değere günceller."""
-        logging.debug(f"UpdateBsplineControlPointCommand executing: Stroke {self.stroke_index}, CP {self.cp_index} to {self.new_pos_array}")
-        self._set_control_point_position(self.new_pos_array)
+        logging.debug(f"UpdateBsplineControlPointCommand executing: Stroke {self.stroke_idx}, CP {self.cp_idx} to {self.new_pos_np}")
+        self._set_control_point_position(self.new_pos_np)
 
     def undo(self):
         """Kontrol noktasının pozisyonunu eski değere geri döndürür."""
-        logging.debug(f"UpdateBsplineControlPointCommand undoing: Stroke {self.stroke_index}, CP {self.cp_index} to {self.old_pos_array}")
-        self._set_control_point_position(self.old_pos_array)
+        logging.debug(f"UpdateBsplineControlPointCommand undoing: Stroke {self.stroke_idx}, CP {self.cp_idx} to {self.old_pos_np}")
+        self._set_control_point_position(self.old_pos_np)

@@ -19,7 +19,7 @@
       1.0
     ]
   ],
-  "grid_snap_enabled": false,
+  "grid_snap_enabled": true,
   "grid_visible_on_snap": true,
   "grid_show_for_line_tool_only": false,
   "grid_apply_to_all_pages": true,
@@ -43,7 +43,7 @@
   ],
   "window_width": 1280,
   "window_height": 729,
-  "pen_width": 5,
+  "pen_width": 7,
   "eraser_width": 10,
   "fill_color": [
     1.0,
