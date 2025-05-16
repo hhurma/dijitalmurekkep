@@ -323,6 +323,8 @@ def calculate_rotated_bbox_from_handle(
     return new_bbox_world
 
 def handle_tablet_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
+    print(f"[DEBUG] TOOL (PRESS): {canvas.current_tool}")
+    logging.info(f"TOOL (PRESS): {canvas.current_tool}")
     """
     DrawingCanvas._handle_tablet_press metodunun taşınmış halidir.
     Tablet basma olayını yönetir.
@@ -398,7 +400,9 @@ def handle_tablet_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEve
     elif canvas.current_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR:
         editable_line_node_selector_handler.handle_node_selector_press(canvas, pos, event)
         action_performed = True
-        
+    elif canvas.current_tool == ToolType.PATH:
+        print("[DEBUG] PATH PRESS: Başlatıldı")
+        logging.info("PATH PRESS: Başlatıldı")
     if not action_performed:
         logging.warning(f"handle_tablet_press: İşlem gerçekleştirilmedi! Araç: {canvas.current_tool}")
         event.ignore()
@@ -407,6 +411,8 @@ def handle_tablet_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEve
         event.accept()
 
 def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
+    print(f"[DEBUG] TOOL (MOVE): {canvas.current_tool}")
+    logging.info(f"TOOL (MOVE): {canvas.current_tool}")
     """
     DrawingCanvas._handle_tablet_move metodunun taşınmış halidir.
     Tablet hareket olayını yönetir.
@@ -497,7 +503,9 @@ def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEven
     elif canvas.current_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR:
         editable_line_node_selector_handler.handle_node_selector_move(canvas, pos, event)
         action_performed = True
-        
+    if canvas.current_tool == ToolType.PATH:
+        print(f"[DEBUG] PATH MOVE: current_path_points={getattr(canvas, 'current_path_points', None)}")
+        logging.info(f"PATH MOVE: current_path_points={getattr(canvas, 'current_path_points', None)}")
     if not action_performed:
         # logging.debug(f"handle_tablet_move: İşlem gerçekleştirilmedi! Araç: {canvas.current_tool}")
         event.ignore()
@@ -506,6 +514,8 @@ def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEven
         event.accept()
 
 def handle_tablet_release(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
+    print(f"[DEBUG] TOOL (RELEASE): {canvas.current_tool}")
+    logging.info(f"TOOL (RELEASE): {canvas.current_tool}")
     """
     DrawingCanvas._handle_tablet_release metodunun taşınmış halidir.
     Tablet bırakma olayını yönetir.
@@ -617,6 +627,37 @@ def handle_tablet_release(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
     # --- DÜZENLENEBİLİR ÇİZGİ KONTROL NOKTASI SEÇİCİ ARACI İÇİN BIRAKMA --- #
     elif canvas.current_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR:
         editable_line_node_selector_handler.handle_node_selector_release(canvas, pos, event)
+        action_performed = True
+    
+    # --- PATH ARACI İÇİN BIRAKMA --- #
+    elif canvas.current_tool == ToolType.PATH:
+        # PATH çizimi tamamlandıysa, noktaları shapes'e ekle
+        if hasattr(canvas, 'current_path_points') and len(canvas.current_path_points) > 1:
+            print(f"[DEBUG] PATH EKLEME ÖNCESİ: shapes len={len(canvas.shapes)}, içerik={canvas.shapes}")
+            logging.info(f"PATH EKLEME ÖNCESİ: shapes len={len(canvas.shapes)}, içerik={canvas.shapes}")
+            path_points = [QPointF(p.x(), p.y()) for p in canvas.current_path_points]
+            path_shape = [
+                ToolType.PATH,
+                canvas.current_color,
+                canvas.current_pen_width,
+                path_points,
+                canvas.line_style
+            ]
+            canvas.shapes.append(path_shape)
+            print(f"[DEBUG] PATH SHAPE EKLENDİ: {path_shape}")
+            logging.info(f"PATH SHAPE EKLENDİ: {path_shape}")
+            print(f"[DEBUG] PATH EKLEME SONRASI: shapes len={len(canvas.shapes)}, içerik={canvas.shapes}")
+            logging.info(f"PATH EKLEME SONRASI: shapes len={len(canvas.shapes)}, içerik={canvas.shapes}")
+            if canvas._parent_page:
+                canvas._parent_page.mark_as_modified()
+            if hasattr(canvas, 'content_changed'):
+                canvas.content_changed.emit()
+            canvas.current_path_points = []
+            canvas.drawing = False
+            canvas.drawing_shape = False
+            canvas.update()
+        else:
+            print("[DEBUG] PATH aracı ile çizim için yeterli nokta yok, shapes'e eklenmedi.")
         action_performed = True
     
     if not action_performed:

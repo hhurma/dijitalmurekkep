@@ -405,7 +405,7 @@ def draw_selection_overlay(canvas: 'DrawingCanvas', painter: QPainter):
     # Eğer hiçbir koşul karşılanmazsa (ki bu olmamalı selected_item_indices doluysa), hiçbir şey çizilmez.
 
 def draw_selection_rectangle(canvas: 'DrawingCanvas', painter: QPainter):
-    logging.debug(f"[canvas_drawing_helpers] draw_selection_rectangle: shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
+    #logging.debug(f"[canvas_drawing_helpers] draw_selection_rectangle: shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
     if not canvas.selecting or canvas.shape_start_point.isNull() or canvas.shape_end_point.isNull():
         return
     screen_start = canvas.world_to_screen(canvas.shape_start_point)
@@ -418,7 +418,7 @@ def draw_selection_rectangle(canvas: 'DrawingCanvas', painter: QPainter):
     painter.restore()
 
 def draw_eraser_preview(canvas: 'DrawingCanvas', painter: QPainter):
-    logging.debug(f"[canvas_drawing_helpers] draw_eraser_preview: shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
+    #logging.debug(f"[canvas_drawing_helpers] draw_eraser_preview: shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     pen = QPen(Qt.GlobalColor.gray, 1, Qt.PenStyle.SolidLine)

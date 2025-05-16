@@ -109,6 +109,17 @@ def _serialize_item(item_data: List[Any]) -> Dict[str, Any]:
             if len(item_data) >= 5 and item_data[4] is not None:
                 serialized['line_style'] = item_data[4]
             return serialized
+        # YENİ: PATH için özel serialize
+        elif tool_type == ToolType.PATH:
+            serialized = {
+                'type': 'shape',
+                'tool_type': tool_type.name,
+                'color': list(item_data[1]),
+                'width': item_data[2],
+                'points': [_point_to_list(p) for p in item_data[3]],
+                'line_style': item_data[4] if len(item_data) > 4 else 'solid'
+            }
+            return serialized
         else:
             # Standart şekiller için
             serialized = {
@@ -163,9 +174,23 @@ def _deserialize_item(item_dict: Dict[str, Any]) -> List[Any] | None:
         tool_type_str = item_dict.get('tool_type')
         color = item_dict.get('color')
         width = item_dict.get('width')
+        # PATH için özel kontrol
+        if tool_type_str == 'PATH':
+            points_list = item_dict.get('points')
+            line_style = item_dict.get('line_style', 'solid')
+            if color is None or width is None or points_list is None:
+                logging.warning(f"PATH verisinde zorunlu alanlar eksik: {item_dict}")
+                return None
+            try:
+                tool_type = ToolType[tool_type_str]
+            except (KeyError, ValueError):
+                logging.warning(f"Geçersiz ToolType: {tool_type_str}")
+                return None
+            points = [_list_to_point(p) for p in points_list]
+            return [tool_type, tuple(color), width, points, line_style]
+        # Standart şekiller
         p1_list = item_dict.get('p1')
         p2_list = item_dict.get('p2')
-        
         if not all([tool_type_str, color, width, p1_list, p2_list]):
             logging.warning(f"Şekil verisinde zorunlu alanlar eksik: {item_dict}")
             return None
