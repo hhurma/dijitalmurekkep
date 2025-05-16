@@ -214,52 +214,53 @@ class PageManager(QTabWidget):
 
     def add_page_from_image(self, image_path: str):
         """Verilen yoldaki resmi arka plan olarak kullanan yeni bir sayfa ekler."""
+        # Yeni sayfa numarası, mevcut sayfa sayısına göre belirlenir
         new_page_number = self.count() + 1
         default_orientation = "portrait" # Varsayılan, ayarlanabilir
         if self.main_window and hasattr(self.main_window, 'settings'):
             template_settings_from_main = self.main_window.settings.get('template_settings', {})
             default_orientation = template_settings_from_main.get('default_page_orientation', "portrait")
         
+        # Yeni sayfa oluştur
         new_page = Page(page_number=new_page_number,
                         template_settings=self.template_settings,
                         main_window=self.main_window,
                         default_orientation_str=default_orientation)
         
-        # ---- Page sınıfında veya Canvas'ında set_background_image metodu OLMALI ----
-        # Örnek çağrı (Bu metodun Page veya Canvas içinde tanımlanması gerekir):
+        # Arka plan resmini ayarla
+        success = False
         if hasattr(new_page, 'set_background_image'):
-            new_page.set_background_image(image_path)
+            success = new_page.set_background_image(image_path)
             logging.info(f"Sayfa {new_page_number} için arka plan resmi ayarlandı: {image_path}")
         elif hasattr(new_page.get_canvas(), 'set_background_image'):
-            new_page.get_canvas().set_background_image(image_path)
+            success = new_page.get_canvas().set_background_image(image_path)
             logging.info(f"Sayfa {new_page_number} canvas'ı için arka plan resmi ayarlandı: {image_path}")
         else:
             logging.warning(f"Page veya Canvas üzerinde `set_background_image` metodu bulunamadı. Arka plan ayarlanamadı: {image_path}")
             # Arka plan ayarlanamazsa bile sayfayı ekleyebiliriz veya hata verebiliriz.
             # Şimdilik devam edelim.
-
+        
+        # Sayfayı ScrollArea içine yerleştirip ekle
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setWidget(new_page)
 
-        # YENİ: Event Filter Kurulumu (DrawingCanvas için)
+        # Event Filter Kurulumu (DrawingCanvas için)
         if hasattr(new_page, 'drawing_canvas') and new_page.drawing_canvas:
             scroll_area.viewport().installEventFilter(new_page.drawing_canvas)
             logging.debug(f"Event filter (from image) installed on ScrollArea viewport for Page {new_page_number}")
         else:
             logging.warning(f"Event filter (from image) KURULAMADI: Page {new_page_number} için drawing_canvas bulunamadı.")
 
-        # Arka plan ayarlandıktan ve new_page scroll_area'ya eklendikten sonra boyutları güncelle
-        new_page.adjustSize()       # Page widget'ının boyutunu içeriğine göre ayarla
-        scroll_area.adjustSize()    # ScrollArea'nın boyutunu da ayarla
-        # Belki scroll_area.widget().updateGeometry() veya new_page.updateGeometry() de denenebilir
-
-        tab_title = f"Sayfa {new_page_number} (PDF)" # PDF'ten geldiğini belirtelim
+        # Sayfa başlığını ayarla ve sekmeyi ekle
+        tab_title = f"Sayfa {new_page_number}"
         index = self.addTab(scroll_area, tab_title)
-        self.setCurrentIndex(index)
-
-        self.page_count_changed.emit(self.count(), self.currentIndex())
-        logging.info(f"Resimden sayfa eklendi: {image_path}. Toplam sayfa: {self.count()}")
+        self.setCurrentIndex(index)  # Yeni eklenen sayfayı aktif yap
+        
+        # Sayfa sayısı değişikliği bildirimi
+        self.page_count_changed.emit(self.count(), index)
+        logging.info(f"Resimli sayfa eklendi: {new_page_number} (Indeks: {index})")
+        
         return new_page
 
     # --- YENİ: Tüm Canvas'lara Grid Ayarlarını Uygula ---

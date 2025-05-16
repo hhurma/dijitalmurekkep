@@ -17,11 +17,14 @@ from gui.enums import Orientation # Orientation enum'unu import et
 # from gui.drawing_canvas import DrawingCanvas # DrawingCanvas import edildi - Döngüsel import sorunu yaratabilir
 # from gui.arayuz import MAX_RECENT_FILES # Sabiti import et - KALDIRILDI
 
+# NOT: Döngüsel import sorununu önlemek için Page ve DrawingCanvas direkt import etmek yerine
+# çalışma zamanında sınıf adı string olarak kontrol edilecek
+
 if TYPE_CHECKING:
     from gui.arayuz import MainWindow
     from gui.page_manager import PageManager
-    from gui.page import Page  # Type hinting için Page sınıfını buraya taşıdık
-    from gui.drawing_canvas import DrawingCanvas  # Type hinting için buraya taşıdık
+    from gui.page import Page  # Type hinting için Page sınıfını buraya koyduk
+    from gui.drawing_canvas import DrawingCanvas  # Type hinting için buraya koyduk
 
 # Dosya uzantıları ve filtreler
 NOTEBOOK_EXTENSION = ".dnd" # Digital Notes Data
@@ -335,7 +338,8 @@ def handle_export_pdf(main_window: 'MainWindow'):
 
         if isinstance(scroll_area, QScrollArea):
             widget_inside = scroll_area.widget()
-            if isinstance(widget_inside, Page):
+            # Döngüsel import sorununu önlemek için sınıf adını string olarak kontrol ediyoruz
+            if widget_inside.__class__.__name__ == 'Page':
                 page_widget = widget_inside
                 if hasattr(page_widget, 'get_canvas'):
                     canvas = page_widget.get_canvas()

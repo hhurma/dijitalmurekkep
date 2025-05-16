@@ -112,6 +112,11 @@ def _serialize_item(item_data: List[Any]) -> Dict[str, Any]:
             return serialized
         # YENİ: PATH için özel serialize
         elif tool_type == ToolType.PATH:
+            # PATH şekilleri için 3. indekste points listesi var
+            if len(item_data) <= 3 or not isinstance(item_data[3], list):
+                logging.warning(f"PATH serileştirmesi için geçersiz/eksik veri. Points listesi bulunamadı: {item_data}")
+                return None
+                
             serialized = {
                 'type': 'shape',
                 'tool_type': tool_type.name,
@@ -120,6 +125,7 @@ def _serialize_item(item_data: List[Any]) -> Dict[str, Any]:
                 'points': [_point_to_list(p) for p in item_data[3]],
                 'line_style': item_data[4] if len(item_data) > 4 else 'solid'
             }
+            logging.debug(f"PATH serileştirildi: {len(serialized['points'])} nokta")
             return serialized
         else:
             # Standart şekiller için
@@ -175,54 +181,68 @@ def _deserialize_item(item_dict: Dict[str, Any]) -> List[Any] | None:
         tool_type_str = item_dict.get('tool_type')
         color = item_dict.get('color')
         width = item_dict.get('width')
+
         # PATH için özel kontrol
         if tool_type_str == 'PATH':
             points_list = item_dict.get('points')
+            if not points_list:
+                logging.warning(f"PATH deserialize: 'points' listesi bulunamadı: {item_dict}")
+                return None
+                
             line_style = item_dict.get('line_style', 'solid')
-            if color is None or width is None or points_list is None:
+            
+            if color is None or width is None:
                 logging.warning(f"PATH verisinde zorunlu alanlar eksik: {item_dict}")
                 return None
+                
             try:
                 tool_type = ToolType[tool_type_str]
             except (KeyError, ValueError):
                 logging.warning(f"Geçersiz ToolType: {tool_type_str}")
                 return None
+                
+            # Noktaları QPointF'e dönüştür 
             points = [_list_to_point(p) for p in points_list]
+            logging.debug(f"PATH deserialize edildi: {len(points)} nokta")
+            
+            # [ToolType.PATH, color_tuple, width_float, List[QPointF], line_style]
             return [tool_type, tuple(color), width, points, line_style]
         # Standart şekiller
-        p1_list = item_dict.get('p1')
-        p2_list = item_dict.get('p2')
-        if not all([tool_type_str, color, width, p1_list, p2_list]):
-            logging.warning(f"Şekil verisinde zorunlu alanlar eksik: {item_dict}")
-            return None
-        
-        # ToolType'a dönüştür
-        try:
-            tool_type = ToolType[tool_type_str]
-        except (KeyError, ValueError):
-            logging.warning(f"Geçersiz ToolType: {tool_type_str}")
-            return None
-        
-        # QPointF'e dönüştür
-        p1 = _list_to_point(p1_list)
-        p2 = _list_to_point(p2_list)
-        
-        # İsteğe bağlı parametreler
-        line_style = item_dict.get('line_style')
-        fill_rgba = item_dict.get('fill_rgba')
-        
-        # Şekil listesi: [ToolType, color_tuple, width_float, p1, p2, Optional[line_style_str], Optional[fill_rgba_tuple]]
-        result = [tool_type, tuple(color), width, p1, p2]
-        
-        if line_style is not None:
-            result.append(line_style)
-        elif fill_rgba is not None or 'fill_rgba' in item_dict:
-            result.append(None)  # line_style yok ama fill_rgba var
+        else:
+            p1_list = item_dict.get('p1')
+            p2_list = item_dict.get('p2')
             
-        if fill_rgba is not None:
-            result.append(tuple(fill_rgba))
+            if not all([tool_type_str, color, width, p1_list, p2_list]):
+                logging.warning(f"Şekil verisinde zorunlu alanlar eksik: {item_dict}")
+                return None
             
-        return result
+            # ToolType'a dönüştür
+            try:
+                tool_type = ToolType[tool_type_str]
+            except (KeyError, ValueError):
+                logging.warning(f"Geçersiz ToolType: {tool_type_str}")
+                return None
+            
+            # QPointF'e dönüştür
+            p1 = _list_to_point(p1_list)
+            p2 = _list_to_point(p2_list)
+            
+            # İsteğe bağlı parametreler
+            line_style = item_dict.get('line_style')
+            fill_rgba = item_dict.get('fill_rgba')
+            
+            # Şekil listesi: [ToolType, color_tuple, width_float, p1, p2, Optional[line_style_str], Optional[fill_rgba_tuple]]
+            result = [tool_type, tuple(color), width, p1, p2]
+            
+            if line_style is not None:
+                result.append(line_style)
+            elif fill_rgba is not None or 'fill_rgba' in item_dict:
+                result.append(None)  # line_style yok ama fill_rgba var
+                
+            if fill_rgba is not None:
+                result.append(tuple(fill_rgba))
+                
+            return result
     
     elif item_type == 'editable_line':
         # Düzenlenebilir çizgiyi deserialize et

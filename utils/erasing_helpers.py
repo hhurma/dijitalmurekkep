@@ -125,12 +125,18 @@ def calculate_erase_changes(lines: List[List[Any]], shapes: List[List[Any]], b_s
     }
     """
     from utils import geometry_helpers # Helperları burada import et
+    from gui.enums import ToolType  # ToolType'a erişim için import eklendi
 
-    print("[DEBUG] LINES LİSTESİ:")
-    for i, l in enumerate(lines):
-        print(f"[DEBUG] LINES[{i}]: color={l[0]}, width={l[1]}, points={l[2] if len(l)>2 else None}")
+    logging.debug("[DEBUG] calculate_erase_changes çağrıldı")
+    logging.debug(f"[DEBUG] SHAPES: {len(shapes)} öğe mevcut")
+    for i, s in enumerate(shapes):
+        if s and len(s) > 0:
+            if isinstance(s[0], ToolType):
+                logging.debug(f"[DEBUG] SHAPE[{i}]: type={s[0].name}, color={s[1]}, width={s[2]}")
+            else:
+                logging.debug(f"[DEBUG] SHAPE[{i}]: type={s[0]}, color={s[1]}, width={s[2]}")
 
-    changes: EraseChanges = {'lines': {}, 'shapes': {}, 'b_spline_strokes': {}} # YENİ
+    changes: EraseChanges = {'lines': {}, 'shapes': {}, 'b_spline_strokes': {}}
 
     if not erase_path or len(erase_path) < 1:
         return changes # Değişiklik yok
@@ -143,10 +149,10 @@ def calculate_erase_changes(lines: List[List[Any]], shapes: List[List[Any]], b_s
     for i, line_data in enumerate(lines):
         # BBox hesapla
         bbox = geometry_helpers.get_item_bounding_box(line_data, 'lines')
-        print(f"[DEBUG] LINE {i}: bbox={bbox}")
+        logging.debug(f"[Eraser-Line {i}] BBox={bbox}")
         # Silgi ile kesişiyor mu?
         if not bbox.isNull() and eraser_rect.intersects(bbox):
-            print(f"[DEBUG] LINE {i} siliniyor!")
+            logging.debug(f"[Eraser-Line {i}] Kesişim tespit edildi, silme değerlendirilecek")
             lines_to_delete.append(i)
 
     for i in lines_to_delete:
@@ -166,46 +172,65 @@ def calculate_erase_changes(lines: List[List[Any]], shapes: List[List[Any]], b_s
 
     # 2. Shapes (Tamamen Silinecekleri Hesapla)
     for i, shape_data in enumerate(shapes):
-        shape_rect = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
-        print(f"[DEBUG] SHAPE {i}: type={shape_data[0]}, bbox={shape_rect}")
-        
-        qt_intersects_shape = False
-        manual_intersects_shape = False
-        if not shape_rect.isNull():
-            qt_intersects_shape = eraser_rect.intersects(shape_rect)
-            # Manuel kesişim kontrolü
-            er_left, er_right, er_top, er_bottom = eraser_rect.left(), eraser_rect.right(), eraser_rect.top(), eraser_rect.bottom()
-            sr_left, sr_right, sr_top, sr_bottom = shape_rect.left(), shape_rect.right(), shape_rect.top(), shape_rect.bottom()
-            x_overlap_shape = (sr_left <= er_right) and (sr_right >= er_left)
-            y_overlap_shape = (sr_top <= er_bottom) and (sr_bottom >= er_top)
-            manual_intersects_shape = x_overlap_shape and y_overlap_shape
+        if not shape_data or len(shape_data) < 3:
+            logging.debug(f"[Eraser-Shape {i}] Geçersiz shape verisi, atlanıyor")
+            continue
+            
+        # PATH türü shape'ler için özel kontrol
+        if isinstance(shape_data[0], ToolType) and shape_data[0] == ToolType.PATH:
+            logging.debug(f"[Eraser-Shape {i}] PATH tipi şekil tespit edildi")
+            
+            # PATH için points verisini doğru indeksten al
+            path_points = None
+            if len(shape_data) > 3 and isinstance(shape_data[3], list):
+                path_points = shape_data[3]
+                logging.debug(f"[Eraser-Shape {i}] PATH points verisi bulundu: {len(path_points)} nokta")
+            else:
+                logging.debug(f"[Eraser-Shape {i}] PATH için points verisi doğru formatta değil")
+                continue
+                
+            if not path_points or len(path_points) < 2:
+                logging.debug(f"[Eraser-Shape {i}] PATH noktaları yetersiz, atlanıyor")
+                continue
+                
+            # Noktalardan sınırlayıcı kutu oluştur
+            min_x = min(p.x() for p in path_points)
+            min_y = min(p.y() for p in path_points)
+            max_x = max(p.x() for p in path_points)
+            max_y = max(p.y() for p in path_points)
+            path_rect = QRectF(QPointF(min_x, min_y), QPointF(max_x, max_y))
+            
+            logging.debug(f"[Eraser-Shape {i}] PATH sınırlayıcı kutusu: {path_rect}")
+            
+            # Kesişim kontrolü
+            if not path_rect.isNull() and eraser_rect.intersects(path_rect):
+                logging.debug(f"[Eraser-Shape {i}] PATH silgi ile kesişiyor, silinecek!")
+                changes['shapes'][i] = copy.deepcopy(shape_data)
+        else:
+            # Normal şekiller için mevcut mantığı kullan
+            shape_rect = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
+            
+            if isinstance(shape_data[0], ToolType):
+                shape_type_name = shape_data[0].name
+            else:
+                shape_type_name = str(shape_data[0])
+                
+            logging.debug(f"[Eraser-Shape {i}] Type={shape_type_name}, BBox={shape_rect}")
+            
+            # Kesişim kontrolü
+            if not shape_rect.isNull() and eraser_rect.intersects(shape_rect):
+                logging.debug(f"[Eraser-Shape {i}] {shape_type_name} silgi ile kesişiyor, silinecek!")
+                changes['shapes'][i] = copy.deepcopy(shape_data)
 
-        print(f"[DEBUG] SHAPE {i}: type={shape_data[0]}, qt_intersects={qt_intersects_shape}, manual_intersects={manual_intersects_shape}")
-
-        if not shape_rect.isNull() and manual_intersects_shape: 
-            print(f"[DEBUG] SHAPE {i} SİLİNECEK! type={shape_data[0]}")
-            changes['shapes'][i] = copy.deepcopy(shape_data)
-
-    # 3. B-Spline Strokes (Tamamen Silinecekleri Hesapla) # YENİ BÖLÜM
+    # 3. B-Spline Strokes
     for i, spline_data in enumerate(b_spline_strokes):
-        spline_rect = geometry_helpers.get_bspline_bounding_box(spline_data) # B-Spline için özel bbox fonksiyonu
+        spline_rect = geometry_helpers.get_bspline_bounding_box(spline_data)
         
-        qt_intersects_spline = False
-        manual_intersects_spline = False
-        if not spline_rect.isNull():
-            qt_intersects_spline = eraser_rect.intersects(spline_rect)
-            # Manuel kesişim kontrolü (yukarıdakilere benzer şekilde)
-            er_left, er_right, er_top, er_bottom = eraser_rect.left(), eraser_rect.right(), eraser_rect.top(), eraser_rect.bottom()
-            spl_left, spl_right, spl_top, spl_bottom = spline_rect.left(), spline_rect.right(), spline_rect.top(), spline_rect.bottom()
-            x_overlap_spline = (spl_left <= er_right) and (spl_right >= er_left)
-            y_overlap_spline = (spl_top <= er_bottom) and (spl_bottom >= er_top)
-            manual_intersects_spline = x_overlap_spline and y_overlap_spline
-
-        logging.debug(f"  [Eraser-BSpline {i}] BBox={spline_rect}, QtIntersects={qt_intersects_spline}, ManualIntersects={manual_intersects_spline}")
-
-        if not spline_rect.isNull() and manual_intersects_spline:
+        if not spline_rect.isNull() and eraser_rect.intersects(spline_rect):
+            logging.debug(f"[Eraser-BSpline {i}] BSpline silgi ile kesişiyor, silinecek!")
             changes['b_spline_strokes'][i] = copy.deepcopy(spline_data)
 
+    logging.debug(f"[Eraser] Sonuç: {len(changes['lines'])} çizgi, {len(changes['shapes'])} şekil, {len(changes['b_spline_strokes'])} B-Spline silinecek")
     return changes
 
 # Eski erase_items_along_path fonksiyonunu kaldırabiliriz veya yorumda bırakabiliriz.

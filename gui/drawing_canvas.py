@@ -130,6 +130,14 @@ class FakeTabletEventFromTouch:
 
     def globalY(self) -> int:
         return int(self.globalPosition().y())
+        
+    def accept(self):
+        """Olayın kabul edildiğini belirten metot."""
+        self._touch_event.accept()
+        
+    def accept(self):
+        """Olayın kabul edildiğini belirten metot."""
+        self._touch_event.accept()
 
 
 class DrawingCanvas(QWidget):
@@ -465,7 +473,14 @@ class DrawingCanvas(QWidget):
         
         # Arka planı çiz
         painter.fillRect(self.rect(), rgba_to_qcolor(self.background_color))
-        if self._background_pixmap and not self._background_pixmap.isNull():
+        
+        # DÜZELTME: Önce PDF arka planını kontrol et ve çiz
+        if self._has_page_background and self._page_background_pixmap and not self._page_background_pixmap.isNull():
+            # PDF sayfası veya özel arka plan varsa, onu çiz
+            painter.drawPixmap(0, 0, self._page_background_pixmap)
+            logging.debug(f"Canvas({id(self)}): Özel PDF arka planı çizildi. Boyut: {self._page_background_pixmap.size()}")
+        elif self._background_pixmap and not self._background_pixmap.isNull():
+            # Normal şablon arka planını çiz
             painter.drawPixmap(0, 0, self._background_pixmap)
 
         # Eğer aktif bir sayfa varsa ve resimler varsa, önce onları çiz
@@ -1761,34 +1776,75 @@ class DrawingCanvas(QWidget):
             event.ignore()
             return
 
+        # İki veya daha fazla parmakla dokunma olayı
         if len(touch_points) >= 2:
+            # İki parmağın pozisyonlarını al
             p1, p2 = touch_points[0], touch_points[1]
-            pos1 = self.screen_to_world(p1.position())
-            pos2 = self.screen_to_world(p2.position())
-            center = QPointF((pos1.x() + pos2.x()) / 2, (pos1.y() + pos2.y()) / 2)
-            dist = (pos1 - pos2).manhattanLength()
+            
+            # Ekran koordinatlarını dünya koordinatlarına çevir
+            pos1_screen = p1.position()
+            pos2_screen = p2.position()
+            
+            # İki parmağın ortası (ekran koordinatlarında)
+            center_screen = QPointF((pos1_screen.x() + pos2_screen.x()) / 2.0, 
+                                 (pos1_screen.y() + pos2_screen.y()) / 2.0)
+            
+            # Dünya koordinatlarına çevir
+            pos1_world = self.screen_to_world(pos1_screen)
+            pos2_world = self.screen_to_world(pos2_screen)
+            center_world = self.screen_to_world(center_screen)
+            
+            # İki parmak arası mesafe (ekran pikseli cinsinden)
+            dist_screen = (pos1_screen - pos2_screen).manhattanLength()
+            
+            # Pinch başlangıcı
             if not self._pinch_active:
-                self._last_pinch_dist = dist
-                self._last_pinch_center = center
+                self._last_pinch_dist = dist_screen
+                self._last_pinch_center = center_world
                 self._pinch_active = True
+                logging.debug(f"Pinch başladı: dist={dist_screen}, center={center_world}")
             else:
-                if self._last_pinch_dist and self._last_pinch_dist != 0:
-                    scale = (dist / self._last_pinch_dist) ** 0.3
+                # Aktif pinch hareketi - zoom ve pan uygula
+                if self._last_pinch_dist and self._last_pinch_dist > 0:
+                    # Zoom faktörünü hesapla (küçük değişimler için daha hassas)
+                    scale_factor = (dist_screen / self._last_pinch_dist)
+                    
+                    # Üstel bir eğri kullanarak ani/büyük değişimleri yumuşat
+                    # Daha küçük üs daha yavaş değişim demektir (0.3 yerine 0.2 kullanıyoruz)
+                    scale = scale_factor ** 0.2
+                    
+                    # Mevcut ve yeni zoom değerleri
                     old_zoom = self._parent_page.zoom_level
-                    new_zoom = max(0.2, min(5.0, old_zoom * scale))
+                    new_zoom = max(0.1, min(10.0, old_zoom * scale))
+                    
+                    # Pan kaydırma miktarını hesapla
+                    # Merkezler arasındaki farkı kullan, küçük değişimler için daha büyük etki
+                    delta = (center_world - self._last_pinch_center) * 0.8
+                    
+                    # Değişiklikleri uygula
                     self._parent_page.zoom_level = new_zoom
-                    delta = (center - self._last_pinch_center) * 0.5
                     self._parent_page.pan_offset -= delta
-                    self._last_pinch_dist = dist
-                    self._last_pinch_center = center
+                    
+                    # Yeni değerleri kaydet
+                    self._last_pinch_dist = dist_screen
+                    self._last_pinch_center = center_world
+                    
+                    # Loglama
+                    logging.debug(f"Pinch güncellendi: scale={scale:.2f}, yeni zoom={new_zoom:.2f}, delta={delta}")
+                    
+                    # Ekranı güncelle
                     self.update()
+            
+            # İki parmak işlemi tamamlandı, başka işleyicilere gönderme
             event.accept()
             return
         else:
+            # Pinch işlemi bitti, değişkenleri temizle
             self._pinch_active = False
             self._last_pinch_dist = None
             self._last_pinch_center = None
 
+        # Tek parmak ile dokunma olayını tablet olayına dönüştür ve işle
         primary_point = touch_points[0]
         world_pos = self.screen_to_world(primary_point.position()) 
         state = primary_point.state()
@@ -1803,6 +1859,7 @@ class DrawingCanvas(QWidget):
         else:
             event.ignore()
             return
+        
         self.update()
         event.accept()
 

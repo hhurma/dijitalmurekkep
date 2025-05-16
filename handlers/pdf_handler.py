@@ -77,7 +77,21 @@ def handle_import_pdf(parent_window=None, page_manager=None): # page_manager ekl
 
         logging.info(f"PDF başarıyla açıldı: {filepath}, Sayfa Sayısı: {len(pdf_document)}")
         
+        # PDF'den sayfa sayısını kontrol et
+        if len(pdf_document) == 0:
+            logging.warning("PDF dosyasında içe aktarılacak sayfa bulunamadı.")
+            if parent_window:
+                QMessageBox.warning(parent_window, "PDF İçe Aktarma", f"'{os.path.basename(filepath)}' dosyasında içe aktarılacak sayfa bulunamadı.")
+            pdf_document.close()
+            return
+            
+        # Mevcut sayfaları temizle - eğer hiç sayfa yoksa bu işlem atlanır
+        if page_manager.count() > 0:
+            page_manager.clear_all_pages()
+        
         imported_page_count = 0
+        first_page_index = 0  # İlk eklenen sayfanın indeksini sakla
+        
         try:
             for i, page_fitz in enumerate(pdf_document):
                 try:
@@ -96,6 +110,9 @@ def handle_import_pdf(parent_window=None, page_manager=None): # page_manager ekl
                     if hasattr(page_manager, 'add_page_from_image'):
                         newly_added_page = page_manager.add_page_from_image(image_path)
                         if newly_added_page:
+                            if imported_page_count == 0:
+                                first_page_index = page_manager.currentIndex()  # İlk sayfanın indeksini kaydet
+                            
                             imported_page_count += 1
                             logging.info(f"PageManager'a eklendi: {image_path}")
                             
@@ -143,12 +160,16 @@ def handle_import_pdf(parent_window=None, page_manager=None): # page_manager ekl
                     if parent_window:
                         QMessageBox.warning(parent_window, "Sayfa Hatası", f"{os.path.basename(filepath)} dosyasının {i+1}. sayfası işlenirken bir sorun oluştu.")
             
-            # Başarılı içe aktarma mesajı
+            # PDF içe aktarma tamamlandığında ilk sayfaya git
             if imported_page_count > 0:
-                 if parent_window:
+                page_manager.setCurrentIndex(first_page_index)  # İlk sayfaya dön
+                logging.info(f"PDF içe aktarma tamamlandı. İlk sayfa gösteriliyor (index: {first_page_index})")
+                
+                # Başarılı içe aktarma mesajı
+                if parent_window:
                     QMessageBox.information(parent_window, 
-                                            "PDF İçe Aktarıldı", 
-                                            f"'{os.path.basename(filepath)}' dosyasından {imported_page_count} sayfa başarıyla yeni sayfa olarak eklendi.")
+                                           "PDF İçe Aktarıldı", 
+                                           f"'{os.path.basename(filepath)}' dosyasından {imported_page_count} sayfa başarıyla yeni sayfa olarak eklendi.")
             elif len(pdf_document) > 0 and imported_page_count == 0 : # Sayfa var ama eklenemedi
                 if parent_window:
                     QMessageBox.warning(parent_window, 

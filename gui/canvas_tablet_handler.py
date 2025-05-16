@@ -441,6 +441,15 @@ def handle_tablet_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEve
     elif canvas.current_tool == ToolType.PATH:
         print("[DEBUG] PATH PRESS: Başlatıldı")
         logging.info("PATH PRESS: Başlatıldı")
+        
+        # PATH çizimine başla
+        canvas.drawing = True
+        canvas.drawing_shape = True
+        # current_path_points oluştur ve ilk noktayı ekle
+        canvas.current_path_points = [pos]
+        
+        action_performed = True
+        
     if not action_performed:
         logging.warning(f"handle_tablet_press: İşlem gerçekleştirilmedi! Araç: {canvas.current_tool}")
         event.ignore()
@@ -624,9 +633,15 @@ def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEven
     elif canvas.current_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR:
         editable_line_node_selector_handler.handle_node_selector_move(canvas, pos, event)
         action_performed = True
-    if canvas.current_tool == ToolType.PATH:
-        print(f"[DEBUG] PATH MOVE: current_path_points={getattr(canvas, 'current_path_points', None)}")
-        logging.info(f"PATH MOVE: current_path_points={getattr(canvas, 'current_path_points', None)}")
+    # --- PATH ARACI İÇİN HAREKET --- #
+    elif canvas.current_tool == ToolType.PATH and canvas.drawing and hasattr(canvas, 'current_path_points'):
+        print(f"[DEBUG] PATH MOVE: Nokta eklendi, yeni nokta: {pos}")
+        logging.info(f"PATH MOVE: Nokta eklendi, yeni nokta: {pos}")
+        
+        # PATH çizimine yeni nokta ekle
+        canvas.current_path_points.append(pos)
+        action_performed = True
+    
     if not action_performed:
         # logging.debug(f"handle_tablet_move: İşlem gerçekleştirilmedi! Araç: {canvas.current_tool}")
         event.ignore()

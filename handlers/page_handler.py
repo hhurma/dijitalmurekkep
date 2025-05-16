@@ -51,7 +51,8 @@ def handle_set_orientation(page_manager, orientation: Orientation):
         current_page = None
         if isinstance(scroll_area, QScrollArea):
             widget_inside = scroll_area.widget()
-            if isinstance(widget_inside, Page):
+            # Döngüsel import sorununu önlemek için sınıf adını string olarak kontrol ediyoruz
+            if widget_inside.__class__.__name__ == 'Page':
                 current_page = widget_inside
 
         if current_page:
