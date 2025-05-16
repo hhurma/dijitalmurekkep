@@ -349,22 +349,8 @@ def handle_selector_resize_move(canvas: 'DrawingCanvas', pos: QPointF, event: QT
                         else: logging.warning(f"Resize Move: Geçersiz shapes index {index}")
                     # --- YENİ: B-Spline (düzenlenebilir çizgi) için boyutlandırma --- #
                     elif item_type == 'bspline_strokes':
-                        if hasattr(canvas, 'b_spline_strokes') and 0 <= index < len(canvas.b_spline_strokes):
-                            original_cp = original_item_data['data']['control_points'] if isinstance(original_item_data, dict) else original_item_data[1]
-                            transformed_cp = []
-                            for p_val in original_cp:
-                                relative_p = p_val - original_center
-                                scaled_p = QPointF(relative_p.x() * scale_x, relative_p.y() * scale_y)
-                                transformed_p = scaled_p + original_center + translate_delta
-                                transformed_cp.append(transformed_p)
-                            # B-spline stroke veri yapısına göre güncelle
-                            if isinstance(canvas.b_spline_strokes[index], dict):
-                                canvas.b_spline_strokes[index]['control_points'] = transformed_cp
-                            else:
-                                # Liste veya tuple ise, 1. index kontrol noktaları
-                                canvas.b_spline_strokes[index][1] = transformed_cp
-                        else:
-                            logging.warning(f"Resize Move: Geçersiz bspline_strokes index {index}")
+                        # Bu blokta artık klasik bbox ölçekleme yapılmayacak!
+                        continue
                 except Exception as e:
                      logging.error(f"Resize Move sırasında öğe ({item_type}[{index}]) güncellenirken hata: {e}", exc_info=True)
             canvas.update()
@@ -385,19 +371,29 @@ def handle_selector_resize_move(canvas: 'DrawingCanvas', pos: QPointF, event: QT
                 # Orijinal kontrol noktalarını al
                 cps = original_state.get('control_points')
                 if cps is not None:
-                    # Orijinal bbox'a göre normalize et, yeni bbox'a göre ölçekle
                     orig_min = np.array([orig_bbox.left(), orig_bbox.top()])
                     orig_size = np.array([orig_bbox.width(), orig_bbox.height()])
                     new_min = np.array([new_bbox.left(), new_bbox.top()])
                     new_size = np.array([new_bbox.width(), new_bbox.height()])
                     scaled_cps = []
                     for cp in cps:
-                        rel = (cp - orig_min) / orig_size if np.all(orig_size > 0) else np.zeros(2)
-                        new_cp = new_min + rel * new_size
-                        scaled_cps.append(new_cp)
-                    # Canvas'taki kontrol noktalarını güncelle
-                    canvas.b_spline_strokes[index]['control_points'] = np.array(scaled_cps)
-                    #logging.debug(f"[handle_selector_resize_move] bspline_strokes[{index}] scaled control_points: {scaled_cps}")
+                        # cp: QPointF, tuple, list veya np.array olabilir
+                        if isinstance(cp, QPointF):
+                            cp_arr = np.array([cp.x(), cp.y()])
+                        elif isinstance(cp, (tuple, list)) and len(cp) == 2:
+                            cp_arr = np.array(cp)
+                        elif isinstance(cp, np.ndarray) and cp.shape == (2,):
+                            cp_arr = cp
+                        else:
+                            logging.error(f"B-Spline control_points içinde beklenmeyen tip: {type(cp)} - {cp}")
+                            continue
+                        rel = (cp_arr - orig_min) / orig_size if np.all(orig_size > 0) else np.zeros(2)
+                        new_cp_arr = new_min + rel * new_size
+                        scaled_cps.append(np.array([float(new_cp_arr[0]), float(new_cp_arr[1])]))
+                    # Canvas'taki kontrol noktalarını güncelle (her zaman QPointF listesi!)
+                    canvas.b_spline_strokes[index]['control_points'] = scaled_cps
+                    if hasattr(canvas, 'b_spline_widget') and canvas.b_spline_widget and index < len(canvas.b_spline_widget.strokes):
+                        canvas.b_spline_widget.strokes[index]['control_points'] = scaled_cps
 
 def handle_selector_move_selection_release(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
     """Seçili öğelerin taşınmasının bırakılmasını yönetir."""
