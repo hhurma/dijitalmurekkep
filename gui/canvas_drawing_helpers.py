@@ -433,5 +433,86 @@ def draw_eraser_preview(canvas: 'DrawingCanvas', painter: QPainter):
     painter.restore() 
 
 def draw_grid_and_template(canvas: 'DrawingCanvas', painter: QPainter):
-    pass # YENİ: Fonksiyon gövdesi için pass eklendi
-    # ... existing code ... 
+    from .enums import TemplateType # Fonksiyon içinde import
+
+    painter.save()
+    # Gerekirse dünya koordinatlarına geçiş (eğer grid dünya birimleriyle tanımlanıyorsa)
+    # Ama grid genellikle ekran bazlı çizilir.
+    # painter.setTransform(canvas.get_world_transform()) 
+
+    # Grid görünürlük koşulları
+    should_draw_grid = False
+    if canvas.snap_lines_to_grid and canvas.grid_visible_on_snap:
+        if canvas.grid_show_for_line_tool_only:
+            if canvas.current_tool == ToolType.LINE or \
+               canvas.current_tool == ToolType.RECTANGLE or \
+               canvas.current_tool == ToolType.CIRCLE or \
+               canvas.current_tool == ToolType.EDITABLE_LINE: # Düzenlenebilir çizgi de eklenebilir
+                should_draw_grid = True
+        else:
+            should_draw_grid = True
+    
+    # Ayrıca, şablon tipi GRID ise her zaman çiz (snap_lines_to_grid kapalı olsa bile)
+    if canvas.current_template == TemplateType.GRID or \
+       canvas.current_template == TemplateType.LINES_AND_GRID or \
+       canvas.current_template == TemplateType.DOT_GRID:
+        should_draw_grid = True
+
+    if not should_draw_grid:
+        painter.restore()
+        return
+
+    # Grid ayarlarını al
+    spacing_pt = canvas.grid_spacing_pt
+    # PT_TO_PX dönüşümü canvas'ta veya burada yapılmalı. Canvas'ta böyle bir dönüşüm olmadığını varsayarak, burada bir sabit kullanalım.
+    # TODO: Bu PT_TO_PX değeri DrawingCanvas'tan veya bir config'den gelmeli.
+    PT_TO_PX = 96.0 / 72.0 
+    spacing_px = spacing_pt * PT_TO_PX * canvas.current_zoom_level # Zoom'u da hesaba kat
+
+    if spacing_px < 3: # Çok küçükse çizme
+        painter.restore()
+        return
+
+    thin_color_rgba = getattr(canvas, 'grid_thin_color', (0.85, 0.85, 0.85, 0.7))
+    thick_color_rgba = getattr(canvas, 'grid_thick_color', (0.75, 0.75, 0.75, 0.8))
+    thin_width = getattr(canvas, 'grid_thin_width', 1.0) * canvas.current_zoom_level
+    thick_width = getattr(canvas, 'grid_thick_width', 1.5) * canvas.current_zoom_level
+    thick_line_interval = getattr(canvas, 'grid_thick_line_interval', 4)
+
+    thin_pen = QPen(rgba_to_qcolor_local(thin_color_rgba), thin_width)
+    thin_pen.setCosmetic(True)
+    thick_pen = QPen(rgba_to_qcolor_local(thick_color_rgba), thick_width)
+    thick_pen.setCosmetic(True)
+
+    width = canvas.width()
+    height = canvas.height()
+
+    # Pan ofsetini dikkate alarak başlangıç noktalarını ayarla
+    # Grid, ekranın sol üstünden başlamalı, pan ne olursa olsun.
+    # Bu yüzden pan_offset'i grid koordinatlarını hesaplarken kullanacağız.
+    pan_offset_x = canvas.pan_offset_x * canvas.current_zoom_level
+    pan_offset_y = canvas.pan_offset_y * canvas.current_zoom_level
+    
+    # Yatay çizgiler
+    start_y = -pan_offset_y % spacing_px # Pan ofsetine göre ilk çizginin y'si
+    line_count = 0
+    current_y = start_y
+    while current_y < height:
+        is_thick_line = (line_count % thick_line_interval == 0)
+        painter.setPen(thick_pen if is_thick_line else thin_pen)
+        painter.drawLine(QPointF(0, current_y), QPointF(width, current_y))
+        current_y += spacing_px
+        line_count += 1
+
+    # Dikey çizgiler
+    start_x = -pan_offset_x % spacing_px # Pan ofsetine göre ilk çizginin x'i
+    line_count = 0
+    current_x = start_x
+    while current_x < width:
+        is_thick_line = (line_count % thick_line_interval == 0)
+        painter.setPen(thick_pen if is_thick_line else thin_pen)
+        painter.drawLine(QPointF(current_x, 0), QPointF(current_x, height))
+        current_x += spacing_px
+        line_count += 1
+        
+    painter.restore() 

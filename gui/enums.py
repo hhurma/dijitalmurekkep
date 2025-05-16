@@ -5,6 +5,8 @@ class TemplateType(Enum):
     PLAIN = auto()
     LINED = auto()
     GRID = auto()
+    LINES_AND_GRID = auto()
+    DOT_GRID = auto()
 
 class ToolType(Enum):
     """Kullanılabilir çizim araçları."""

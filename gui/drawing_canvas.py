@@ -492,6 +492,10 @@ class DrawingCanvas(QWidget):
         # Not: draw_items içinde zaten img_data kontrolü var, yukarıdaki draw_images kaldırılabilir.
         canvas_drawing_helpers.draw_items(self, painter) 
 
+        # --- YENİ: Grid ve Şablon Çizimi (Eğer snap_lines_to_grid aktifse veya şablon GRID ise) ---
+        canvas_drawing_helpers.draw_grid_and_template(self, painter)
+        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+
         # --- Geçici (anlık) çizim: Kalem, çizgi, dikdörtgen, daire ---
         if self.drawing:
             if self.current_tool == ToolType.PEN:
