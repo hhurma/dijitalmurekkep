@@ -142,10 +142,10 @@ class DrawShapeCommand(Command):
         self._added_index = -1
 
     def execute(self):
-        logging.debug("DrawShapeCommand: execute() çağrıldı.")
+        #logging.debug("DrawShapeCommand: execute() çağrıldı.")
         try:
             if not hasattr(self.canvas, 'shapes') or not isinstance(self.canvas.shapes, list):
-                logging.error("DrawShapeCommand: Canvas.shapes bulunamadı veya liste değil.")
+                #logging.error("DrawShapeCommand: Canvas.shapes bulunamadı veya liste değil.")
                 self._shape_added = False
                 return
 
@@ -167,7 +167,7 @@ class DrawShapeCommand(Command):
         except Exception as e:
             self._shape_added = False
             self._added_index = -1
-        logging.debug("DrawShapeCommand: execute() tamamlandı.")
+        #logging.debug("DrawShapeCommand: execute() tamamlandı.")
 
     def undo(self):
         logging.debug(f"DrawShapeCommand.undo: BAŞLANGIÇ. Canvas.shapes id={id(self.canvas.shapes)}, içerik={self.canvas.shapes}") # YENİ LOG

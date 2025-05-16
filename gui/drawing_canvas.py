@@ -467,7 +467,7 @@ class DrawingCanvas(QWidget):
         return export_data
 
     def paintEvent(self, event: QPaintEvent):
-        logging.debug(f"[PaintEvent BAŞLANGIÇ] Canvas ID: {id(self)}, Shapes ({len(self.shapes)} adet): {self.shapes}") # YENİ LOG
+        #logging.debug(f"[PaintEvent BAŞLANGIÇ] Canvas ID: {id(self)}, Shapes ({len(self.shapes)} adet): {self.shapes}") # YENİ LOG
         """Ana çizim olayını yönetir. Tüm elemanları tuvale çizer."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)

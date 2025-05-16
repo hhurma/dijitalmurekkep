@@ -462,8 +462,8 @@ def handle_tablet_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEve
         event.accept()
 
 def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
-    print(f"[DEBUG] TOOL (MOVE): {canvas.current_tool}")
-    logging.info(f"TOOL (MOVE): {canvas.current_tool}")
+    #print(f"[DEBUG] TOOL (MOVE): {canvas.current_tool}")
+    #logging.info(f"TOOL (MOVE): {canvas.current_tool}")
     """
     DrawingCanvas._handle_tablet_move metodunun taşınmış halidir.
     Tablet hareket olayını yönetir.

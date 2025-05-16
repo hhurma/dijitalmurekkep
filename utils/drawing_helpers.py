@@ -203,7 +203,7 @@ def draw_pen_stroke(painter: QPainter, points: List[QPointF], color: tuple, widt
         painter.restore()
 
 def draw_shape(painter: QPainter, shape_data: List[Any], line_style: str = 'solid'):
-    logging.debug(f"draw_shape: tool_type={shape_data[0] if len(shape_data)>0 else None}, color={shape_data[1] if len(shape_data)>1 else None}, width={shape_data[2] if len(shape_data)>2 else None}, p1={shape_data[3] if len(shape_data)>3 else None}, p2={shape_data[4] if len(shape_data)>4 else None}, line_style={line_style}, fill_rgba={shape_data[6] if len(shape_data)>6 else None}")
+    #logging.debug(f"draw_shape: tool_type={shape_data[0] if len(shape_data)>0 else None}, color={shape_data[1] if len(shape_data)>1 else None}, width={shape_data[2] if len(shape_data)>2 else None}, p1={shape_data[3] if len(shape_data)>3 else None}, p2={shape_data[4] if len(shape_data)>4 else None}, line_style={line_style}, fill_rgba={shape_data[6] if len(shape_data)>6 else None}")
     """Verilen shape_data ile şekil (çizgi, dikdörtgen, daire) çizer. line_style: 'solid', 'dashed', 'dotted', 'dashdot', 'double', 'zigzag' olabilir."""
     
     tool_type_from_data = shape_data[0] if len(shape_data) > 0 else None
@@ -383,7 +383,7 @@ def draw_shape(painter: QPainter, shape_data: List[Any], line_style: str = 'soli
         # logging.debug(f"    draw_shape: NOT applying fill for {tool_type.name}. fill_rgba: {fill_rgba}") # KALDIRILDI
     # --- --- --- --- --- --- --- --- --- -- #
 
-    logging.debug(f"  draw_shape (PRE-DRAW): Pen Color={painter.pen().color().name()}, Width={painter.pen().widthF()}, Style={painter.pen().style()}, Brush Style={painter.brush().style()}, Brush Color={painter.brush().color().name()}")
+    #logging.debug(f"  draw_shape (PRE-DRAW): Pen Color={painter.pen().color().name()}, Width={painter.pen().widthF()}, Style={painter.pen().style()}, Brush Style={painter.brush().style()}, Brush Color={painter.brush().color().name()}")
 
     if tool_type == ToolType.LINE:
         if line_style == 'double':
@@ -395,7 +395,7 @@ def draw_shape(painter: QPainter, shape_data: List[Any], line_style: str = 'soli
     elif tool_type == ToolType.RECTANGLE:
         rect = QRectF(p1, p2).normalized()
          # YENİ LOG
-        logging.debug(f"    draw_shape: RECTANGLE. p1={p1}, p2={p2}, normalized_rect={rect}")
+        #logging.debug(f"    draw_shape: RECTANGLE. p1={p1}, p2={p2}, normalized_rect={rect}")
         painter.drawRect(rect)
     elif tool_type == ToolType.CIRCLE:
         rect = QRectF(p1, p2).normalized()
