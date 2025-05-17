@@ -15,6 +15,7 @@ class DrawingWidget(QWidget):
         self.setMouseTracking(True) # Enable tracking even when no button is pressed
         self.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, False) # TabletEvent için bunu False yapabiliriz
         self.default_line_thickness = 2 # YENİ: Varsayılan kalınlık
+        self.default_stroke_color = (0.0, 0.0, 0.0, 1.0) # YENİ: Varsayılan renk (siyah)
         #logging.debug(f"DrawingWidget initialized. ID: {id(self)}, default_line_thickness: {self.default_line_thickness}") # YENİ LOG
 
     def setDefaultLineThickness(self, thickness):
@@ -22,6 +23,16 @@ class DrawingWidget(QWidget):
         old_thickness = self.default_line_thickness
         self.default_line_thickness = thickness
         #logging.debug(f"DrawingWidget ID: {id(self)}. setDefaultLineThickness called. Old: {old_thickness}, New: {self.default_line_thickness}") # YENİ LOG
+
+    # YENİ METOD: Varsayılan çizgi rengini ayarlar
+    def setDefaultStrokeColor(self, color_tuple: tuple):
+        """Sets the default color for new strokes."""
+        if isinstance(color_tuple, tuple) and len(color_tuple) == 4:
+            self.default_stroke_color = color_tuple
+            #logging.debug(f"DrawingWidget ID: {id(self)}. setDefaultStrokeColor: {self.default_stroke_color}")
+        else:
+            #logging.warning(f"DrawingWidget ID: {id(self)}. setDefaultStrokeColor: Geçersiz renk formatı {color_tuple}. Varsayılan siyah kullanılacak.")
+            self.default_stroke_color = (0.0, 0.0, 0.0, 1.0)
 
     # YENİ METOD: Verilen dünya koordinatına en yakın kontrol noktasını bulur.
     def _get_control_point_at(self, world_pos: QPointF, tolerance: float = 10.0) -> tuple[int, int] | None:
@@ -125,6 +136,7 @@ class DrawingWidget(QWidget):
                         'degree': tck[2], # int
                         'u': u, # numpy array (parametre değerleri)
                         'thickness': self.default_line_thickness, # YENİ: Kalınlığı kaydet
+                        'color': self.default_stroke_color, # YENİ: Rengi kaydet
                         'original_points_with_pressure': original_points_with_pressure # YENİ: Orijinal noktaları sakla
                     }
                     # self.strokes.append(new_stroke_data) # <-- BU SATIR KALDIRILDI

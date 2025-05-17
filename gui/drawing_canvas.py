@@ -548,9 +548,10 @@ class DrawingCanvas(QWidget):
                     effective_thickness = stroke_thickness_from_data if stroke_thickness_from_data is not None else self.b_spline_widget.default_line_thickness
                     
                     # YENİ: Her stroke için dinamik pen
-                    current_pen_color = Qt.GlobalColor.black # Renk de dinamik olabilir ileride
+                    stroke_color_data = stroke_data.get('color', [0.0, 0.0, 0.0, 1.0]) # Varsayılan siyah
+                    current_pen_qcolor = rgba_to_qcolor(stroke_color_data) 
                     try:
-                        pen = QPen(current_pen_color, float(effective_thickness), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+                        pen = QPen(current_pen_qcolor, float(effective_thickness), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
                         painter.setPen(pen)
                     except Exception as e:
                         #logging.error(f"DrawingCanvas paintEvent: Error creating QPen for B-Spline stroke with thickness {effective_thickness}: {e}")
@@ -1290,10 +1291,13 @@ class DrawingCanvas(QWidget):
         self.undo_manager.execute(command)
 
     def set_color(self, color: QColor):
-        new_color = (color.redF(), color.greenF(), color.blueF(), color.alphaF())
-        if self.current_color != new_color:
-            self.current_color = new_color
-            # logging.debug(f"Çizim rengi ayarlandı: {self.current_color}") # Yorum satırı yapıldı (isteğe bağlı)
+        """Aktif çizim rengini ayarlar."""
+        # QColor'ı RGBA float tuple'ına dönüştür (0-1 aralığında)
+        self.current_color = (color.redF(), color.greenF(), color.blueF(), color.alphaF())
+        #logging.debug(f"DrawingCanvas: Renk değiştirildi -> {self.current_color}")
+        # YENİ: B-Spline widget'ına da rengi ilet
+        if hasattr(self, 'b_spline_widget') and self.b_spline_widget:
+            self.b_spline_widget.setDefaultStrokeColor(self.current_color)
 
     def set_pen_width(self, width: float):
         new_width = max(1.0, width)
