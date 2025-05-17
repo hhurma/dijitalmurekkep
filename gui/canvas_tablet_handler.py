@@ -566,36 +566,38 @@ def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEven
     
     # --- KALEM ARACI İÇİN HAREKET --- #
     elif canvas.current_tool == ToolType.PEN:
-        pen_tool_handler.handle_pen_move(canvas, pos)
+        pen_tool_handler.handle_pen_move(canvas, pos, event)
         action_performed = True
     
     # --- ŞEKİL ARAÇLARI İÇİN HAREKET --- #
     elif canvas.current_tool in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE]:
-        shape_tool_handler.handle_shape_move(canvas, pos)
+        shape_tool_handler.handle_shape_move(canvas, pos, event)
         action_performed = True
 
     # --- SEÇİM ARACI İÇİN HAREKET --- #
     elif canvas.current_tool == ToolType.SELECTOR:
-        if canvas.selecting:
-            # Dikdörtgen seçim yapılıyor
+        # Farklı seçici durumlarına göre ilgili handler çağrılır
+        if canvas.selecting: # Dikdörtgenle seçim yapılıyorsa
             selector_tool_handler.handle_selector_rect_select_move(canvas, pos, event)
             action_performed = True
-        elif canvas.moving_selection:
-            # Seçili öğeler taşınıyor
-            #logging.debug(f"Canvas Tablet Handler: moving selection. Move start point: {canvas.move_start_point}, isNull: {canvas.move_start_point.isNull()}")
+        elif canvas.moving_selection: # Seçili öğeler taşınıyorsa
             selector_tool_handler.handle_selector_move_selection(canvas, pos, event)
-            action_performed = True
-        elif canvas.resizing_selection:
-            # Seçili öğelerin boyutu değiştiriliyor
+            action_performed = True 
+        elif canvas.resizing_selection: # Seçili öğeler boyutlandırılıyorsa
             selector_tool_handler.handle_selector_resize_move(canvas, pos, event)
             action_performed = True
-            # Handle'ları güncelle - tutamaçların ekran koordinatlarını güncelle
-            canvas.update_current_handles()
-        elif canvas.rotating_selection:
-            # Seçili öğeler döndürülüyor
-            pass
-            # Bu özellik için rotating_selection logicini implement et
+        # Diğer selector durumları (örn. döndürme) buraya eklenebilir
         
+        # Selector aracıyla bir işlem yapıldıysa (veya yapılmadıysa bile durumu yansıtmak için)
+        # canvas güncellenmeli.
+        canvas.update() # <--- TÜM SELECTOR DURUMLARINDAN SONRA GENEL UPDATE
+        # action_performed yukarıdaki bloklarda ayarlandığı için burada ayrıca True yapmaya gerek yok,
+        # eğer hiçbir koşul karşılanmazsa False kalır.
+        if not action_performed and (canvas.selecting or canvas.moving_selection or canvas.resizing_selection):
+            # Bu durum, bir işlem modunda olduğumuzu ama ilgili handler'ın çağrılmadığını gösterir.
+            # Genellikle bu olmamalı, ama güvenlik için action_performed True yapılabilir.
+            action_performed = True 
+            
     # --- SİLGİ ARACI İÇİN HAREKET --- #
     elif canvas.current_tool == ToolType.ERASER and canvas.erasing:
         # Silgi yoluna yeni nokta ekle

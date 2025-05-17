@@ -1147,49 +1147,86 @@ class DrawingCanvas(QWidget):
 
         something_moved = False
         for i, (item_type, item_original_idx) in enumerate(self.selected_item_indices):
-            original_item_data_from_drag_start = self.move_original_states[i]
-            if original_item_data_from_drag_start is None:
-                """ logging.warning(
-                    f"_reposition_selected_items_from_initial: "
-                    f"{item_type}[{item_original_idx}] için orijinal veri (move_original_states[{i}]) None, atlanıyor."
-                ) """
+            if i >= len(self.move_original_states):
+                logging.warning(f"_reposition_selected_items_from_initial: move_original_states öğe sayısı yetersiz (index {i}). Atlama.")
                 continue
-            data_to_move = copy.deepcopy(original_item_data_from_drag_start)
-            #logging.debug(f"[TAŞIMA] {item_type}[{item_original_idx}] taşınıyor.")
-            from utils import moving_helpers
-            moving_helpers.move_item(data_to_move, total_dx, total_dy, item_type=item_type)
-            something_moved = True
-            if item_type == 'bspline_strokes':
-                if 0 <= item_original_idx < len(self.b_spline_strokes):
-                    self.b_spline_strokes[item_original_idx] = data_to_move
-                else:
-                    logging.warning(f"Taşıma: Geçersiz bspline_strokes index {item_original_idx}")
-                    something_moved = False
-            elif item_type == 'lines':
+
+            original_item_data = self.move_original_states[i]
+            if original_item_data is None:
+                # logging.warning(f"_reposition_selected_items_from_initial: original_item_data None (index {i}). Atlama.") # Çok sık log üretebilir
+                continue
+
+            if item_type == 'lines':
                 if 0 <= item_original_idx < len(self.lines):
-                    self.lines[item_original_idx] = data_to_move
+                    # Orijinal noktaları al (QPointF listesi olmalı)
+                    original_points = original_item_data[2] 
+                    if original_points and all(isinstance(p, QPointF) for p in original_points):
+                        new_points = [QPointF(p.x() + total_dx, p.y() + total_dy) for p in original_points]
+                        self.lines[item_original_idx][2] = new_points
+                    else:
+                        # logging.warning(f"_reposition: lines[{item_original_idx}] için original_points beklenen formatta değil.") # Çok sık log üretebilir
+                        pass
                 else:
-                    logging.warning(f"Taşıma: Geçersiz lines index {item_original_idx}")
-                    something_moved = False
+                    # logging.warning(f"_reposition: Geçersiz lines index: {item_original_idx}") # Çok sık log üretebilir
+                    pass
             elif item_type == 'shapes':
                 if 0 <= item_original_idx < len(self.shapes):
-                    self.shapes[item_original_idx] = data_to_move
+                    shape_tool_type = self.shapes[item_original_idx][0]
+                    if shape_tool_type == ToolType.EDITABLE_LINE: # Bezier eğrileri için
+                        original_control_points = original_item_data[3] # Bezier kontrol noktaları (QPointF listesi)
+                        if original_control_points and all(isinstance(p, QPointF) for p in original_control_points):
+                            new_control_points = [QPointF(p.x() + total_dx, p.y() + total_dy) for p in original_control_points]
+                            self.shapes[item_original_idx][3] = new_control_points
+                        else:
+                            # logging.warning(f"_reposition: EDITABLE_LINE[{item_original_idx}] için original_control_points beklenen formatta değil.") # Çok sık log
+                            pass
+                    else: # Diğer şekiller
+                        original_p1 = original_item_data[3]
+                        original_p2 = original_item_data[4]
+                        if isinstance(original_p1, QPointF) and isinstance(original_p2, QPointF):
+                            self.shapes[item_original_idx][3] = QPointF(original_p1.x() + total_dx, original_p1.y() + total_dy)
+                            self.shapes[item_original_idx][4] = QPointF(original_p2.x() + total_dx, original_p2.y() + total_dy)
+                        else:
+                            # logging.warning(f"_reposition: shapes[{item_original_idx}] için original_p1/p2 beklenen formatta değil.") # Çok sık log
+                            pass
                 else:
-                    logging.warning(f"Taşıma: Geçersiz shapes index {item_original_idx}")
-                    something_moved = False
+                    # logging.warning(f"_reposition: Geçersiz shapes index: {item_original_idx}") # Çok sık log
+                    pass
             elif item_type == 'images':
-                if self._parent_page and hasattr(self._parent_page, 'images'):
-                    if 0 <= item_original_idx < len(self._parent_page.images):
-                        self._parent_page.images[item_original_idx].update(data_to_move)
+                if self._parent_page and 0 <= item_original_idx < len(self._parent_page.images):
+                    original_rect = original_item_data.get('rect')
+                    if isinstance(original_rect, QRectF):
+                        new_rect = QRectF(original_rect)
+                        new_rect.translate(total_dx, total_dy)
+                        self._parent_page.images[item_original_idx]['rect'] = new_rect
                     else:
-                        logging.warning(f"Taşıma: Geçersiz images index {item_original_idx}")
-                        something_moved = False
+                        # logging.warning(f"_reposition: images[{item_original_idx}] için original_rect beklenen formatta değil.") # Çok sık log
+                        pass
                 else:
-                    logging.warning("Taşıma: Resimler için _parent_page veya _parent_page.images bulunamadı.")
-                    something_moved = False
+                    # logging.warning(f"_reposition: Geçersiz images index: {item_original_idx}") # Çok sık log
+                    pass
+            elif item_type == 'bspline_strokes':
+                if 0 <= item_original_idx < len(self.b_spline_strokes):
+                    # original_item_data, self.move_original_states[i] olup zaten doğru stroke verisini tutar.
+                    if original_item_data and 'control_points' in original_item_data:
+                        original_control_points = original_item_data['control_points'] 
+                        
+                        if original_control_points and all(isinstance(cp, np.ndarray) and cp.shape == (2,) for cp in original_control_points):
+                            new_control_points = [
+                                np.array([cp[0] + total_dx, cp[1] + total_dy]) for cp in original_control_points
+                            ]
+                            self.b_spline_strokes[item_original_idx]['control_points'] = new_control_points
+                        else:
+                            logging.error(f"_reposition: bspline_strokes[{item_original_idx}] için original_control_points beklenen formatta değil. Veri: {original_control_points}")
+                            continue # Bu stroke için işlemi atla
+                    else:
+                        logging.warning(f"_reposition: bspline_strokes[{item_original_idx}] için original_item_data (move_original_states'ten) veya control_points bulunamadı.")
+                else:
+                    logging.warning(f"_reposition: Geçersiz bspline_strokes index: {item_original_idx}")
             else:
-                logging.warning(f"Taşıma: Bilinmeyen öğe tipi '{item_type}'")
-                something_moved = False
+                # logging.warning(f"_reposition_selected_items_from_initial: Bilinmeyen öğe tipi: {item_type}") # Çok sık log
+                pass
+            something_moved = True
         if something_moved:
             if self._parent_page:
                  self._parent_page.mark_as_modified() # Taşıma yapıldıysa sayfayı değiştirilmiş olarak işaretle
@@ -2244,24 +2281,119 @@ class DrawingCanvas(QWidget):
     def _calculate_final_states_for_move(self, original_states: List[Any], 
                                          selected_indices: List[Tuple[str, int]], 
                                          dx: float, dy: float) -> List[Any]:
-        """Verilen orijinal durumları ve taşıma miktarını kullanarak nihai durumları hesaplar.
-        Her bir öğe için moving_helpers.move_item çağırır.
-        """
         final_states = []
         if len(original_states) != len(selected_indices):
-            logging.error("_calculate_final_states_for_move: original_states ve selected_indices uzunlukları eşleşmiyor.")
-            return original_states # Hata durumunda orijinali döndür
+            logging.error("_calculate_final_states_for_move: original_states ve selected_indices uzunlukları farklı!")
+            return [copy.deepcopy(s) for s in original_states] 
 
         for i, (item_type, index) in enumerate(selected_indices):
-            original_state_copy = copy.deepcopy(original_states[i]) # Üzerinde değişiklik yapmak için kopya al
-            if original_state_copy is None:
-                logging.warning(f"_calculate_final_states_for_move: original_state_copy is None for {item_type}[{index}]")
+            initial_item_state = original_states[i]
+            if initial_item_state is None:
                 final_states.append(None)
                 continue
+
+            final_item_state_data = copy.deepcopy(initial_item_state)
+
+            if item_type == 'lines':
+                if len(initial_item_state) > 2 and isinstance(initial_item_state[2], list):
+                    original_points = initial_item_state[2]
+                    if all(isinstance(p, QPointF) for p in original_points):
+                        final_points = [QPointF(p.x() + dx, p.y() + dy) for p in original_points]
+                        final_item_state_data[2] = final_points
+                    else:
+                        logging.warning(f"_calculate_final_states: lines[{index}] için initial_item_state[2] (points) QPointF listesi değil.")
+                else:
+                    logging.warning(f"_calculate_final_states: lines[{index}] için initial_item_state formatı beklenmedik.")
             
-            # moving_helpers.move_item, item_data'yı yerinde değiştirir.
-            # item_type'ı da gönderiyoruz.
-            moving_helpers.move_item(original_state_copy, dx, dy, item_type=item_type)
-            final_states.append(original_state_copy) # Değiştirilmiş kopyayı ekle
+            elif item_type == 'shapes':
+                shape_tool_type = initial_item_state[0]
+                if shape_tool_type == ToolType.EDITABLE_LINE:
+                    if len(initial_item_state) > 3 and isinstance(initial_item_state[3], list):
+                        original_control_points = initial_item_state[3]
+                        if all(isinstance(p, QPointF) for p in original_control_points):
+                            final_control_points = [QPointF(p.x() + dx, p.y() + dy) for p in original_control_points]
+                            final_item_state_data[3] = final_control_points
+                        else:
+                            logging.warning(f"_calculate_final_states: EDITABLE_LINE[{index}] için control_points QPointF listesi değil.")
+                    else:
+                        logging.warning(f"_calculate_final_states: EDITABLE_LINE[{index}] için initial_item_state formatı beklenmedik.")
+                else: 
+                    if len(initial_item_state) > 4 and isinstance(initial_item_state[3], QPointF) and isinstance(initial_item_state[4], QPointF):
+                        original_p1 = initial_item_state[3]
+                        original_p2 = initial_item_state[4]
+                        final_item_state_data[3] = QPointF(original_p1.x() + dx, original_p1.y() + dy)
+                        final_item_state_data[4] = QPointF(original_p2.x() + dx, original_p2.y() + dy)
+                    else:
+                        logging.warning(f"_calculate_final_states: shapes[{index}] (type: {shape_tool_type}) için initial_item_state formatı beklenmedik veya p1/p2 QPointF değil.")
+
+            elif item_type == 'images':
+                if isinstance(initial_item_state, dict) and 'rect' in initial_item_state:
+                    original_rect = initial_item_state['rect']
+                    if isinstance(original_rect, QRectF):
+                        final_rect = QRectF(original_rect)
+                        final_rect.translate(dx, dy)
+                        final_item_state_data['rect'] = final_rect
+                    else:
+                        logging.warning(f"_calculate_final_states: images[{index}] için 'rect' QRectF değil.")
+                else:
+                    logging.warning(f"_calculate_final_states: images[{index}] için initial_item_state dict değil veya 'rect' anahtarı yok.")
             
+            elif item_type == 'bspline_strokes':
+                if isinstance(initial_item_state, dict) and 'control_points' in initial_item_state:
+                    original_control_points = initial_item_state['control_points']
+                    if original_control_points and all(isinstance(cp, np.ndarray) and cp.shape == (2,) for cp in original_control_points):
+                        final_control_points = [
+                            np.array([cp[0] + dx, cp[1] + dy]) for cp in original_control_points
+                        ]
+                        final_item_state_data['control_points'] = final_control_points
+                    else:
+                        logging.error(f"_calculate_final_states: bspline_strokes[{index}] için 'control_points' ({type(original_control_points)}) beklenen formatta değil (List[np.array]). Veri: {original_control_points}")
+                else:
+                    logging.warning(f"_calculate_final_states: bspline_strokes[{index}] için initial_item_state dict değil veya 'control_points' anahtarı yok.")
+            
+            else:
+                logging.warning(f"_calculate_final_states_for_move: Bilinmeyen öğe tipi: {item_type}")
+
+            final_states.append(final_item_state_data)
+        
         return final_states
+
+    def apply_grid_settings(self, settings_dict):
+        # print('[DEBUG] apply_grid_settings çağrıldı:', settings_dict) # Artık logging kullanılıyor
+        logging.info(f'[apply_grid_settings] Canvas\'a grid ayarları uygulanıyor: {settings_dict}')
+        
+        self.grid_thick_line_interval = settings_dict.get('grid_thick_line_interval', getattr(self, 'grid_thick_line_interval', CANVAS_DEFAULT_GRID_SETTINGS['grid_thick_line_interval']))
+        
+        raw_thin_color = settings_dict.get('grid_thin_color', getattr(self, 'grid_thin_color', CANVAS_DEFAULT_GRID_SETTINGS['grid_thin_color']))
+        if isinstance(raw_thin_color, list) and len(raw_thin_color) == 4 and all(isinstance(x, (int, float)) for x in raw_thin_color):
+            if all(isinstance(x, int) for x in raw_thin_color): 
+                 self.grid_thin_color = tuple(c/255.0 for c in raw_thin_color)
+            else: 
+                 self.grid_thin_color = tuple(float(c) for c in raw_thin_color)
+        elif isinstance(raw_thin_color, tuple) and len(raw_thin_color) == 4 and all(isinstance(x, float) for x in raw_thin_color):
+            self.grid_thin_color = raw_thin_color
+        else:
+            self.grid_thin_color = getattr(self, 'grid_thin_color', CANVAS_DEFAULT_GRID_SETTINGS['grid_thin_color'])
+            logging.warning(f"apply_grid_settings: Beklenmeyen grid_thin_color formatı: {raw_thin_color}, varsayılan/mevcut kullanıldı.")
+
+        raw_thick_color = settings_dict.get('grid_thick_color', getattr(self, 'grid_thick_color', CANVAS_DEFAULT_GRID_SETTINGS['grid_thick_color']))
+        if isinstance(raw_thick_color, list) and len(raw_thick_color) == 4 and all(isinstance(x, (int, float)) for x in raw_thick_color):
+            if all(isinstance(x, int) for x in raw_thick_color):
+                 self.grid_thick_color = tuple(c/255.0 for c in raw_thick_color)
+            else:
+                 self.grid_thick_color = tuple(float(c) for c in raw_thick_color)
+        elif isinstance(raw_thick_color, tuple) and len(raw_thick_color) == 4 and all(isinstance(x, float) for x in raw_thick_color):
+            self.grid_thick_color = raw_thick_color
+        else:
+            self.grid_thick_color = getattr(self, 'grid_thick_color', CANVAS_DEFAULT_GRID_SETTINGS['grid_thick_color'])
+            logging.warning(f"apply_grid_settings: Beklenmeyen grid_thick_color formatı: {raw_thick_color}, varsayılan/mevcut kullanıldı.")
+
+        self.grid_thin_width = settings_dict.get('grid_thin_width', getattr(self, 'grid_thin_width', CANVAS_DEFAULT_GRID_SETTINGS['grid_thin_width']))
+        self.grid_thick_width = settings_dict.get('grid_thick_width', getattr(self, 'grid_thick_width', CANVAS_DEFAULT_GRID_SETTINGS['grid_thick_width']))
+        self.grid_apply_to_all_pages = settings_dict.get('grid_apply_to_all_pages', getattr(self, 'grid_apply_to_all_pages', CANVAS_DEFAULT_GRID_SETTINGS['grid_apply_to_all_pages']))
+        self.grid_show_for_line_tool_only = settings_dict.get('grid_show_for_line_tool_only', getattr(self, 'grid_show_for_line_tool_only', CANVAS_DEFAULT_GRID_SETTINGS['grid_show_for_line_tool_only']))
+        self.snap_lines_to_grid = settings_dict.get('grid_snap_enabled', getattr(self, 'snap_lines_to_grid', CANVAS_DEFAULT_GRID_SETTINGS['grid_snap_enabled']))
+        self.grid_visible_on_snap = settings_dict.get('grid_visible_on_snap', getattr(self, 'grid_visible_on_snap', CANVAS_DEFAULT_GRID_SETTINGS['grid_visible_on_snap']))
+        
+        logging.info(f"[apply_grid_settings] Grid ayarları uygulandı. Snap: {self.snap_lines_to_grid}, Visible on Snap: {self.grid_visible_on_snap}")
+        self.update()
