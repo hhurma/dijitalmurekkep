@@ -463,11 +463,11 @@ class DrawingCanvas(QWidget):
                 'height': sbr.height(),
                 'rotation': rotation
             })
-            # logging.debug(f"  PDF Export - Image Data: path={original_path}, x={sbr.x():.2f}, y={sbr.y():.2f}, w={sbr.width():.2f}, h={sbr.height():.2f}, rot={rotation:.2f}") # Yorum satırı yapıldı
+            # logging.debug(f"  PDF Export - Image Data: path={original_path}, x={sbr.x():.2f}, y={sbr.y():.2f}, w={sbr.width():.2f}, h={sbr.height():.2f}, rot={rotation:.2f}") # YORUM SATIRI
         return export_data
 
     def paintEvent(self, event: QPaintEvent):
-        #logging.debug(f"[PaintEvent BAŞLANGIÇ] Canvas ID: {id(self)}, Shapes ({len(self.shapes)} adet): {self.shapes}") # YENİ LOG
+        #logging.debug(f"[PaintEvent BAŞLANGIÇ] Canvas ID: {id(self)}, Shapes ({len(self.shapes)} adet): {self.shapes}") # YORUM SATIRI
         """Ana çizim olayını yönetir. Tüm elemanları tuvale çizer."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -479,7 +479,7 @@ class DrawingCanvas(QWidget):
         if self._has_page_background and self._page_background_pixmap and not self._page_background_pixmap.isNull():
             # PDF sayfası veya özel arka plan varsa, onu çiz
             painter.drawPixmap(0, 0, self._page_background_pixmap)
-            logging.debug(f"Canvas({id(self)}): Özel PDF arka planı çizildi. Boyut: {self._page_background_pixmap.size()}")
+            # logging.debug(f"Canvas({id(self)}): Özel PDF arka planı çizildi. Boyut: {self._page_background_pixmap.size()}") # YORUM SATIRI
         elif self._background_pixmap and not self._background_pixmap.isNull():
             # Normal şablon arka planını çiz
             painter.drawPixmap(0, 0, self._background_pixmap)
@@ -539,7 +539,7 @@ class DrawingCanvas(QWidget):
                     u_params = stroke_data.get('u')
                     
                     if control_points_np is None or knots is None or degree is None or u_params is None:
-                        #logging.warning(f"DrawingCanvas paintEvent: B-Spline stroke data missing for a stroke. Skipping.")
+                        #logging.warning(f"DrawingCanvas paintEvent: B-Spline stroke data missing for a stroke. Skipping.") # YORUM SATIRI
                         continue
 
                     stroke_thickness_from_data = stroke_data.get('thickness')
@@ -554,7 +554,7 @@ class DrawingCanvas(QWidget):
                         pen = QPen(current_pen_qcolor, float(effective_thickness), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
                         painter.setPen(pen)
                     except Exception as e:
-                        #logging.error(f"DrawingCanvas paintEvent: Error creating QPen for B-Spline stroke with thickness {effective_thickness}: {e}")
+                        #logging.error(f"DrawingCanvas paintEvent: Error creating QPen for B-Spline stroke with thickness {effective_thickness}: {e}") # YORUM SATIRI
                         default_pen_for_error = QPen(Qt.GlobalColor.magenta, 1) # Hata durumunda farklı renkte çiz
                         painter.setPen(default_pen_for_error)
                     
@@ -565,18 +565,18 @@ class DrawingCanvas(QWidget):
                         # Kontrol noktalarını (2, N) formatına getir
                         # Önce kontrol noktalarının geçerliliğini kontrol edelim
                         if not control_points_np or not isinstance(control_points_np, list) or not all(isinstance(cp, np.ndarray) and cp.shape == (2,) for cp in control_points_np):
-                            #logging.error(f"DrawingCanvas paintEvent: Invalid control_points_np for tck creation. Stroke index {i}. Skipping. CP Data: {control_points_np}") # stroke_data'nın indexini logla
+                            #logging.error(f"DrawingCanvas paintEvent: Invalid control_points_np for tck creation. Stroke index {i}. Skipping. CP Data: {control_points_np}") # YORUM SATIRI
                             continue
                         if len(control_points_np) < degree + 1: # k+1 kontrol noktası olmalı (scipy için)
-                            #logging.error(f"DrawingCanvas paintEvent: Not enough control points for degree {degree}. Need {degree+1}, got {len(control_points_np)}. Stroke index {i}. Skipping.")
+                            #logging.error(f"DrawingCanvas paintEvent: Not enough control points for degree {degree}. Need {degree+1}, got {len(control_points_np)}. Stroke index {i}. Skipping.") # YORUM SATIRI
                             continue
 
                         control_points_for_scipy = np.array(control_points_np).T 
                         tck = (knots, control_points_for_scipy, degree)
 
                         # YENİ LOGLAR BAŞLANGIÇ (Doğru Konum)
-                        #logging.debug(f"DrawingCanvas paintEvent: Stroke {i} - About to call splev.") # i'yi stroke_data'nın indexi olarak kullan
-                        #logging.debug(f"  knots (t): shape={knots.shape if hasattr(knots, 'shape') else 'N/A'}, len={len(knots) if knots is not None else 'N/A'}")
+                        #logging.debug(f"DrawingCanvas paintEvent: Stroke {i} - About to call splev.") # YORUM SATIRI
+                        #logging.debug(f"  knots (t): shape={knots.shape if hasattr(knots, 'shape') else 'N/A'}, len={len(knots) if knots is not None else 'N/A'}") # YORUM SATIRI
                         
                         cp_shape_str = 'N/A'
                         N_cp_str = 'N/A'
@@ -585,24 +585,24 @@ class DrawingCanvas(QWidget):
                             if len(control_points_for_scipy.shape) == 2: # (ndim, n_control_points)
                                 N_cp_str = str(control_points_for_scipy.shape[1])
                         
-                        #logging.debug(f"  control_points_for_scipy (c): shape={cp_shape_str}, N_cp={N_cp_str}")
-                        #logging.debug(f"  degree (k): {degree}")
+                        #logging.debug(f"  control_points_for_scipy (c): shape={cp_shape_str}, N_cp={N_cp_str}") # YORUM SATIRI
+                        #logging.debug(f"  degree (k): {degree}") # YORUM SATIRI
                         
                         if u_params is not None and len(u_params) > 0:
                              # u_params'ın son elemanının varlığını ve içeriğini kontrol et
                              if u_params[-1] is not None:
-                                 #logging.debug(f"  u_params for splev: min_u={np.min(u_params)}, max_u={np.max(u_params)}, num_eval_points=100, u_last={u_params[-1]}")
+                                 #logging.debug(f"  u_params for splev: min_u={np.min(u_params)}, max_u={np.max(u_params)}, num_eval_points=100, u_last={u_params[-1]}") # YORUM SATIRI
                                  pass
                              else:
-                                 #logging.error(f"  u_params for splev: u_params[-1] is None. Stroke index {i}. Skipping splev.")
+                                 #logging.error(f"  u_params for splev: u_params[-1] is None. Stroke index {i}. Skipping splev.") # YORUM SATIRI
                                  continue # splev'i atla
                         else:
-                             #logging.error(f"  u_params for splev: u_params is None or empty. Stroke index {i}. Skipping splev.")
+                             #logging.error(f"  u_params for splev: u_params is None or empty. Stroke index {i}. Skipping splev.") # YORUM SATIRI
                              continue # splev'i atla
                         # YENİ LOGLAR BİTİŞ
 
                     except Exception as e:
-                        #logging.error(f"DrawingCanvas paintEvent: Error reconstructing tck for B-Spline (Stroke index {i}): {e}. Control Points: {control_points_np}, Knots: {knots}, Degree: {degree}") # stroke_data'nın indexini logla
+                        #logging.error(f"DrawingCanvas paintEvent: Error reconstructing tck for B-Spline (Stroke index {i}): {e}. Control Points: {control_points_np}, Knots: {knots}, Degree: {degree}") # YORUM SATIRI
                         continue
 
 
@@ -623,7 +623,7 @@ class DrawingCanvas(QWidget):
                                 path.lineTo(self.world_to_screen(QPointF(x_fine[i], y_fine[i]))) 
                             painter.drawPath(path)
                     except Exception as e:
-                        #logging.error(f"DrawingCanvas paintEvent: Error drawing B-Spline path: {e}")
+                        #logging.error(f"DrawingCanvas paintEvent: Error drawing B-Spline path: {e}") # YORUM SATIRI
                         continue
 
                     # B-Spline kontrol noktalarını çiz (kırmızı)
@@ -699,19 +699,24 @@ class DrawingCanvas(QWidget):
             
             # painter.restore() # Eğer başta save yapıldıysa
 
-        # Geçici işaretçi izini çiz
-        if self.current_tool == ToolType.TEMPORARY_POINTER and self.pointer_trail_points:
+        # Geçici işaretçi izini çiz (FARE İLE KULLANILAN)
+        if self.current_tool == ToolType.TEMPORARY_POINTER and self.pointer_trail_points and not self.temporary_drawing_active:
+            # Bu blok, tabletle aktif çizim yapılmıyorken fare ile oluşturulan izi çizer.
+            # Eğer tabletle aktif çizim varsa (temporary_drawing_active = True), aşağıdaki blok çalışır.
             for glow in range(8, 0, -1):
                 path = QPainterPath()
+                if not self.pointer_trail_points: continue # Güvenlik kontrolü
                 path.moveTo(self.pointer_trail_points[0][0])
                 for p, _ in self.pointer_trail_points[1:]:
                     path.lineTo(p)
                 alpha = int(60 * (glow / 8.0))
                 width = 18 * (glow / 8.0)
-                color = QColor(255, 80, 80, alpha)
+                color = QColor(255, 80, 80, alpha) # Bu renk sabit, ayarlanabilir yapılabilir
                 pen = QPen(color, width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
                 painter.setPen(pen)
                 painter.drawPath(path)
+            
+            if not self.pointer_trail_points: return # Tekrar güvenlik kontrolü
             path = QPainterPath()
             path.moveTo(self.pointer_trail_points[0][0])
             for p, _ in self.pointer_trail_points[1:]:
@@ -719,6 +724,130 @@ class DrawingCanvas(QWidget):
             pen = QPen(QColor(255, 255, 255, 220), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
             painter.setPen(pen)
             painter.drawPath(path)
+
+        # --- Aktif Geçici Çizimi Çiz (TABLET İLE KULLANILAN - Kuyruklu Yıldız Efekti) ---
+        if self.temporary_drawing_active and self.current_temporary_line_points and len(self.current_temporary_line_points) > 1:
+            painter.save()
+            
+            base_color = self.temp_pointer_color # QColor
+            max_base_width = self.temp_pointer_width # float
+            
+            # Zaman damgalarını ve pozisyonları al
+            # current_temporary_line_points: [(QPointF, timestamp), ...]
+            # En yeni nokta sonda
+            points_with_time = [(pt_data[0], pt_data[1]) for pt_data in self.current_temporary_line_points if isinstance(pt_data, tuple) and len(pt_data) == 2]
+            
+            if not points_with_time or len(points_with_time) < 2:
+                painter.restore()
+                return
+
+            current_canvas_time = time.time() # Sürekli güncellenen çizim için anlık zaman
+            line_duration = self.temporary_line_duration # Örneğin 1.0 saniye
+
+            # Kuyruklu yıldız için ayarlar (mevcut ayarları yorumlayarak)
+            # temp_core_width_factor: Kuyruğun başındaki (en yeni) çizginin ana genişliğe oranı
+            # temp_glow_width_factor: Kuyruğun başındaki parlama genişliğinin ana genişliğe oranı (çekirdek + glow)
+            # temp_core_alpha_factor: Kuyruğun başındaki çekirdek çizginin opaklığı
+            # temp_glow_alpha_factor: Kuyruğun başındaki en dış parlama katmanının opaklığı
+            
+            head_core_width_factor = self.temp_core_width_factor # örn: 0.7
+            head_glow_total_width_factor = self.temp_glow_width_factor # örn: 2.5 (çekirdek + glow toplamı)
+            head_core_alpha = base_color.alphaF() * self.temp_core_alpha_factor
+            head_glow_edge_alpha = base_color.alphaF() * self.temp_glow_alpha_factor * 0.5 # En dış glow daha şeffaf başlasın
+
+            num_glow_layers = 3 # Glow katman sayısı
+
+            # Segmentleri tersten çiz (eskiden yeniye doğru), böylece yeni segmentler eskilerin üzerine gelir
+            for i in range(len(points_with_time) - 1, 0, -1):
+                p2_world, t2 = points_with_time[i]     # Daha yeni nokta (kuyruğun başına yakın)
+                p1_world, t1 = points_with_time[i-1]   # Daha eski nokta
+
+                p1_screen = self.world_to_screen(p1_world)
+                p2_screen = self.world_to_screen(p2_world)
+
+                # Her iki noktanın da "yaşını" hesapla (0.0 en yeni, 1.0 en eski/kaybolmuş)
+                # _check_temporary_lines içindeki mantığa benzer bir yaş hesabı.
+                # Ancak burada anlık çizim olduğu için, listenin başındaki noktanın zamanı referans alınabilir.
+                # Veya daha basitçe, listenin sonundaki (en yeni) noktanın zamanına göre göreceli yaş.
+                # Şimdilik, her noktanın `line_duration` içindeki ömrünü kullanalım.
+                
+                # t2 (yeni nokta) ve t1 (eski nokta) için yaş oranı (0 en yeni, 1 en eski)
+                # Bu anlık çizim olduğu için, tüm çizgi parçası aynı anda ekranda var.
+                # _check_temporary_lines metodu zamanla noktaları siliyor.
+                # Burada, her segmentin kendi zamanına göre değil, tüm çizginin ömrüne göre davranmasını sağlamalıyız.
+                # Zaman damgaları `canvas_tablet_handler` içinde `time.time()` ile atanıyor.
+
+                # Ortalama "yaş" (0.0 = çok yeni, 1.0 = kaybolmak üzere)
+                # Her segmentin ömrünü, en yeni noktanın (listenin sonundaki) zamanına göre değil,
+                # canvas'ın o anki zamanına göre hesaplayalım.
+                age_ratio1 = min(1.0, (current_canvas_time - t1) / line_duration) if line_duration > 0 else 1.0
+                age_ratio2 = min(1.0, (current_canvas_time - t2) / line_duration) if line_duration > 0 else 1.0
+                
+                # Segment için ortalama bir yaş oranı alalım, veya başlangıç ve bitiş için ayrı hesaplayalım.
+                # Şimdilik p2'nin (daha yeni olanın) yaşını baz alalım, bu kuyruğun başına daha çok etki eder.
+                # Ya da her iki noktanın yaşını interpole edip ortalama bir segment karakteristiği bulalım.
+                # Daha iyi bir kuyruk için, her noktanın kendi yaşını kullanıp segment boyunca interpole etmek gerekir.
+
+                # Her bir noktanın kendi özelliklerini hesapla:
+                current_width_p1 = max_base_width * (1.0 - age_ratio1) * head_core_width_factor
+                current_alpha_p1 = head_core_alpha * (1.0 - age_ratio1)
+                current_width_p2 = max_base_width * (1.0 - age_ratio2) * head_core_width_factor
+                current_alpha_p2 = head_core_alpha * (1.0 - age_ratio2)
+
+                # En azından minimum bir genişlik ve alfa bırakalım ki tamamen kaybolmasın (eğer istenirse)
+                min_vis_width = 0.5 
+                min_vis_alpha = 0.05
+                current_width_p1 = max(min_vis_width, current_width_p1)
+                current_alpha_p1 = max(min_vis_alpha, current_alpha_p1)
+                current_width_p2 = max(min_vis_width, current_width_p2)
+                current_alpha_p2 = max(min_vis_alpha, current_alpha_p2)
+
+                if current_width_p2 < min_vis_width : continue # Çok inceyse çizmeyi atla
+
+                # Glow katmanlarını çiz (p2'nin özelliklerine göre, yani daha yeni olan kısım için)
+                # Daha basit bir glow: sadece p2 etrafında
+                effective_glow_total_width = max_base_width * (1.0 - age_ratio2) * head_glow_total_width_factor
+                effective_glow_edge_alpha = head_glow_edge_alpha * (1.0 - age_ratio2)
+
+                # Bu segment için ana (çekirdek) çizgiyi çiz
+                # Basitlik için segmenti tek bir ortalama özellikle çizelim (p2'ye göre)
+                path_segment = QPainterPath()
+                path_segment.moveTo(p1_screen)
+                path_segment.lineTo(p2_screen)
+
+                # Önce glowları çiz (altta kalacaklar)
+                if effective_glow_total_width > current_width_p2: # Glow, çekirdekten daha genişse çiz
+                    for layer_idx in range(num_glow_layers, 0, -1):
+                        glow_prog = layer_idx / num_glow_layers # 1.0 (dış) -> ~0 (iç)
+                        # Genişlik: çekirdekten başlar, dışa doğru artar
+                        layer_width = current_width_p2 + (effective_glow_total_width - current_width_p2) * glow_prog 
+                        # Alfa: en dışta effective_glow_edge_alpha, içe doğru artar (ama çekirdek alfasına kadar değil)
+                        layer_alpha_factor = 1.0 - (glow_prog * 0.7) # içe doğru opaklaşır
+                        layer_alpha = effective_glow_edge_alpha * layer_alpha_factor
+                        layer_alpha = max(0, min(1.0, layer_alpha)) # 0-1 aralığında tut
+                        
+                        glow_q_color = QColor(base_color.red(), base_color.green(), base_color.blue(), int(layer_alpha * 255))
+                        glow_pen = QPen(glow_q_color, layer_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+                        painter.setPen(glow_pen)
+                        painter.drawPath(path_segment)
+                
+                # Sonra çekirdek çizgiyi çiz (en üstte)
+                # Orjinal çekirdek rengi hesaplaması:
+                # core_q_color = QColor(base_color.red(), base_color.green(), base_color.blue(), int(current_alpha_p2 * 255))
+                
+                # YENİ: Çekirdek rengini daha açık yap
+                lighter_base_for_core = base_color.lighter(150) # %150 daha açık bir renk tonu
+                core_q_color = QColor(lighter_base_for_core.red(), 
+                                      lighter_base_for_core.green(), 
+                                      lighter_base_for_core.blue(), 
+                                      int(current_alpha_p2 * 255)) # Alfa değeri aynı kalır
+
+                core_pen = QPen(core_q_color, current_width_p2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+                painter.setPen(core_pen)
+                painter.drawPath(path_segment)
+
+            painter.restore()
+        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
         # Seçim overlayı
         canvas_drawing_helpers.draw_selection_overlay(self, painter)
@@ -745,6 +874,48 @@ class DrawingCanvas(QWidget):
                 painter.drawEllipse(last_pos_screen_qpointf, eraser_radius, eraser_radius)
                 painter.restore()
         # --- --- --- --- --- -- #
+
+        # --- Lazer İşaretçi Çizimi (Glow Efektli) --- # 
+        if self.laser_pointer_active and not self.last_cursor_pos_screen.isNull():
+            painter.save()
+            painter.setPen(Qt.PenStyle.NoPen)
+
+            center = self.last_cursor_pos_screen
+            core_radius = self.laser_pointer_size / 2.0
+            base_color = self.laser_pointer_color # Bu bir QColor
+
+            # Glow efekti için parametreler
+            num_glow_layers = 5  # Daha yumuşak bir glow için katman sayısı
+            # En dıştaki glow'un çekirdek yarıçapına oranı (örn: 2.5 katı)
+            max_glow_radius_expansion_factor = 1.5 # Çekirdeğe eklenen glow yarıçap faktörü (çekirdeğin 1.5 katı daha genişler)
+            # Glow için maksimum alfa değeri (çekirdek renginin alfa değerinin bir oranı olarak)
+            max_glow_alpha_ratio = 0.5 
+
+            for i in range(num_glow_layers, 0, -1):
+                # i: num_glow_layers -> 1 (en dıştan en içe doğru glow katmanları)
+                glow_progression = i / num_glow_layers # Katmanın dışa doğru ilerlemesi (1.0 en dış, ~0 en iç)
+                
+                # Mevcut glow katmanının yarıçapı
+                # Çekirdek yarıçapından başlar ve dışa doğru genişler
+                current_layer_radius = core_radius + (core_radius * max_glow_radius_expansion_factor * glow_progression)
+
+                # Mevcut glow katmanının alfa değeri
+                # En dış katman en şeffaf, içe doğru opaklaşır
+                # (1.0 - glow_progression) içe doğru artar (0 -> ~1)
+                current_alpha_factor = (1.0 - (glow_progression * 0.9)) # En içteki glow en opak (ama max_glow_alpha_ratio ile sınırlı)
+                glow_alpha = int(base_color.alpha() * max_glow_alpha_ratio * current_alpha_factor)
+                glow_alpha = max(0, min(255, glow_alpha)) # Alfa değerini 0-255 aralığında tut
+
+                glow_q_color = QColor(base_color.red(), base_color.green(), base_color.blue(), glow_alpha)
+                painter.setBrush(QBrush(glow_q_color))
+                painter.drawEllipse(center, current_layer_radius, current_layer_radius)
+
+            # Çekirdek nokta (en üstte, daha opak)
+            painter.setBrush(QBrush(base_color)) # Orijinal rengi ve alfayı kullan
+            painter.drawEllipse(center, core_radius, core_radius)
+
+            painter.restore()
+        # --- --- --- --- --- --- --- --- --- #
 
     def screen_to_world(self, screen_pos: QPointF) -> QPointF:
         if self._parent_page:
@@ -792,13 +963,13 @@ class DrawingCanvas(QWidget):
               view_helpers.set_projection(self.width(), self.height(), 1.0, QPointF(0,0))
 
     def tabletEvent(self, event: QTabletEvent):
-        # logging.debug(f"Canvas Tablet Event: {event.type()}, Pos: {event.position()}, GlobalPos: {event.globalPosition()}, Pressure: {event.pressure()}, Button: {event.button()}, Buttons: {event.buttons()}, Device: {event.deviceType().name}, Pointer: {event.pointerType().name}, UniqueID: {event.uniqueId()}")
+        # logging.debug(f"Canvas Tablet Event: {event.type()}, Pos: {event.position()}, GlobalPos: {event.globalPosition()}, Pressure: {event.pressure()}, Button: {event.button()}, Buttons: {event.buttons()}, Device: {event.deviceType().name}, Pointer: {event.pointerType().name}, UniqueID: {event.uniqueId()}") # YORUM SATIRI
         # Dokunmatik ekran olaylarını ve fare olaylarını tablet olaylarına dönüştür
         # self._handle_tablet_event_common(event)
-        # logging.debug(f"[DrawingCanvas ({id(self)})] tabletEvent: {event.type()}, tool: {self.current_tool}")
-        # logging.debug(f"  b_spline_widget ID: {id(self.b_spline_widget)}, b_spline_strokes ID (before widget call): {id(self.b_spline_strokes)}")
-        # logging.debug(f"  Strokes in widget (before call, len={len(self.b_spline_widget.strokes)}): {self.b_spline_widget.strokes}")
-        # logging.debug(f"  Strokes in canvas (before call, len={len(self.b_spline_strokes)}): {self.b_spline_strokes}")
+        # logging.debug(f"[DrawingCanvas ({id(self)})] tabletEvent: {event.type()}, tool: {self.current_tool}") # YORUM SATIRI
+        # logging.debug(f"  b_spline_widget ID: {id(self.b_spline_widget)}, b_spline_strokes ID (before widget call): {id(self.b_spline_strokes)}") # YORUM SATIRI
+        # logging.debug(f"  Strokes in widget (before call, len={len(self.b_spline_widget.strokes)}): {self.b_spline_widget.strokes}") # YORUM SATIRI
+        # logging.debug(f"  Strokes in canvas (before call, len={len(self.b_spline_strokes)}): {self.b_spline_strokes}") # YORUM SATIRI
 
         # self._update_projection() # Pan/zoom değişikliklerini uygula
         world_pos = self.screen_to_world(event.position())
@@ -815,19 +986,19 @@ class DrawingCanvas(QWidget):
             if self.b_spline_widget:
                 if event_type == QTabletEvent.Type.TabletPress:
                     self.b_spline_widget.tabletPressEvent(world_pos, event)
-                    # logging.debug("[EDITABLE_LINE] TabletPress forwarded to b_spline_widget.")
+                    # logging.debug("[EDITABLE_LINE] TabletPress forwarded to b_spline_widget.") # YORUM SATIRI
                 elif event_type == QTabletEvent.Type.TabletMove:
                     self.b_spline_widget.tabletMoveEvent(world_pos, event)
-                    # logging.debug("[EDITABLE_LINE] TabletMove forwarded to b_spline_widget.")
+                    # logging.debug("[EDITABLE_LINE] TabletMove forwarded to b_spline_widget.") # YORUM SATIRI
                 elif event_type == QTabletEvent.Type.TabletRelease:
-                    # logging.debug("[EDITABLE_LINE] TabletRelease: Calling b_spline_widget.tabletReleaseEvent...")
+                    # logging.debug("[EDITABLE_LINE] TabletRelease: Calling b_spline_widget.tabletReleaseEvent...") # YORUM SATIRI
                     # strokes_before_release = len(self.b_spline_strokes) # widget.strokes ile aynı
                     
                     # YENİ: tabletReleaseEvent artık stroke_data döndürüyor
                     created_stroke_data = self.b_spline_widget.tabletReleaseEvent(world_pos, event)
-                    # logging.debug(f"[EDITABLE_LINE] TabletRelease: b_spline_widget.tabletReleaseEvent returned: {type(created_stroke_data)}")
+                    # logging.debug(f"[EDITABLE_LINE] TabletRelease: b_spline_widget.tabletReleaseEvent returned: {type(created_stroke_data)}") # YORUM SATIRI
                     # if isinstance(created_stroke_data, dict):
-                    #     logging.debug(f"  Returned stroke data keys: {list(created_stroke_data.keys())}")
+                    #     logging.debug(f"  Returned stroke data keys: {list(created_stroke_data.keys())}") # YORUM SATIRI
 
                     # strokes_after_release = len(self.b_spline_strokes) # Bu artık anlamlı değil, widget listeyi değiştirmiyor
                     
@@ -991,7 +1162,7 @@ class DrawingCanvas(QWidget):
                         else:
                             logging.warning(f"_get_current_selection_states: Geçersiz images index: {index}")
                     else:
-                         logging.warning(f"_get_current_selection_states: page_ref.images bulunamadı veya liste değil.")
+                         logging.warning(f"_get_current_selection_states: Geçersiz images index: {index}")
                 elif item_type == 'bspline_strokes': # YENİ: B-Spline Strokes için durum alma
                     if 0 <= index < len(self.b_spline_strokes):
                         item_data_source = self.b_spline_strokes[index]
