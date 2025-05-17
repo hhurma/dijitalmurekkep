@@ -1581,13 +1581,42 @@ class MainWindow(QMainWindow):
             #logging.debug(f"Spinbox, Silgi aracı için (DrawingCanvas) ayarlandı: {drawing_canvas.eraser_width}")
         
         elif action == self.select_tool_action:
-            # Bu kısım, projenizin orijinal mantığına göre daha detaylı ele alınmalıdır.
-            # Orijinal kodunuzda `canvas.selected_item_indices` üzerinden bir mantık vardı.
-            # Eğer seçili öğe bir DrawingWidget stroke ise, onun kalınlığını göstermemiz gerekir.
-            # Şimdilik genel bir mesajla bırakıyorum.
-            self.width_spinbox.setToolTip("Seçili Öğenin Kalınlığı (Detaylı implementasyon gerekli)")
-            self.width_spinbox.setEnabled(False) # Veya seçili öğenin tipine göre aktif edilebilir
-            #logging.debug("Spinbox, Seçim aracı için ayarlandı (detaylı mantık eklenebilir).")
+            # Seçim aracı aktif olduğunda seçili öğenin kalınlığını göster (eğer varsa)
+            selected_thickness = None
+            can_edit_thickness = False
+            if drawing_canvas and drawing_canvas.selected_item_indices:
+                # Sadece tek bir öğe seçiliyse kalınlığı düzenlemeye izin verelim
+                if len(drawing_canvas.selected_item_indices) == 1:
+                    item_type, item_idx = drawing_canvas.selected_item_indices[0]
+                    if item_type == 'bspline_strokes': # ToolType.EDITABLE_LINE yerine canvas'taki item_type kullanılır
+                        if 0 <= item_idx < len(drawing_canvas.b_spline_strokes):
+                            stroke_data = drawing_canvas.b_spline_strokes[item_idx]
+                            selected_thickness = stroke_data.get('thickness')
+                            can_edit_thickness = True 
+                            #logging.debug(f"Seçili B-Spline [{item_idx}] kalınlığı: {selected_thickness}")
+                    # Diğer seçilebilir öğe türleri için de benzer mantık eklenebilir (lines, shapes)
+                    # Örneğin, seçili bir 'line' veya 'shape' varsa:
+                    elif item_type == 'lines' and 0 <= item_idx < len(drawing_canvas.lines):
+                        selected_thickness = drawing_canvas.lines[item_idx][1] # Kalınlık genellikle 2. eleman
+                        can_edit_thickness = True
+                    elif item_type == 'shapes' and 0 <= item_idx < len(drawing_canvas.shapes):
+                        # Şekiller için, kalınlık yine 2. eleman olabilir (shape_data[1] renk, shape_data[2] kalınlık)
+                        shape_data = drawing_canvas.shapes[item_idx]
+                        if len(shape_data) > 2:
+                            selected_thickness = shape_data[2]
+                            can_edit_thickness = True
+
+            if can_edit_thickness and selected_thickness is not None:
+                self.width_spinbox.setToolTip("Seçili Öğenin Kalınlığı")
+                self.width_spinbox.blockSignals(True)
+                self.width_spinbox.setValue(int(selected_thickness))
+                self.width_spinbox.blockSignals(False)
+                self.width_spinbox.setEnabled(True)
+                #logging.debug(f"Spinbox, seçili öğe için ayarlandı. Kalınlık: {selected_thickness}")
+            else:
+                self.width_spinbox.setToolTip("Kalınlık (Öğe seçin veya çizim aracını değiştirin)")
+                self.width_spinbox.setEnabled(False)
+                #logging.debug("Spinbox, Seçim aracı için pasif (uygun öğe seçili değil veya çoklu seçim).")
 
         # --- Doldurma rengi ve şeffaflık kontrollerinin aktifliği ---
         if hasattr(self, 'fill_color_button') and hasattr(self, 'fill_alpha_slider') and hasattr(self, 'fill_enable_checkbox'):

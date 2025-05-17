@@ -852,6 +852,94 @@ class DrawingCanvas(QWidget):
             self.update()
             return # EDITABLE_LINE için canvas_tablet_handler'a gitme
         
+        # --- YENİ: B-Spline Kontrol Noktası Düzenleyici Aracı ---
+        elif self.current_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR:
+            if event_type == QTabletEvent.Type.TabletPress:
+                # logging.debug(f"[NODE_SELECTOR] TabletPress at world_pos: {world_pos}")
+                node_info = self._get_bspline_control_point_at(world_pos)
+                if node_info:
+                    self.active_bspline_stroke_index, self.active_bspline_control_index = node_info
+                    self.is_dragging_bspline_handle = True
+                    # Orijinal kontrol noktasının pozisyonunu sakla (numpy array olarak)
+                    # self.b_spline_strokes'daki kontrol noktaları zaten np.array olmalı.
+                    original_cp_data = self.b_spline_strokes[self.active_bspline_stroke_index]['control_points'][self.active_bspline_control_index]
+                    self.bspline_drag_start_cp_pos = np.copy(original_cp_data) # Kopyasını sakla
+                    # logging.debug(f"  Selected B-Spline CP: Stroke {self.active_bspline_stroke_index}, CP {self.active_bspline_control_index}. Start pos: {self.bspline_drag_start_cp_pos}")
+                    event.accept()
+                else:
+                    # logging.debug("  No B-Spline CP found at press location.")
+                    self.is_dragging_bspline_handle = False # Önemli: Eğer bir şeye basılmadıysa sürüklemeyi başlatma
+                    event.ignore() # Başka bir handler'a geçebilir (örn. pan/zoom için)
+
+            elif event_type == QTabletEvent.Type.TabletMove:
+                if self.is_dragging_bspline_handle and self.active_bspline_stroke_index is not None and self.active_bspline_control_index is not None:
+                    # logging.debug(f"[NODE_SELECTOR] TabletMove, dragging CP. New world_pos: {world_pos}")
+                    # self.b_spline_strokes içindeki kontrol noktası listesini güncelle
+                    # Kontrol noktaları [x, y] formatında numpy array'ler olarak saklanıyor.
+                    target_stroke = self.b_spline_strokes[self.active_bspline_stroke_index]
+                    # Yeni pozisyonu numpy array'e çevir
+                    new_cp_pos_np = np.array([world_pos.x(), world_pos.y()])
+                    target_stroke['control_points'][self.active_bspline_control_index] = new_cp_pos_np
+                    
+                    # Önemli: B-spline'ın yeniden hesaplanması için düğümleri (knots) ve u parametrelerini
+                    # geçersiz kılmamız veya yeniden oluşturmamız gerekebilir.
+                    # Şimdilik sadece kontrol noktasını güncelliyoruz, bu da spline'ı anında değiştirecektir.
+                    # Eğer daha karmaşık bir güncelleme gerekiyorsa (örn. düğümleri yeniden hesaplamak),
+                    # bu burada yapılmalı veya `UpdateBsplineControlPointCommand` içinde ele alınmalı.
+                    # DrawingWidget'taki update_stroke metodu benzer bir mantık izleyebilir.
+                    # Şimdilik sadece pozisyonu güncelleyip çizimle yetinelim.
+                    if self._parent_page:
+                        self._parent_page.mark_as_modified() # Değişiklik yapıldı
+                    self.update()
+                    event.accept()
+                else:
+                    event.ignore()
+
+            elif event_type == QTabletEvent.Type.TabletRelease:
+                # logging.debug(f"[NODE_SELECTOR] TabletRelease. Dragging: {self.is_dragging_bspline_handle}")
+                if self.is_dragging_bspline_handle and \
+                   self.active_bspline_stroke_index is not None and \
+                   self.active_bspline_control_index is not None and \
+                   self.bspline_drag_start_cp_pos is not None:
+                    
+                    final_cp_pos_np = self.b_spline_strokes[self.active_bspline_stroke_index]['control_points'][self.active_bspline_control_index]
+                    
+                    # logging.debug(f"  Released CP. Start: {self.bspline_drag_start_cp_pos}, Final: {final_cp_pos_np}")
+
+                    # Sadece pozisyon gerçekten değiştiyse komut oluştur
+                    if not np.array_equal(self.bspline_drag_start_cp_pos, final_cp_pos_np):
+                        # logging.debug("    CP position changed. Creating UpdateBsplineControlPointCommand.")
+                        # Komut, stroke_index, cp_index, eski_pozisyon_np, yeni_pozisyon_np almalı
+                        command = UpdateBsplineControlPointCommand(
+                            canvas=self,
+                            stroke_idx=self.active_bspline_stroke_index,       # DÜZELTİLDİ: stroke_index -> stroke_idx
+                            cp_idx=self.active_bspline_control_index,         # DÜZELTİLDİ: control_point_index -> cp_idx
+                            old_pos_np=self.bspline_drag_start_cp_pos, # Kopyalanmış başlangıç değeri
+                            new_pos_np=np.copy(final_cp_pos_np)      # Son pozisyonun kopyası
+                        )
+                        self.undo_manager.execute(command)
+                        # logging.debug("    UpdateBsplineControlPointCommand executed.")
+                        if self._parent_page:
+                             self._parent_page.mark_as_modified() # Değişiklik kalıcı oldu
+                    else:
+                        # logging.debug("    CP position did not change. No command created.")
+                        pass
+                    
+                    # Durumu sıfırla
+                    self.is_dragging_bspline_handle = False
+                    self.active_bspline_stroke_index = None
+                    self.active_bspline_control_index = None
+                    self.bspline_drag_start_cp_pos = None
+                    self.update()
+                    event.accept()
+                else:
+                    # Eğer sürükleme yoksa veya geçerli bir seçim yoksa olayı yoksay
+                    self.is_dragging_bspline_handle = False # Her ihtimale karşı sıfırla
+                    event.ignore()
+            else:
+                event.ignore() # Diğer tablet olaylarını (proximity vb.) şimdilik yoksay
+            return # EDITABLE_LINE_NODE_SELECTOR için canvas_tablet_handler'a gitme
+        
         # --- Diğer tüm araçlar için canvas_tablet_handler'ı kullan ---
         if event_type == QTabletEvent.Type.TabletPress:
             canvas_tablet_handler.handle_tablet_press(self, world_pos, event)
@@ -1304,6 +1392,9 @@ class DrawingCanvas(QWidget):
         if self.current_pen_width != new_width:
             self.current_pen_width = new_width
             # logging.debug(f"Kalem kalınlığı ayarlandı: {self.current_pen_width}") # Yorum satırı yapıldı (isteğe bağlı)
+            # YENİ: B-Spline widget'ına da kalınlığı ilet
+            if hasattr(self, 'b_spline_widget') and self.b_spline_widget:
+                self.b_spline_widget.setDefaultLineThickness(self.current_pen_width)
 
     def set_template(self, template_type: TemplateType):
         if isinstance(template_type, TemplateType):
