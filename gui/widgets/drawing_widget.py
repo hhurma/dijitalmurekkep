@@ -66,6 +66,7 @@ class DrawingWidget(QWidget):
     def tabletReleaseEvent(self, world_pos: QPointF, event: QTabletEvent):
         # Aynı şekilde, bu metod da sadece yeni çizgi biterken çağrılmalı.
         # NODE_SELECTOR modunda komut oluşturma DrawingCanvas'ta.
+        created_stroke_data = None # Dönecek değeri başlat
         if self.current_stroke:
             if len(self.current_stroke) > 1:
                 # B-spline oluştur ve sakla
@@ -78,7 +79,7 @@ class DrawingWidget(QWidget):
                     logging.warning(f"DrawingWidget: B-spline oluşturmak için yeterli nokta yok ({points_np.shape[0]} adet). En az {k+1} nokta gerekli. Stroke atlanıyor.")
                     self.current_stroke = [] # Mevcut stroke'u temizle
                     self.update()
-                    return # Fonksiyondan çık
+                    return None # Fonksiyondan çık ve None döndür
 
                 try:
                     # smoothing değerini artırarak kontrol noktası sayısını azaltmayı dene
@@ -118,7 +119,7 @@ class DrawingWidget(QWidget):
                             pass
                     # YENİ LOG SONU
 
-                    new_stroke_data = {
+                    created_stroke_data = { # new_stroke_data -> created_stroke_data
                         'control_points': control_points_list_np, # list of np.array([x,y])
                         'knots': tck[0], # numpy array
                         'degree': tck[2], # int
@@ -126,14 +127,15 @@ class DrawingWidget(QWidget):
                         'thickness': self.default_line_thickness, # YENİ: Kalınlığı kaydet
                         'original_points_with_pressure': original_points_with_pressure # YENİ: Orijinal noktaları sakla
                     }
-                    self.strokes.append(new_stroke_data)
+                    # self.strokes.append(new_stroke_data) # <-- BU SATIR KALDIRILDI
                     #logging.debug(f"DrawingWidget ID: {id(self)}. tabletReleaseEvent: Storing new stroke with thickness: {self.default_line_thickness}")
                     #logging.debug(f"DrawingWidget: New B-spline stroke added to self.strokes. Count: {len(self.strokes)}")
                 except Exception as e:
                     #logging.error(f"DrawingWidget: B-spline oluşturulurken hata: {e}", exc_info=True)
-                    pass
+                    created_stroke_data = None # Hata durumunda None ata
             self.current_stroke = []
         self.update()
+        return created_stroke_data # Oluşturulan stroke verisini veya None döndür
 
     def paintEvent(self, event):
         painter = QPainter(self)

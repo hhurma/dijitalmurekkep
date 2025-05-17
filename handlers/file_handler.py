@@ -262,6 +262,10 @@ def handle_load_notebook(main_window: 'MainWindow', page_manager: 'PageManager')
             if canvas:
                 logging.debug("Dosya yükleme sonrası aktif canvas için update() çağrılıyor.")
                 canvas.update()
+                # YENİ: B-Spline widget'ı da güncelle (eğer varsa ve B-Spline'lar yüklenmişse)
+                if hasattr(canvas, 'b_spline_widget') and canvas.b_spline_widget and hasattr(canvas, 'b_spline_strokes') and canvas.b_spline_strokes:
+                    logging.debug("Dosya yükleme sonrası b_spline_widget.update() çağrılıyor.")
+                    canvas.b_spline_widget.update()
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
     main_window.statusBar().showMessage(f"Not defteri başarıyla yüklendi: {filepath}", 5000)
@@ -580,6 +584,10 @@ def handle_open_recent_file(main_window: 'MainWindow', page_manager: 'PageManage
             if canvas:
                 logging.debug("Son kullanılan dosya yükleme sonrası aktif canvas için update() çağrılıyor.")
                 canvas.update()
+                # YENİ: B-Spline widget'ı da güncelle (eğer varsa ve B-Spline'lar yüklenmişse)
+                if hasattr(canvas, 'b_spline_widget') and canvas.b_spline_widget and hasattr(canvas, 'b_spline_strokes') and canvas.b_spline_strokes:
+                    logging.debug("Son kullanılan dosya yükleme sonrası b_spline_widget.update() çağrılıyor.")
+                    canvas.b_spline_widget.update()
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     main_window.statusBar().showMessage(f"Dosya başarıyla yüklendi (Son Açılanlardan): {filepath}", 5000)
     if page_manager.count() > 0:

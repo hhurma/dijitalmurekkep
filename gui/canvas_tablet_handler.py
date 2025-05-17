@@ -566,12 +566,12 @@ def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEven
     
     # --- KALEM ARACI İÇİN HAREKET --- #
     elif canvas.current_tool == ToolType.PEN:
-        pen_tool_handler.handle_pen_move(canvas, pos, event)
+        pen_tool_handler.handle_pen_move(canvas, pos)
         action_performed = True
     
     # --- ŞEKİL ARAÇLARI İÇİN HAREKET --- #
     elif canvas.current_tool in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE]:
-        shape_tool_handler.handle_shape_move(canvas, pos, event)
+        shape_tool_handler.handle_shape_move(canvas, pos)
         action_performed = True
 
     # --- SEÇİM ARACI İÇİN HAREKET --- #

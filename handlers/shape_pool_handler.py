@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (QInputDialog, QMessageBox, QDialog, QVBoxLayout, QL
                            QListWidgetItem, QDialogButtonBox, QHBoxLayout, QPushButton, 
                            QLabel, QComboBox, QFormLayout, QGroupBox, QLineEdit)
 from PyQt6.QtCore import QDir, Qt, QPointF
-from utils.file_io_helpers import _serialize_item, _deserialize_item
+from utils.file_io_helpers import _serialize_item, _deserialize_item, _deserialize_bspline
 import copy
 import logging
 from PyQt6.QtGui import QIcon
@@ -454,35 +454,29 @@ def handle_load_shape(page_manager, main_window):
                             added_count += 1
                     
                     elif item_type == 'bspline':
-                        # B-spline'ı doğrudan b_spline_strokes'a ekle
-                        bspline_data = {
-                            'control_points': [list(map(float, p)) for p in item_data.get('control_points', [])],
-                            'knots': list(map(float, item_data.get('knots', []))),
-                            'degree': int(item_data.get('degree', 3)),
-                            'u': list(map(float, item_data.get('u', []))),
-                            'color': list(map(float, item_data.get('color', [0.0, 0.0, 0.0, 1.0]))) ,
-                            'width': float(item_data.get('width', 2.0)),
-                            'line_style': item_data.get('line_style', 'solid')
-                        }
-                        if 'original_points_with_pressure' in item_data:
-                            bspline_data['original_points_with_pressure'] = [
-                                (QPointF(p[0], p[1]), float(pressure)) for p, pressure in item_data['original_points_with_pressure']
-                            ]
-                        # B-spline parametrelerini numpy array'e çevir
-                        if 'control_points' in bspline_data:
-                            bspline_data['control_points'] = np.array(bspline_data['control_points'])
-                        if 'knots' in bspline_data:
-                            bspline_data['knots'] = np.array(bspline_data['knots'])
-                        if 'u' in bspline_data:
-                            bspline_data['u'] = np.array(bspline_data['u'])
-                        canvas.b_spline_strokes.append(bspline_data)
-                        logging.debug(f"B-spline yüklendi: {bspline_data}")
-                        added_count += 1
+                        # B-spline'ı deserialize et (file_io_helpers kullanarak)
+                        deserialized_bspline = file_io_helpers._deserialize_bspline(item_data)
+                        if deserialized_bspline:
+                            # B-Spline stroke verisi DrawingCanvas.b_spline_strokes listesine eklenir.
+                            # Bu liste DrawingWidget.strokes'a referans olduğu için widget da güncellenir.
+                            if not hasattr(canvas, 'b_spline_strokes') or canvas.b_spline_strokes is None:
+                                canvas.b_spline_strokes = [] # Eğer yoksa oluştur
+                                if hasattr(canvas, 'b_spline_widget') and canvas.b_spline_widget:
+                                    canvas.b_spline_widget.strokes = canvas.b_spline_strokes # Referansı tekrar ata
+
+                            canvas.b_spline_strokes.append(deserialized_bspline)
+                            logging.debug(f"B-spline (deserialize ile) yüklendi: {deserialized_bspline.get('control_points')}")
+                            added_count += 1
+                        else:
+                            logging.warning(f"B-spline deserialize edilemedi: {item_data}")
                     else:
                         logging.warning(f"Bilinmeyen öğe türü: {item_type}")
             
             if added_count > 0:
                 canvas.update()
+                if hasattr(canvas, 'b_spline_widget') and canvas.b_spline_widget: # Widget varsa onu da güncelle
+                    logging.debug("Calling canvas.b_spline_widget.update() after loading shapes from pool.")
+                    canvas.b_spline_widget.update()
                 current_page.mark_as_modified()
                 QMessageBox.information(main_window, "Şekil Havuzu", 
                                        f"'{selected_category}/{selected_shape}' şekil grubu başarıyla eklendi. ({added_count} parça)")

@@ -791,132 +791,73 @@ class DrawingCanvas(QWidget):
               view_helpers.set_projection(self.width(), self.height(), 1.0, QPointF(0,0))
 
     def tabletEvent(self, event: QTabletEvent):
-        if self._parent_page is None:
-            logging.error(f"tabletEvent received but self._parent_page is None! Ignoring event type: {event.type()}")
-            event.ignore()
-            return
-        
-        world_pos = self.screen_to_world(event.position()) # screen_to_world genel olarak burada çağrılabilir
+        # logging.debug(f"Canvas Tablet Event: {event.type()}, Pos: {event.position()}, GlobalPos: {event.globalPosition()}, Pressure: {event.pressure()}, Button: {event.button()}, Buttons: {event.buttons()}, Device: {event.deviceType().name}, Pointer: {event.pointerType().name}, UniqueID: {event.uniqueId()}")
+        # Dokunmatik ekran olaylarını ve fare olaylarını tablet olaylarına dönüştür
+        # self._handle_tablet_event_common(event)
+        # logging.debug(f"[DrawingCanvas ({id(self)})] tabletEvent: {event.type()}, tool: {self.current_tool}")
+        # logging.debug(f"  b_spline_widget ID: {id(self.b_spline_widget)}, b_spline_strokes ID (before widget call): {id(self.b_spline_strokes)}")
+        # logging.debug(f"  Strokes in widget (before call, len={len(self.b_spline_widget.strokes)}): {self.b_spline_widget.strokes}")
+        # logging.debug(f"  Strokes in canvas (before call, len={len(self.b_spline_strokes)}): {self.b_spline_strokes}")
+
+        # self._update_projection() # Pan/zoom değişikliklerini uygula
+        world_pos = self.screen_to_world(event.position())
         event_type = event.type()
 
+        # --- YENİ: Olayı doğrudan canvas_tablet_handler'a yönlendir ---
+        # Önce, hangi araç tipinin hangi handler'ı kullanacağını belirleyelim.
+        
+        # --- Özel durum: EDITABLE_LINE ---
+        # Bu araç, kendi widget'ı (b_spline_widget) üzerinden yönetiliyor.
+        # Komut oluşturma vb. DrawingCanvas'ta kalmalı.
         if self.current_tool == ToolType.EDITABLE_LINE:
             # Olayları b_spline_widget'a yönlendir (yeni stroke çizimi için)
             if self.b_spline_widget:
                 if event_type == QTabletEvent.Type.TabletPress:
                     self.b_spline_widget.tabletPressEvent(world_pos, event)
+                    # logging.debug("[EDITABLE_LINE] TabletPress forwarded to b_spline_widget.")
                 elif event_type == QTabletEvent.Type.TabletMove:
                     self.b_spline_widget.tabletMoveEvent(world_pos, event)
+                    # logging.debug("[EDITABLE_LINE] TabletMove forwarded to b_spline_widget.")
                 elif event_type == QTabletEvent.Type.TabletRelease:
-                    # DrawingWidget yeni bir stroke oluşturduysa, bunu Canvas'a komutla ekle
-                    # Bu, DrawingWidget'ın tabletReleaseEvent'inin yeni stroke'u kendi listesine eklediği varsayımına dayanır.
-                    # Ve b_spline_strokes artık widget.strokes ile aynı referans olduğu için,
-                    # widget.strokes'a eklenen son elemanı alıp komutla "resmileştirmeliyiz".
+                    # logging.debug("[EDITABLE_LINE] TabletRelease: Calling b_spline_widget.tabletReleaseEvent...")
+                    # strokes_before_release = len(self.b_spline_strokes) # widget.strokes ile aynı
                     
-                    strokes_before_release = len(self.b_spline_strokes) # widget.strokes ile aynı
-                    
-                    self.b_spline_widget.tabletReleaseEvent(world_pos, event) # Widget adds to its self.strokes here
-                    
-                    strokes_after_release = len(self.b_spline_strokes)
+                    # YENİ: tabletReleaseEvent artık stroke_data döndürüyor
+                    created_stroke_data = self.b_spline_widget.tabletReleaseEvent(world_pos, event)
+                    # logging.debug(f"[EDITABLE_LINE] TabletRelease: b_spline_widget.tabletReleaseEvent returned: {type(created_stroke_data)}")
+                    # if isinstance(created_stroke_data, dict):
+                    #     logging.debug(f"  Returned stroke data keys: {list(created_stroke_data.keys())}")
 
-                    if strokes_after_release > strokes_before_release:
-                        # Yeni bir stroke eklendi widget tarafından.
-                        # Eklenen stroke'un indeksi listedeki son elemanın indeksidir.
-                        added_stroke_index_by_widget = strokes_after_release - 1
-                        new_stroke_data_ref = self.b_spline_strokes[added_stroke_index_by_widget] # Widget'ın eklediği referansı al
-                        
-                        # Komuta, widget'ın eklediği stroke'un referansını ve indeksini ver.
-                        #logging.debug(f"DrawBsplineCommand oluşturuluyor. Widget ekledi. Index: {added_stroke_index_by_widget}")
-                        command = DrawBsplineCommand(self, new_stroke_data_ref, stroke_index=added_stroke_index_by_widget)
+                    # strokes_after_release = len(self.b_spline_strokes) # Bu artık anlamlı değil, widget listeyi değiştirmiyor
+                    
+                    # YENİ: Eğer widget geçerli bir stroke oluşturduysa komut oluştur
+                    if created_stroke_data:
+                        # logging.debug(f"[EDITABLE_LINE] TabletRelease: Valid stroke data received from widget. Creating DrawBsplineCommand.")
+                        # new_stroke_data_ref = self.b_spline_strokes[added_stroke_index_by_widget] # ESKİ
+                        command = DrawBsplineCommand(self, created_stroke_data) # YENİ: stroke_index yok
                         self.undo_manager.execute(command)
-                        # Komut execute olduğunda, _added_index vs. ayarlanacak.                    
-                    elif strokes_after_release == strokes_before_release and self.b_spline_widget.selected_control_point is None:
-                        # Stroke eklenmedi ve CP seçimi de yapılmadı (muhtemelen çok kısa çizim veya sadece tıklama)
-                        # DrawingWidget.tabletReleaseEvent içindeki self.current_stroke = [] bu durumu yönetir.
-                        pass
-            self.update()
-            return
-
-        elif self.current_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR:
-            # Kontrol noktası seçimi ve taşıma işlemleri için olayları b_spline_widget'a yönlendir
-            if self.b_spline_widget:
-                world_pos_for_selector = world_pos # Zaten dünya koordinatında
-
-                if event_type == QTabletEvent.Type.TabletPress:
-                    # DrawingWidget'ın içindeki CP seçme mantığını doğrudan çağır/taklit et
-                    # Bu, self.b_spline_widget.current_stroke'u etkilememeli.
-                    self.b_spline_widget.selected_control_point = self.b_spline_widget._get_control_point_at(world_pos_for_selector)
-                    if self.b_spline_widget.selected_control_point:
-                        s_idx, c_idx = self.b_spline_widget.selected_control_point
-                        # Orijinal pozisyonu sakla (numpy array olarak)
-                        self.b_spline_widget.drag_start_cp_pos = self.b_spline_widget.strokes[s_idx]['control_points'][c_idx].copy()
-                        logging.debug(f"NodeSelector: CP selected: stroke {s_idx}, cp {c_idx} at {self.b_spline_widget.drag_start_cp_pos}")
+                        # logging.debug(f"[EDITABLE_LINE] TabletRelease: DrawBsplineCommand executed. Canvas strokes len: {len(self.b_spline_strokes)}")
+                        if self._parent_page:
+                            self._parent_page.mark_as_modified() # YENİ: Sayfayı değiştirildi olarak işaretle
                     else:
-                        self.b_spline_widget.drag_start_cp_pos = None
-                    # self.b_spline_widget.tabletPressEvent(world_pos, event) # YENİ ÇİZİMİ ENGELLEMEK İÇİN BU SATIR YORUMLANDI/KALDIRILDI
-                
-                elif event_type == QTabletEvent.Type.TabletMove:
-                    if self.b_spline_widget.selected_control_point and self.b_spline_widget.drag_start_cp_pos is not None:
-                        # Seçili CP'yi hareket ettir (DrawingWidget içindeki mantık)
-                        # Bu, self.b_spline_widget.current_stroke'u etkilememeli.
-                        s_idx, c_idx = self.b_spline_widget.selected_control_point
-                        # world_pos_for_selector zaten doğru koordinat sisteminde (world)
-                        # Sadece stroke verisindeki kontrol noktasını güncelle
-                        self.b_spline_widget.strokes[s_idx]['control_points'][c_idx] = np.array([world_pos_for_selector.x(), world_pos_for_selector.y()])
-                    # self.b_spline_widget.tabletMoveEvent(world_pos, event) # YENİ ÇİZİMİ ENGELLEMEK İÇİN BU SATIR YORUMLANDI/KALDIRILDI
-                
-                elif event_type == QTabletEvent.Type.TabletRelease:
-                    old_pos_for_command = None
-                    new_pos_for_command = None
-                    stroke_idx_for_command = -1
-                    cp_idx_for_command = -1
-
-                    if self.b_spline_widget.selected_control_point and self.b_spline_widget.drag_start_cp_pos is not None:
-                        s_idx, c_idx = self.b_spline_widget.selected_control_point
-                        current_cp_val = self.b_spline_widget.strokes[s_idx]['control_points'][c_idx]
-                        
-                        # Sadece pozisyon gerçekten değiştiyse komut oluştur
-                        if not np.array_equal(self.b_spline_widget.drag_start_cp_pos, current_cp_val):
-                            old_pos_for_command = self.b_spline_widget.drag_start_cp_pos.copy()
-                            new_pos_for_command = current_cp_val.copy()
-                            stroke_idx_for_command = s_idx
-                            cp_idx_for_command = c_idx
-                            logging.debug(f"NodeSelector: CP drag released. Original: {old_pos_for_command}, Final: {new_pos_for_command}")
-                        else:
-                            logging.debug(f"NodeSelector: CP click-released without moving. Stroke: {s_idx}, CP: {c_idx}")
+                        # logging.debug("[EDITABLE_LINE] TabletRelease: No valid stroke data returned from widget. No command created.")
+                        pass
                     
-                    # Seçimi ve sürükleme bilgisini temizle (DrawingWidget.tabletReleaseEvent'in bir kısmı)
-                    self.b_spline_widget.selected_control_point = None
-                    self.b_spline_widget.drag_start_cp_pos = None
-                    # self.b_spline_widget.current_stroke = [] # BU SATIR KESİNLİKLE OLMAMALI (node selector için)
-
-                    # self.b_spline_widget.tabletReleaseEvent(world_pos, event) # YENİ ÇİZİMİ ENGELLEMEK İÇİN BU SATIR YORUMLANDI/KALDIRILDI
-
-                    if old_pos_for_command is not None and new_pos_for_command is not None and stroke_idx_for_command != -1:
-                        logging.debug(f"Canvas (NodeSelector): CP Taşıma bitti. Komut oluşturulacak. Stroke: {stroke_idx_for_command}, CP: {cp_idx_for_command}")
-                        command = UpdateBsplineControlPointCommand(
-                            self, # Canvas referansı
-                            stroke_idx_for_command, 
-                            cp_idx_for_command, 
-                            old_pos_for_command, 
-                            new_pos_for_command
-                        )
-                        self.undo_manager.execute(command)
-                self.update()
-            return
-
-        # Genel tablet olay yönetimi (Pen, Eraser, Selector vb. için)
-        # world_pos ve event_type zaten yukarıda tanımlı.
-        # pos = self.screen_to_world(event.position()) # Tekrar hesaplamaya gerek yok
-        # self.pressure = event.pressure() # canvas_tablet_handler içinde ayarlanabilir
-        # event_type = event.type() # Tekrar atamaya gerek yok
-        pos = self.screen_to_world(event.position())
-        self.pressure = event.pressure()
+                    # logging.debug(f"Strokes in widget (after release, len={len(self.b_spline_widget.strokes)}): {self.b_spline_widget.strokes}")
+                    # logging.debug(f"Strokes in canvas (after release, len={len(self.b_spline_strokes)}): {self.b_spline_strokes}")
+            else:
+                # logging.warning("[EDITABLE_LINE] b_spline_widget is None!")
+                pass
+            self.update()
+            return # EDITABLE_LINE için canvas_tablet_handler'a gitme
+        
+        # --- Diğer tüm araçlar için canvas_tablet_handler'ı kullan ---
         if event_type == QTabletEvent.Type.TabletPress:
-            canvas_tablet_handler.handle_tablet_press(self, pos, event)
+            canvas_tablet_handler.handle_tablet_press(self, world_pos, event)
         elif event_type == QTabletEvent.Type.TabletMove:
-            canvas_tablet_handler.handle_tablet_move(self, pos, event)
+            canvas_tablet_handler.handle_tablet_move(self, world_pos, event)
         elif event_type == QTabletEvent.Type.TabletRelease:
-            canvas_tablet_handler.handle_tablet_release(self, pos, event)
+            canvas_tablet_handler.handle_tablet_release(self, world_pos, event)
         else:
             event.ignore()
     
@@ -1207,11 +1148,14 @@ class DrawingCanvas(QWidget):
                     pass
             elif item_type == 'bspline_strokes':
                 if 0 <= item_original_idx < len(self.b_spline_strokes):
-                    # original_item_data, self.move_original_states[i] olup zaten doğru stroke verisini tutar.
                     if original_item_data and 'control_points' in original_item_data:
-                        original_control_points = original_item_data['control_points'] 
+                        original_control_points = original_item_data['control_points']
                         
-                        if original_control_points and all(isinstance(cp, np.ndarray) and cp.shape == (2,) for cp in original_control_points):
+                        # YENİ: Format kontrolü ve dönüşüm
+                        if isinstance(original_control_points, np.ndarray) and original_control_points.ndim == 2 and original_control_points.shape[1] == 2:
+                            original_control_points = [np.array(row) for row in original_control_points]
+                        
+                        if isinstance(original_control_points, list) and original_control_points and all(isinstance(cp, np.ndarray) and cp.shape == (2,) for cp in original_control_points):
                             new_control_points = [
                                 np.array([cp[0] + total_dx, cp[1] + total_dy]) for cp in original_control_points
                             ]
@@ -2341,7 +2285,12 @@ class DrawingCanvas(QWidget):
             elif item_type == 'bspline_strokes':
                 if isinstance(initial_item_state, dict) and 'control_points' in initial_item_state:
                     original_control_points = initial_item_state['control_points']
-                    if original_control_points and all(isinstance(cp, np.ndarray) and cp.shape == (2,) for cp in original_control_points):
+                    
+                    # YENİ: Format kontrolü ve dönüşüm
+                    if isinstance(original_control_points, np.ndarray) and original_control_points.ndim == 2 and original_control_points.shape[1] == 2:
+                        original_control_points = [np.array(row) for row in original_control_points]
+                        
+                    if isinstance(original_control_points, list) and original_control_points and all(isinstance(cp, np.ndarray) and cp.shape == (2,) for cp in original_control_points):
                         final_control_points = [
                             np.array([cp[0] + dx, cp[1] + dy]) for cp in original_control_points
                         ]

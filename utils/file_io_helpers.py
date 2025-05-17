@@ -276,29 +276,62 @@ def _serialize_bspline(stroke_data: Dict[str, Any]) -> Dict[str, Any]:
             'degree': stroke_data.get('degree', 3)
         }
         
-        # NumPy dizilerini Python listelerine dönüştür
-        if 'control_points' in stroke_data and isinstance(stroke_data['control_points'], np.ndarray):
-            serialized['control_points'] = stroke_data['control_points'].tolist() 
+        control_points_data = stroke_data.get('control_points')
+
+        if isinstance(control_points_data, list) and all(isinstance(cp, np.ndarray) and cp.shape == (2,) for cp in control_points_data):
+            # Durum 1: List[np.array([x,y])] -> List[List[float, float]]
+            serialized['control_points'] = [cp.tolist() for cp in control_points_data]
+        elif isinstance(control_points_data, np.ndarray) and control_points_data.ndim == 2 and control_points_data.shape[1] == 2:
+            # Durum 2: np.array([[x1,y1], [x2,y2], ...]) -> List[List[float, float]]
+            serialized['control_points'] = control_points_data.tolist()
+        elif isinstance(control_points_data, list) and all(isinstance(cp, list) and len(cp) == 2 for cp in control_points_data):
+            # Durum 3: Zaten List[List[float, float]] (veya QPointF'ten dönüştürülmüş olabilir)
+            # Her bir iç listeyi float'a dönüştürdüğümüzden emin olalım
+            serialized['control_points'] = [[float(coord) for coord in cp] for cp in control_points_data]
         else:
-            logging.warning(f"B-Spline serialize: control_points eksik veya NumPy dizisi değil")
-            return None
+            logging.warning(f"B-Spline serialize: 'control_points' beklenmeyen formatta veya eksik. Format: {type(control_points_data)}. Veri: {control_points_data}")
+            return None # Veya boş liste serialized['control_points'] = []
             
+        # knots ve u parametreleri zaten NumPy array olmalı ve tolist() ile serileştirilmeli
         if 'knots' in stroke_data and isinstance(stroke_data['knots'], np.ndarray):
             serialized['knots'] = stroke_data['knots'].tolist()
         else:
-            logging.warning(f"B-Spline serialize: knots eksik veya NumPy dizisi değil")
-            return None
+            logging.warning(f"B-Spline serialize: knots eksik veya NumPy dizisi değil. Veri: {stroke_data.get('knots')}")
+            # knots olmadan B-Spline çizilemez, bu yüzden None dönmek mantıklı olabilir.
+            # Ancak bazen spline'lar sadece kontrol noktaları ile de ifade edilebilir (örneğin bezier).
+            # Şimdilik devam edelim, ama bu bir potansiyel sorun noktası.
+            serialized['knots'] = [] # Veya None ve yüklerken kontrol et
+
             
         if 'u' in stroke_data and isinstance(stroke_data['u'], np.ndarray):
             serialized['u'] = stroke_data['u'].tolist()
         else:
-            logging.warning(f"B-Spline serialize: u parametresi eksik veya NumPy dizisi değil")
-            return None
+            # u parametresi scipy.interpolate.splev için gerekli.
+            logging.warning(f"B-Spline serialize: u parametresi eksik veya NumPy dizisi değil. Veri: {stroke_data.get('u')}")
+            serialized['u'] = [] # Veya None
+
             
         # Ek olarak renk, çizgi stili ve kalınlık bilgilerini de ekleyelim
-        serialized['color'] = stroke_data.get('color', [0.0, 0.0, 0.0, 1.0])
-        serialized['width'] = stroke_data.get('width', 2.0)
+        serialized['color'] = stroke_data.get('color', [0.0, 0.0, 0.0, 1.0]) # Renk zaten list of float olmalı
+        serialized['width'] = float(stroke_data.get('width', 2.0))
         serialized['line_style'] = stroke_data.get('line_style', 'solid')
+
+        # Orijinal noktaları da kaydet (varsa)
+        if 'original_points_with_pressure' in stroke_data:
+            original_points = stroke_data['original_points_with_pressure']
+            # Format: [ (QPointF(x,y), pressure), ... ] veya [ (np.array([x,y]), pressure), ... ]
+            # Hedef: [ [[x,y], pressure], ... ]
+            serialized_orig_points = []
+            for p_obj, pressure_val in original_points:
+                if isinstance(p_obj, QPointF):
+                    serialized_orig_points.append([ [p_obj.x(), p_obj.y()], float(pressure_val) ])
+                elif isinstance(p_obj, np.ndarray) and p_obj.shape == (2,):
+                    serialized_orig_points.append([ p_obj.tolist(), float(pressure_val) ])
+                elif isinstance(p_obj, list) and len(p_obj) == 2: # Belki [[x,y], pressure] formatında geliyordur
+                    serialized_orig_points.append([ [float(p_obj[0]), float(p_obj[1])], float(pressure_val) ])
+                else:
+                    logging.warning(f"B-Spline serialize: original_points_with_pressure içindeki nokta beklenmedik formatta: {type(p_obj)}")
+            serialized['original_points_with_pressure'] = serialized_orig_points
         
         return serialized
     except Exception as e:
@@ -313,7 +346,16 @@ def _deserialize_bspline(stroke_dict: Dict[str, Any]) -> Dict[str, Any]:
         
     try:
         # Python listelerini NumPy dizilerine dönüştür
-        control_points = np.array(stroke_dict.get('control_points'))
+        control_points_list_of_lists = stroke_dict.get('control_points')
+        
+        # YENİ: control_points'i List[np.array([x,y])] formatına çevir
+        if isinstance(control_points_list_of_lists, list) and all(isinstance(cp, list) and len(cp) == 2 for cp in control_points_list_of_lists):
+            control_points = [np.array(cp_row, dtype=float) for cp_row in control_points_list_of_lists]
+        else:
+            # Eğer format beklenmedikse, eski davranışa (2D array) geri dön veya hata logla
+            logging.warning(f"B-Spline deserialize: 'control_points' beklenen formatta değil (List[List[float, float]]). 2D NumPy array olarak yükleniyor: {control_points_list_of_lists}")
+            control_points = np.array(control_points_list_of_lists) # Eski davranış (2D array)
+
         knots = np.array(stroke_dict.get('knots'))
         u_params = np.array(stroke_dict.get('u'))
         
@@ -327,6 +369,24 @@ def _deserialize_bspline(stroke_dict: Dict[str, Any]) -> Dict[str, Any]:
             'line_style': stroke_dict.get('line_style', 'solid')
         }
         
+        # Orijinal noktaları da yükle (varsa)
+        if 'original_points_with_pressure' in stroke_dict:
+            original_points_list = stroke_dict['original_points_with_pressure']
+            # Format: [ [[x,y], pressure], ... ] 
+            # Hedef: [ (QPointF(x,y), pressure), ... ]
+            deserialized_orig_points = []
+            for item in original_points_list:
+                if isinstance(item, list) and len(item) == 2 and isinstance(item[0], list) and len(item[0]) == 2:
+                    try:
+                        point = QPointF(float(item[0][0]), float(item[0][1]))
+                        pressure = float(item[1])
+                        deserialized_orig_points.append((point, pressure))
+                    except (ValueError, TypeError) as e_conv:
+                        logging.warning(f"B-Spline deserialize: original_points_with_pressure öğesi dönüştürülemedi: {item}, hata: {e_conv}")
+                else:
+                    logging.warning(f"B-Spline deserialize: original_points_with_pressure öğesi beklenmeyen formatta: {item}")
+            deserialized['original_points_with_pressure'] = deserialized_orig_points
+            
         return deserialized
     except Exception as e:
         logging.error(f"B-Spline deserialize edilirken hata: {e}", exc_info=True)
