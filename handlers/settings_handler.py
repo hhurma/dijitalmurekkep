@@ -158,19 +158,15 @@ def handle_open_pointer_settings(main_window: 'MainWindow'):
     """İşaretçi ayarları penceresini açar ve ayarları yönetir."""
     from gui.pointer_settings_dialog import PointerSettingsDialog # Sadece burada import et
     
-    # --- DEĞİŞİKLİK: Yeni faktörleri de settings'ten oku --- #
+    # --- YENİ: Sadece gerekli ve yeni yoğunluk ayarını oku ---
     current_pointer_settings = {
-        # Eski ayarlar
         'laser_pointer_color': main_window.settings.get('laser_pointer_color', '#FF0000'),
-        'laser_pointer_size': main_window.settings.get('laser_pointer_size', 10),
+        'laser_pointer_size': main_window.settings.get('laser_pointer_size', 10.0), # float olmalı
         'temp_pointer_color': main_window.settings.get('temp_pointer_color', '#FFA500'),
         'temp_pointer_width': main_window.settings.get('temp_pointer_width', 3.0),
         'temp_pointer_duration': main_window.settings.get('temp_pointer_duration', 5.0),
-        # Yeni görünüm faktörleri
-        'temp_glow_width_factor': main_window.settings.get('temp_glow_width_factor', 2.5),
-        'temp_core_width_factor': main_window.settings.get('temp_core_width_factor', 0.5),
-        'temp_glow_alpha_factor': main_window.settings.get('temp_glow_alpha_factor', 0.55),
-        'temp_core_alpha_factor': main_window.settings.get('temp_core_alpha_factor', 0.9) 
+        # Yeni yoğunluk ayarı (eskileri okuma)
+        'temp_pointer_intensity': main_window.settings.get('temp_pointer_intensity', 0.5) 
     }
     # --- --- --- --- --- --- --- --- --- --- --- --- --- -- #
 
@@ -188,12 +184,12 @@ def handle_open_pointer_settings(main_window: 'MainWindow'):
         
         # Ayarları MainWindow'daki ana settings sözlüğüne güncelle
         main_window.settings.update(new_settings) 
-        # --- YENİ: Güncellenen ana ayarları logla ---
-        logging.debug(f"MainWindow.settings güncellendi: {main_window.settings}")
+        # --- YENİ: Güncellenen ana ayarları logla (intensity'yi görmeliyiz) ---
+        logging.debug(f"MainWindow.settings güncellendi (PointerSettingsDialog sonrası): {main_window.settings}")
         # --- --- --- --- --- --- --- --- --- --- --- ---
 
         # Güncellenmiş ayarları JSON'a kaydet
-        logging.debug(f"_save_settings çağrılıyor...") # Kaydetme öncesi log
+        logging.debug(f"_save_settings çağrılıyor (PointerSettingsDialog sonrası)...") # Kaydetme öncesi log
         main_window._save_settings(main_window.settings)
         
         # Ayarları aktif canvas'a uygula 

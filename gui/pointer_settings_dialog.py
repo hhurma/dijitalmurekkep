@@ -74,31 +74,20 @@ class PointerSettingsDialog(QDialog):
         self.temp_duration_spin.setDecimals(1)
         self.temp_duration_spin.setSuffix(" sn")
 
-        # --- YENİ: Görünüm Faktörleri ---
-        self.temp_glow_width_spin = QDoubleSpinBox()
-        self.temp_glow_width_spin.setRange(0.1, 10.0); self.temp_glow_width_spin.setSingleStep(0.1)
-        self.temp_glow_width_spin.setDecimals(1); self.temp_glow_width_spin.setToolTip("Temel genişliğe göre hale genişliği çarpanı")
-        
-        self.temp_core_width_spin = QDoubleSpinBox()
-        self.temp_core_width_spin.setRange(0.1, 1.0); self.temp_core_width_spin.setSingleStep(0.05)
-        self.temp_core_width_spin.setDecimals(2); self.temp_core_width_spin.setToolTip("Temel genişliğe göre çekirdek genişliği çarpanı (genellikle < 1)")
-
-        self.temp_glow_alpha_spin = QDoubleSpinBox()
-        self.temp_glow_alpha_spin.setRange(0.01, 1.0); self.temp_glow_alpha_spin.setSingleStep(0.05)
-        self.temp_glow_alpha_spin.setDecimals(2); self.temp_glow_alpha_spin.setToolTip("Halenin maksimum opaklık çarpanı (0.0 - 1.0)")
-        
-        self.temp_core_alpha_spin = QDoubleSpinBox()
-        self.temp_core_alpha_spin.setRange(0.01, 1.0); self.temp_core_alpha_spin.setSingleStep(0.05)
-        self.temp_core_alpha_spin.setDecimals(2); self.temp_core_alpha_spin.setToolTip("Çekirdeğin maksimum opaklık çarpanı (0.0 - 1.0)")
-        # --- Bitti: Görünüm Faktörleri ---
+        # --- YENİ: Efekt Yoğunluğu Ayarı ---
+        self.temp_intensity_spin = QDoubleSpinBox()
+        self.temp_intensity_spin.setRange(0.0, 1.0)
+        self.temp_intensity_spin.setSingleStep(0.05)
+        self.temp_intensity_spin.setDecimals(2)
+        self.temp_intensity_spin.setToolTip("İz efektinin genel yoğunluğu (0.0 - 1.0)")
+        # --- --- --- --- --- --- --- --- --- -- #
 
         temp_layout.addRow("Renk:", self.temp_color_button)
-        temp_layout.addRow("Kalınlık:", self.temp_width_spin)
+        temp_layout.addRow("Fırça Kalınlığı:", self.temp_width_spin)
         temp_layout.addRow("Görünme Süresi:", self.temp_duration_spin)
-        temp_layout.addRow("Hale Genişlik Fakt.:", self.temp_glow_width_spin)
-        temp_layout.addRow("Çekirdek Genişlik Fakt.:", self.temp_core_width_spin)
-        temp_layout.addRow("Hale Opaklık Fakt.:", self.temp_glow_alpha_spin)
-        temp_layout.addRow("Çekirdek Opaklık Fakt.:", self.temp_core_alpha_spin)
+        # --- YENİ: Yoğunluk Ayarını Ekle ---
+        temp_layout.addRow("Efekt Yoğunluğu:", self.temp_intensity_spin)
+        # --- --- --- --- --- --- --- --- -- #
         
         temp_group.setLayout(temp_layout)
         main_layout.addWidget(temp_group)
@@ -157,15 +146,9 @@ class PointerSettingsDialog(QDialog):
         self.temp_width_spin.setValue(settings.get('temp_pointer_width', 3.0))
         self.temp_duration_spin.setValue(settings.get('temp_pointer_duration', 5.0))
         
-        # Görünüm Faktörleri
-        self.temp_glow_width_spin.setValue(settings.get('temp_glow_width_factor', 2.5))
-        self.temp_core_width_spin.setValue(settings.get('temp_core_width_factor', 0.5))
-        self.temp_glow_alpha_spin.setValue(settings.get('temp_glow_alpha_factor', 0.55))
-        self.temp_core_alpha_spin.setValue(settings.get('temp_core_alpha_factor', 0.9))
-        
-        # --- YENİ: Hatalı log mesajı kaldırıldı --- 
-        # logging.debug(f"_populate_widgets finished. LaserSize={self.laser_size_spin.value()}\")
-        # --- --- --- --- --- --- --- --- ---
+        # --- YENİ: Yoğunluk Ayarını Yükle ---
+        self.temp_intensity_spin.setValue(settings.get('temp_pointer_intensity', 0.5))
+        # --- --- --- --- --- --- --- --- #
 
     def _update_color_button(self, button: QPushButton, color: QColor):
         """Butonun arkaplanını ve metnini günceller."""
@@ -229,11 +212,9 @@ class PointerSettingsDialog(QDialog):
         settings['temp_pointer_width'] = self.temp_width_spin.value()
         settings['temp_pointer_duration'] = self.temp_duration_spin.value()
         
-        # Görünüm Faktörleri
-        settings['temp_glow_width_factor'] = self.temp_glow_width_spin.value()
-        settings['temp_core_width_factor'] = self.temp_core_width_spin.value()
-        settings['temp_glow_alpha_factor'] = self.temp_glow_alpha_spin.value()
-        settings['temp_core_alpha_factor'] = self.temp_core_alpha_spin.value()
+        # --- YENİ: Yoğunluk Ayarını Al ---
+        settings['temp_pointer_intensity'] = self.temp_intensity_spin.value()
+        # --- --- --- --- --- --- --- --- #
 
         logging.debug(f"Alinan pointer ayarlari: {settings}")
         return settings

@@ -360,10 +360,16 @@ class DrawingCanvas(QWidget):
         self.temporary_line_duration = 5.0 
         self.temp_pointer_color = QColor('#FFA500') 
         self.temp_pointer_width = 3.0 
-        self.temp_glow_width_factor: float = 4.0  # Daha geniş glow
+        # --- YENİ: Efekt Yoğunluğuna Bağlı Faktörler İçin Varsayılanlar (Orta Yoğunluk varsayımı, intensity=0.5) ---
+        # self.temp_glow_width_factor: float = 4.0  # ESKİ
+        # self.temp_core_width_factor: float = 0.5  # ESKİ
+        # self.temp_glow_alpha_factor: float = 0.85  # ESKİ
+        # self.temp_core_alpha_factor: float = 0.9  # ESKİ
+        self.temp_glow_width_factor: float = 3.25 
         self.temp_core_width_factor: float = 0.5
-        self.temp_glow_alpha_factor: float = 0.85  # Daha opak glow
-        self.temp_core_alpha_factor: float = 0.9
+        self.temp_glow_alpha_factor: float = 0.6 
+        self.temp_core_alpha_factor: float = 0.875
+        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
         self.laser_pointer_color = QColor('#FF0000') 
         self.laser_pointer_size = 10.0 
         self._parent_page: 'Page' | None = None 
@@ -726,7 +732,7 @@ class DrawingCanvas(QWidget):
             painter.drawPath(path)
 
         # --- Aktif Geçici Çizimi Çiz (TABLET İLE KULLANILAN - Kuyruklu Yıldız Efekti) ---
-        if self.temporary_drawing_active and self.current_temporary_line_points and len(self.current_temporary_line_points) > 1:
+        if self.current_temporary_line_points and len(self.current_temporary_line_points) > 1:
             painter.save()
             
             base_color = self.temp_pointer_color # QColor
@@ -1786,15 +1792,29 @@ class DrawingCanvas(QWidget):
                         something_changed = True
                 else:
                     something_changed = True
-        # --- paintEvent'te aktif çizim için fade-out başlat ---
-        if self.temporary_drawing_active and len(self.current_temporary_line_points) > 1:
-            ilk_zaman = self.current_temporary_line_points[0][1]
-            if current_time - ilk_zaman > self.temporary_line_duration:
-                self.current_temporary_line_points.pop(0)
-                something_changed = True
+        
+        # --- Aktif geçici çizgi noktalarının ömrünü kontrol et ve sil ---
+        if self.current_temporary_line_points: # Liste boş değilse işle
+            # Güvenlik için, listenin en az bir elemanı olduğunu ve doğru formatta olduğunu kontrol et
+            while self.current_temporary_line_points:
+                oldest_point_data = self.current_temporary_line_points[0]
+                if isinstance(oldest_point_data, tuple) and len(oldest_point_data) == 2:
+                    oldest_point_timestamp = oldest_point_data[1]
+                    if current_time - oldest_point_timestamp > self.temporary_line_duration:
+                        self.current_temporary_line_points.pop(0)
+                        something_changed = True
+                    else:
+                        # En eski nokta henüz süresini doldurmadı, diğerlerini kontrol etmeye gerek yok
+                        break 
+                else:
+                    logging.warning(f"_check_temporary_lines: current_temporary_line_points[0] ({oldest_point_data}) beklenmedik formatta. Atlanıyor.")
+                    self.current_temporary_line_points.pop(0) # Sorunlu veriyi kaldır
+                    something_changed = True # Değişiklik oldu
+        
         self.temporary_lines = new_temporary_lines
         # Sadece bir değişiklik olduysa ve ekranda geçici çizgi veya aktif çizim varsa update çağır
-        if something_changed and (self.temporary_lines or self.temporary_drawing_active):
+        # if something_changed and (self.temporary_lines or self.temporary_drawing_active): # ESKİ KOŞUL
+        if something_changed and (self.temporary_lines or self.current_temporary_line_points): # YENİ KOŞUL
             self.update()
         # Timer'ı durdurma kodu kaldırıldı
 
@@ -1821,16 +1841,27 @@ class DrawingCanvas(QWidget):
         self.temp_pointer_width = settings.get('temp_pointer_width', self.temp_pointer_width)
         self.temporary_line_duration = settings.get('temp_pointer_duration', self.temporary_line_duration)
         
-        # --- YENİ: Görünüm Faktörlerini Ayarlardan Oku --- #
-        # Not: Ayarlar dict'indeki anahtar isimleri ('temp_glow_width_factor' vb.) 
-        #      settings dialog ve json dosyasında kullanılanlarla eşleşmeli.
-        self.temp_glow_width_factor = settings.get('temp_glow_width_factor', self.temp_glow_width_factor)
-        self.temp_core_width_factor = settings.get('temp_core_width_factor', self.temp_core_width_factor)
-        self.temp_glow_alpha_factor = settings.get('temp_glow_alpha_factor', self.temp_glow_alpha_factor)
-        self.temp_core_alpha_factor = settings.get('temp_core_alpha_factor', self.temp_core_alpha_factor)
-        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- #
+        # --- YENİ: Efekt Yoğunluğu Ayarı ---
+        # temp_pointer_intensity 0.0 (minimum efekt) ile 1.0 (maksimum efekt) arasında bir değer olmalı.
+        # Ayarlarda yoksa varsayılan 0.5 (orta yoğunluk).
+        intensity = settings.get('temp_pointer_intensity', 0.5) 
+        intensity = max(0.0, min(1.0, float(intensity))) # Değeri 0.0-1.0 aralığına sıkıştır
+
+        # Faktörleri yoğunluğa göre hesapla:
+        self.temp_core_width_factor = 0.7 - 0.4 * intensity  # 0.7 (yoğun) -> 0.3 (ince)
+        self.temp_core_alpha_factor = 0.95 - 0.15 * intensity # 0.95 (opak) -> 0.8 (az opak)
+        self.temp_glow_width_factor = 1.5 + 3.5 * intensity  # 1.5 (dar parlama) -> 5.0 (geniş parlama)
+        self.temp_glow_alpha_factor = 0.3 + 0.6 * intensity  # 0.3 (az parlama) -> 0.9 (çok parlama)
+        # --- --- --- --- --- --- --- --- --- --- --- ---
+
+        # ESKİ Faktör okumaları kaldırıldı:
+        # self.temp_glow_width_factor = settings.get('temp_glow_width_factor', self.temp_glow_width_factor)
+        # self.temp_core_width_factor = settings.get('temp_core_width_factor', self.temp_core_width_factor)
+        # self.temp_glow_alpha_factor = settings.get('temp_glow_alpha_factor', self.temp_glow_alpha_factor)
+        # self.temp_core_alpha_factor = settings.get('temp_core_alpha_factor', self.temp_core_alpha_factor)
         
-        # logging.debug(f"Canvas işaretçi ayarları güncellendi. Süre: {self.temporary_line_duration}, Faktörler: GW={self.temp_glow_width_factor:.2f}, CW={self.temp_core_width_factor:.2f}, GA={self.temp_glow_alpha_factor:.2f}, CA={self.temp_core_alpha_factor:.2f}") # Yorum satırı yapıldı
+        logging.info(f"Canvas işaretçi ayarları güncellendi. Renk: {self.temp_pointer_color.name()}, Genişlik: {self.temp_pointer_width}, Süre: {self.temporary_line_duration}, Yoğunluk: {intensity:.2f}")
+        logging.info(f"  Hesaplanan Faktörler: GWF={self.temp_glow_width_factor:.2f}, CWF={self.temp_core_width_factor:.2f}, GAF={self.temp_glow_alpha_factor:.2f}, CAF={self.temp_core_alpha_factor:.2f}")
         self.update() # Gerekirse görünümü güncelle
     # --- --- --- --- --- --- --- --- --- --- #
 

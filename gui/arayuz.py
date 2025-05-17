@@ -1016,7 +1016,9 @@ class MainWindow(QMainWindow):
                 "pen_width": 2,
                 "eraser_width": 10,
                 "fill_color": [1.0, 1.0, 1.0, 0.0],
-                "template_settings": DEFAULT_TEMPLATE_SETTINGS.copy()
+                "template_settings": DEFAULT_TEMPLATE_SETTINGS.copy(),
+                # YENİ: Geçici işaretçi yoğunluğu için varsayılan
+                "temp_pointer_intensity": 0.5
             }
             self.current_fill_color = QColor.fromRgbF(1.0, 1.0, 1.0, 0.0)
             self.current_fill_alpha = 0
@@ -1042,7 +1044,9 @@ class MainWindow(QMainWindow):
                 "pen_width": 2,
                 "eraser_width": 10,
                 "fill_color": [1.0, 1.0, 1.0, 0.0],
-                "template_settings": DEFAULT_TEMPLATE_SETTINGS.copy()
+                "template_settings": DEFAULT_TEMPLATE_SETTINGS.copy(),
+                # YENİ: Geçici işaretçi yoğunluğu için varsayılan
+                "temp_pointer_intensity": 0.5
             }
             self.current_fill_color = QColor.fromRgbF(1.0, 1.0, 1.0, 0.0)
             self.current_fill_alpha = 0
@@ -1066,6 +1070,23 @@ class MainWindow(QMainWindow):
             self.settings[key] = self.settings.get(key, default_value)
         loaded_grid_settings = {k: self.settings.get(k) for k in DEFAULT_GRID_SETTINGS if k in self.settings}
         #logging.debug(f"Grid ayarları yüklendi/varsayılanlar atandı: {loaded_grid_settings}")
+
+        # --- YENİ: temp_pointer_intensity için varsayılan atama ve eski faktörleri temizleme ---
+        if 'temp_pointer_intensity' not in self.settings:
+            self.settings['temp_pointer_intensity'] = 0.5  # Varsayılan orta yoğunluk
+            logging.info("Ayarlarda 'temp_pointer_intensity' bulunamadı, varsayılan 0.5 olarak ayarlandı.")
+
+        old_pointer_factors = [
+            'temp_glow_width_factor', 
+            'temp_core_width_factor',
+            'temp_glow_alpha_factor',
+            'temp_core_alpha_factor'
+        ]
+        for factor_key in old_pointer_factors:
+            if factor_key in self.settings:
+                del self.settings[factor_key]
+                logging.info(f"Eski işaretçi ayarı '{factor_key}' self.settings'ten kaldırıldı.")
+        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
     def _save_settings(self, settings: dict):
         """Mevcut uygulama ayarlarını (pencere boyutu, son dosyalar vb.) JSON'a kaydeder."""
@@ -1119,6 +1140,19 @@ class MainWindow(QMainWindow):
                 self.current_fill_color.blueF(),
                 self.current_fill_alpha / 255.0
             ]
+
+            # --- YENİ: Kaydetmeden önce eski işaretçi faktörlerini temizle (her ihtimale karşı) ---
+            old_pointer_factors = [
+                'temp_glow_width_factor', 
+                'temp_core_width_factor',
+                'temp_glow_alpha_factor',
+                'temp_core_alpha_factor'
+            ]
+            for factor_key in old_pointer_factors:
+                if factor_key in settings: # 'settings' parametresinden sil
+                    del settings[factor_key]
+                    logging.info(f"_save_settings: Eski işaretçi ayarı '{factor_key}' kaydedilecek ayarlardan kaldırıldı.")
+            # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
             with open(CONFIG_FILE, 'w') as f:
                 json.dump(settings, f, indent=2)

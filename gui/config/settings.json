@@ -43,7 +43,7 @@
   ],
   "window_width": 1280,
   "window_height": 729,
-  "pen_width": 2,
+  "pen_width": 3,
   "eraser_width": 10,
   "fill_color": [
     0.6666666865348816,
@@ -74,9 +74,6 @@
   "laser_pointer_size": 10,
   "temp_pointer_color": "#ffaa0000",
   "temp_pointer_width": 3.5,
-  "temp_pointer_duration": 1.5,
-  "temp_glow_width_factor": 1.1,
-  "temp_core_width_factor": 0.7000000000000002,
-  "temp_glow_alpha_factor": 0.6600000000000001,
-  "temp_core_alpha_factor": 0.6600000000000001
+  "temp_pointer_duration": 2.5,
+  "temp_pointer_intensity": 0.65
 }
