@@ -73,9 +73,9 @@
   "laser_pointer_color": "#ffff0000",
   "laser_pointer_size": 20,
   "temp_pointer_color": "#ffaa0000",
-  "temp_pointer_width": 1.5,
-  "temp_pointer_duration": 1.5,
-  "temp_glow_width_factor": 0.7999999999999999,
+  "temp_pointer_width": 2.5,
+  "temp_pointer_duration": 0.5,
+  "temp_glow_width_factor": 0.8,
   "temp_core_width_factor": 0.5,
   "temp_glow_alpha_factor": 0.51,
   "temp_core_alpha_factor": 0.51

@@ -423,6 +423,7 @@ def handle_tablet_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEve
         action_performed = True
     # --- GEÇİCİ İŞARETÇİ ARACI İÇİN BASKI --- #
     elif canvas.current_tool == ToolType.TEMPORARY_POINTER:
+        logging.info(f"TEMPORARY_POINTER PRESS: temporary_drawing_active={canvas.temporary_drawing_active}")
         canvas.temporary_drawing_active = True
         canvas.current_temporary_line_points = [(pos, 0.0)]  # İlk nokta, zaman değeri için placeholder
         action_performed = True
@@ -620,6 +621,7 @@ def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEven
         # Geçici işaretçi çizgisine yeni nokta ekle
         import time
         current_time = time.time()
+        logging.info(f"TEMPORARY_POINTER MOVE: Adding point at {pos}, time={current_time}")
         canvas.current_temporary_line_points.append((pos, current_time))
         action_performed = True
     
@@ -763,6 +765,7 @@ def handle_tablet_release(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
         
         # Geçici çizgiyi tamamla ve temporary_lines listesine ekle (süresi dolunca silinecek)
         if len(canvas.current_temporary_line_points) > 1:
+            logging.info(f"TEMPORARY_POINTER RELEASE: Finalizing with {len(canvas.current_temporary_line_points)} points")
             # Noktaları ve renk/kalınlık bilgisini sakla
             points_copy = canvas.current_temporary_line_points.copy()
             color_tuple = (canvas.temp_pointer_color.redF(), canvas.temp_pointer_color.greenF(), 

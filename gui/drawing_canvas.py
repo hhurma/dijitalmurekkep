@@ -303,6 +303,26 @@ class DrawingCanvas(QWidget):
         self.rotating_selection = False 
         self.last_cursor_pos_screen = QPointF() 
         self.select_press_point = None
+        
+        # Geçici işaretçi (kuyruklu yıldız) için değişkenler
+        self.pointer_trail_points = []
+        self.pointer_trail_duration = 4.0  # İzlerin ekranda kalma süresi (saniye)
+        self.pointer_trail_timer = QTimer(self)
+        self.pointer_trail_timer.setInterval(100)  # 100ms'de bir güncelle
+        self.pointer_trail_timer.timeout.connect(self._update_pointer_trail)
+        self.pointer_trail_timer.start()
+        
+        # Geçici çizgi değişkenleri
+        self.temp_pointer_color = QColor(255, 80, 80, 220)  # Kırmızımsı renk
+        self.temp_pointer_width = 3.0  # Çizgi kalınlığı
+        self.current_temporary_line_points = []  # Aktif çizim için noktalar
+        self.temporary_lines = []  # Tamamlanmış geçici çizgiler [(points, color, width, start_time, expired), ...]
+        self.temporary_line_duration = 8.0  # Geçici çizgilerin ekranda kalma süresi (saniye)
+        self.temp_glow_width_factor = 3.0  # Glow efekti için genişlik faktörü
+        self.temp_core_width_factor = 1.0  # Merkez çizgi için genişlik faktörü
+        self.temp_glow_alpha_factor = 0.3  # Glow efekti için saydamlık faktörü
+        self.temp_core_alpha_factor = 0.9  # Merkez çizgi için saydamlık faktörü
+        
         self.move_start_point = QPointF()
         self.resize_start_pos = QPointF()
         self.rotation_start_pos_world = QPointF() 
@@ -701,24 +721,142 @@ class DrawingCanvas(QWidget):
 
         # Geçici işaretçi izini çiz
         if self.current_tool == ToolType.TEMPORARY_POINTER and self.pointer_trail_points:
-            for glow in range(8, 0, -1):
-                path = QPainterPath()
-                path.moveTo(self.pointer_trail_points[0][0])
-                for p, _ in self.pointer_trail_points[1:]:
-                    path.lineTo(p)
-                alpha = int(60 * (glow / 8.0))
-                width = 18 * (glow / 8.0)
-                color = QColor(255, 80, 80, alpha)
-                pen = QPen(color, width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
-                painter.setPen(pen)
-                painter.drawPath(path)
+            # Dış Halo (en geniş kısım)
             path = QPainterPath()
             path.moveTo(self.pointer_trail_points[0][0])
             for p, _ in self.pointer_trail_points[1:]:
                 path.lineTo(p)
-            pen = QPen(QColor(255, 255, 255, 220), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
-            painter.setPen(pen)
+            glow_pen = QPen(QColor(255, 80, 0, 40), 25, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(glow_pen)
             painter.drawPath(path)
+            
+            # Orta katman (ana parlaklık)
+            path = QPainterPath()
+            path.moveTo(self.pointer_trail_points[0][0])
+            for p, _ in self.pointer_trail_points[1:]:
+                path.lineTo(p)
+            mid_pen = QPen(QColor(255, 160, 30, 90), 15, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(mid_pen)
+            painter.drawPath(path)
+            
+            # İç çekirdek (en parlak kısım)
+            path = QPainterPath()
+            path.moveTo(self.pointer_trail_points[0][0])
+            for p, _ in self.pointer_trail_points[1:]:
+                path.lineTo(p)
+            core_pen = QPen(QColor(255, 255, 180, 200), 5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(core_pen)
+            painter.drawPath(path)
+
+        # --- YENİ: Lazer İşaretçiyi Çiz (Ekran Koordinatlarında) --- #
+        if self.laser_pointer_active and not self.last_cursor_pos_screen.isNull():
+             painter.save()
+             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+             painter.setPen(Qt.PenStyle.NoPen)
+
+             center_pos = self.last_cursor_pos_screen
+             base_size = self.laser_pointer_size
+             radius = base_size * 0.8 # Glow efekti için yarıçapı biraz artıralım
+             
+             # Radyal gradyan oluştur
+             gradient = QRadialGradient(center_pos, radius)
+             
+             # Merkez renk (daha opak)
+             center_color = QColor(self.laser_pointer_color)
+             center_color.setAlpha(220) 
+             gradient.setColorAt(0.0, center_color)
+
+             # Orta renk (yarı saydam)
+             mid_color = QColor(self.laser_pointer_color)
+             mid_color.setAlpha(100) 
+             gradient.setColorAt(0.4, mid_color)
+             
+             # Dış renk (tamamen saydam)
+             outer_color = QColor(self.laser_pointer_color)
+             outer_color.setAlpha(0)
+             gradient.setColorAt(1.0, outer_color)
+
+             painter.setBrush(QBrush(gradient))
+             painter.drawEllipse(center_pos, radius, radius)
+             painter.restore()
+        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- -- #
+        
+        # --- YENİ: Geçici Çizgileri Çiz (tamamlanmış izler) --- #
+        if hasattr(self, 'temporary_lines') and self.temporary_lines:
+            for points, color_tuple, width, start_time, animating in self.temporary_lines:
+                if len(points) > 1:
+                    # Önce dış parlama çizgisi (glow efekti)
+                    path = QPainterPath()
+                    path.moveTo(points[0][0])
+                    for p, _ in points[1:]:
+                        path.lineTo(p)
+                    
+                    # Dış glow - daha kalın ve yarı saydam
+                    glow_width = width * 5.0  # Daha geniş glow efekti
+                    glow_color = QColor()
+                    glow_color.setRgbF(color_tuple[0], color_tuple[1], color_tuple[2], color_tuple[3] * 0.5)
+                    glow_pen = QPen(glow_color, glow_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+                    painter.setPen(glow_pen)
+                    painter.drawPath(path)
+                    
+                    # Orta katman - parlak
+                    path = QPainterPath()
+                    path.moveTo(points[0][0])
+                    for p, _ in points[1:]:
+                        path.lineTo(p)
+                    mid_width = width * 2.0
+                    mid_color = QColor()
+                    mid_color.setRgbF(1.0, 0.9, 0.5, 0.7)  # Sarımsı parlak
+                    mid_pen = QPen(mid_color, mid_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+                    painter.setPen(mid_pen)
+                    painter.drawPath(path)
+                    
+                    # İç çekirdek çizgi - ince ve beyaz
+                    path = QPainterPath()
+                    path.moveTo(points[0][0])
+                    for p, _ in points[1:]:
+                        path.lineTo(p)
+                    core_width = width * 0.8
+                    core_color = QColor(255, 255, 255, 220)  # Beyaz ve opak
+                    core_pen = QPen(core_color, core_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+                    painter.setPen(core_pen)
+                    painter.drawPath(path)
+        
+        # Aktif geçici çizimi çiz
+        if self.current_tool == ToolType.TEMPORARY_POINTER and self.temporary_drawing_active and len(self.current_temporary_line_points) > 1:
+            # Dış glow (en geniş parçalı halo efekti)
+            path = QPainterPath()
+            path.moveTo(self.current_temporary_line_points[0][0])
+            for p, _ in self.current_temporary_line_points[1:]:
+                path.lineTo(p)
+            glow_width = self.temp_pointer_width * 8.0  # Daha geniş dış halo
+            glow_color = QColor(255, 100, 30, 80)  # Turuncu çok hafif saydam
+            glow_pen = QPen(glow_color, glow_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(glow_pen)
+            painter.drawPath(path)
+            
+            # Orta katman (ana parlaklık)
+            path = QPainterPath()
+            path.moveTo(self.current_temporary_line_points[0][0])
+            for p, _ in self.current_temporary_line_points[1:]:
+                path.lineTo(p)
+            mid_width = self.temp_pointer_width * 4.0  # Daha kalın orta katman
+            mid_color = QColor(255, 180, 50, 150)  # Altın sarısı, yarı saydam
+            mid_pen = QPen(mid_color, mid_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(mid_pen)
+            painter.drawPath(path)
+            
+            # İç çekirdek (en parlak kısım)
+            path = QPainterPath()
+            path.moveTo(self.current_temporary_line_points[0][0])
+            for p, _ in self.current_temporary_line_points[1:]:
+                path.lineTo(p)
+            core_width = self.temp_pointer_width * 1.5  # Daha kalın çekirdek
+            core_color = QColor(255, 255, 255, 250)  # Neredeyse opak beyaz
+            core_pen = QPen(core_color, core_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(core_pen)
+            painter.drawPath(path)
+        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- -- #
 
         # Seçim overlayı
         canvas_drawing_helpers.draw_selection_overlay(self, painter)
@@ -1178,73 +1316,76 @@ class DrawingCanvas(QWidget):
         # self.update() # Bu metodun kendisi update çağırmamalı, çağıran yer (örn. mouseMove) yapmalı.
 
     def set_tool(self, tool: ToolType):
+        # YENİ: Bir önceki aracı kaydet
         previous_tool = self.current_tool
-        # --- YENİ: Araç değişiminde yarım kalan çizgiyi finalize et --- #
-        if self.drawing and len(self.current_line_points) > 1:
-            final_points = [QPointF(p.x(), p.y()) for p in self.current_line_points]
-            line_data = [
-                self.current_color,
-                self.current_pen_width,
-                final_points,
-                self.line_style
-            ]
-            from utils.commands import DrawLineCommand
-            command = DrawLineCommand(self, line_data)
-            self.undo_manager.execute(command)
-            if self._parent_page:
-                self._parent_page.mark_as_modified()
+        
+        # Aktif aracı güncelle
+        self.current_tool = tool
+        
+        # WIP notu düzenliyorsa iptal et
+        if self.current_text_edit:
+            self.current_text_edit.deleteLater()
+            self.current_text_edit = None
+
+        # Seçim işlemi devam ediyorsa iptal et
+        if self.drawing:
             self.drawing = False
             self.current_line_points = []
-        # --- YENİ: Araç değişiminde yarım kalan şekli finalize et --- #
-        if self.drawing_shape and (self.shape_start_point != self.shape_end_point):
-            if (self.shape_end_point - self.shape_start_point).manhattanLength() > 2:
-                shape_data = [
-                    self.current_tool,
-                    self.current_color,
-                    self.current_pen_width,
-                    self.shape_start_point,
-                    self.shape_end_point,
-                    self.line_style
-                ]
-                if self.current_tool == ToolType.RECTANGLE or self.current_tool == ToolType.CIRCLE:
-                    fill_r, fill_g, fill_b, fill_a = self.current_fill_rgba
-                    actual_fill_a = fill_a if self.fill_enabled else 0.0
-                    actual_fill_rgba_tuple = (fill_r, fill_g, fill_b, actual_fill_a)
-                    shape_data.append(actual_fill_rgba_tuple)
-                try:
-                    tool_type_cmd = shape_data[0]
-                    color_cmd = shape_data[1]
-                    width_cmd = shape_data[2]
-                    p1_cmd = shape_data[3]
-                    p2_cmd = shape_data[4]
-                    line_style_cmd = shape_data[5]
-                    fill_rgba_cmd = shape_data[6] if len(shape_data) > 6 else None
-                    from utils.commands import DrawShapeCommand
-                    command = DrawShapeCommand(self, 
-                                             tool_type_cmd, color_cmd, width_cmd, 
-                                             p1_cmd, p2_cmd, line_style_cmd, 
-                                             fill_rgba_cmd)
-                    self.undo_manager.execute(command)
-                    if self._parent_page:
-                        self._parent_page.mark_as_modified()
-                except Exception as e:
-                    logging.error(f"set_tool: Araç değişiminde şekil finalize edilirken hata: {e}. Data: {shape_data}", exc_info=True)
-            self.drawing = False
+
+        # Şekil çizimi devam ediyorsa iptal et
+        if self.drawing_shape:
             self.drawing_shape = False
-            self.shape_start_point = QPointF()
-            self.shape_end_point = QPointF()
-        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- #
-        self.current_tool = tool
-        self.drawing = False
-        self.moving_selection = False
-        self.resizing_selection = False
-        self.selecting = False
-        self.erasing = False
-        self.temporary_erasing = False
+
+        # Şekil araçları için özel durumlar (dikdörtgen, daire vs.)
+        if self.current_tool == ToolType.RECTANGLE or self.current_tool == ToolType.CIRCLE:
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        
+        # --- YENİ: Lazer İşaretçi Durumu --- #
         self.laser_pointer_active = (tool == ToolType.LASER_POINTER) # Lazer durumunu ayarla
-        # --- YENİ LOG --- #
-        # logging.debug(f"  laser_pointer_active set to: {self.laser_pointer_active}") # Yorum satırı yapıldı
-        # --- --- --- -- #
+        
+        if tool == ToolType.LASER_POINTER:
+            self.setCursor(Qt.CursorShape.BlankCursor)  # Fareyi gizle
+        # --- --- --- --- --- --- --- --- --- --- #
+        
+        # --- YENİ: Seçim ve Node Seçici Araç Geçişleri --- #
+        if previous_tool == ToolType.SELECTOR and tool != ToolType.SELECTOR:
+            # Seçimi temizle (seçimden başka araca geçtiğimizde)
+            self.selected_item_indices = []
+            self.current_handles = {}
+        
+        if previous_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR and tool != ToolType.EDITABLE_LINE_NODE_SELECTOR:
+            # Kontrol noktası vurgulamasını temizle
+            self.hovered_node_index = -1
+            self.hovered_bezier_handle_index = -1
+        # --- --- --- --- --- --- --- --- --- --- --- --- --- #
+            
+        # --- YENİ: Araç Geçişlerinde İmleç Ayarları --- #
+        if tool == ToolType.ERASER:
+            # Silgi için özel imleç - yuvarlak şeklinde
+            self.setCursor(Qt.CursorShape.CrossCursor)  # Şimdilik çarpı, ileride özel imleç yapılabilir
+        elif previous_tool == ToolType.ERASER:
+            # Silgiden çıkınca normal fare imlecine dön
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            
+        if tool == ToolType.LASER_POINTER:
+            # Lazer işaretçi için imleci gizle (çünkü işaretçi çiziyoruz)
+            self.setCursor(Qt.CursorShape.BlankCursor)
+        elif previous_tool == ToolType.LASER_POINTER:
+            # Lazer işaretçiden çıkınca normal fare imlecine dön
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            self.laser_pointer_active = False  # Lazer işaretçiyi devre dışı bırak
+            
+        # --- YENİ: Geçici İşaretçi Ayarları --- #
+        if tool == ToolType.TEMPORARY_POINTER:
+            # Geçici işaretçi seçildiğinde timeri başlat
+            if not self.pointer_trail_timer.isActive():
+                self.pointer_trail_timer.start()
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        elif previous_tool == ToolType.TEMPORARY_POINTER:
+            # Geçici işaretçiden çıkınca timer'ı durdur ve noktaları temizle
+            self.pointer_trail_points = []
+            self.temporary_drawing_active = False
+        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- #
 
         # Seçim modundan çıkıldıysa seçimi temizle
         if previous_tool == ToolType.SELECTOR and tool != ToolType.SELECTOR:
@@ -2211,18 +2352,21 @@ class DrawingCanvas(QWidget):
 
     def mousePressEvent(self, event):
         if self.current_tool == ToolType.TEMPORARY_POINTER and event.button() == Qt.MouseButton.LeftButton:
+            logging.info(f"Mouse PRESS for TEMPORARY_POINTER at {event.position()}")
             self.pointer_trail_points = [(event.position(), time.time())]
             self.update()
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
         if self.current_tool == ToolType.TEMPORARY_POINTER and event.buttons() & Qt.MouseButton.LeftButton:
+            logging.info(f"Mouse MOVE for TEMPORARY_POINTER at {event.position()}")
             self.pointer_trail_points.append((event.position(), time.time()))
             self.update()
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if self.current_tool == ToolType.TEMPORARY_POINTER and event.button() == Qt.MouseButton.LeftButton:
+            logging.info(f"Mouse RELEASE for TEMPORARY_POINTER at {event.position()}")
             pass  # Çizim bitince iz fade-out ile silinecek
         super().mouseReleaseEvent(event)
 
