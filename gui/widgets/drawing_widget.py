@@ -53,6 +53,72 @@ class DrawingWidget(QWidget):
         # logging.debug(f"DrawingWidget ({id(self)}): No CP found at {world_pos}")
         return None
 
+    # YENİ METOD: Kontrol noktasını seçer
+    def select_control_point(self, world_pos: QPointF, tolerance: float = 10.0) -> bool:
+        """Kontrol noktasını seçer. Seçim başarılıysa True döndürür."""
+        cp_info = self._get_control_point_at(world_pos, tolerance)
+        if cp_info:
+            stroke_idx, cp_idx = cp_info
+            self.selected_control_point = cp_info
+            # Taşıma başlangıç pozisyonunu sakla (numpy array olarak)
+            stroke_data = self.strokes[stroke_idx]
+            cp_np = stroke_data['control_points'][cp_idx]
+            self.drag_start_cp_pos = cp_np.copy()  # Başlangıç pozisyonunun kopyasını al
+            logging.debug(f"DrawingWidget: Control point selected at stroke {stroke_idx}, cp_idx {cp_idx}")
+            self.update()
+            return True
+        else:
+            self.selected_control_point = None
+            self.drag_start_cp_pos = None
+            return False
+
+    # YENİ METOD: Seçili kontrol noktasını taşır
+    def move_control_point(self, world_pos: QPointF) -> bool:
+        """Seçili kontrol noktasını yeni pozisyona taşır. Başarılıysa True döndürür."""
+        if not self.selected_control_point:
+            return False
+        
+        stroke_idx, cp_idx = self.selected_control_point
+        if 0 <= stroke_idx < len(self.strokes):
+            stroke_data = self.strokes[stroke_idx]
+            control_points = stroke_data.get('control_points')
+            
+            if control_points and 0 <= cp_idx < len(control_points):
+                # Kontrol noktasını doğrudan güncelle - orijinal kodda olduğu gibi basit atama
+                control_points[cp_idx] = np.array([world_pos.x(), world_pos.y()])
+                
+                # Eğrinin yeniden çizilmesi için sadece update() çağır
+                # tck değişkenleri ve curve_points doğrudan paintEvent'te hesaplanacak
+                self.update()
+                return True
+                
+        return False
+
+    # YENİ METOD: Kontrol noktası taşımayı bitirir
+    def release_control_point(self) -> tuple:
+        """Kontrol noktası taşımayı bitirir ve eski/yeni pozisyon bilgisini döndürür.
+        (stroke_idx, cp_idx, old_pos, new_pos) ya da (None, None, None, None) şeklinde tuple döndürür.
+        """
+        result = (None, None, None, None)  # (stroke_idx, cp_idx, old_pos, new_pos)
+        
+        if self.selected_control_point and self.drag_start_cp_pos is not None:
+            stroke_idx, cp_idx = self.selected_control_point
+            if 0 <= stroke_idx < len(self.strokes):
+                stroke_data = self.strokes[stroke_idx]
+                control_points = stroke_data.get('control_points')
+                
+                if control_points and 0 <= cp_idx < len(control_points):
+                    old_pos = self.drag_start_cp_pos.copy()  # Başlangıç pozisyonu
+                    new_pos = control_points[cp_idx].copy()  # Güncel pozisyon
+                    result = (stroke_idx, cp_idx, old_pos, new_pos)
+        
+        # Taşıma durumunu temizle
+        self.selected_control_point = None
+        self.drag_start_cp_pos = None
+        self.update()
+        
+        return result
+
     def tabletPressEvent(self, world_pos: QPointF, event: QTabletEvent):
         # Bu metodun çağrıldığı yerdeki (DrawingCanvas) current_tool kontrolü
         # zaten hangi modda olduğumuzu belirlemeli.
@@ -122,14 +188,6 @@ class DrawingWidget(QWidget):
                     # Şimdi her bir satırı (yani [x,y] çiftini) alıp ayrı bir np.array olarak listeye ekliyoruz.
                     control_points_list_np = [np.array(cp_row) for cp_row in control_points_combined_np_array]
 
-                    # YENİ LOG: control_points_list_np'nin formatını kontrol et
-                    #logging.debug(f"DrawingWidget tabletReleaseEvent: control_points_list_np (len: {len(control_points_list_np) if control_points_list_np is not None else 'None'}):")
-                    if control_points_list_np:
-                        for idx, cp_arr in enumerate(control_points_list_np):
-                            #logging.debug(f"  CP[{idx}]: type={type(cp_arr)}, shape={cp_arr.shape if hasattr(cp_arr, 'shape') else 'N/A'}, content={cp_arr}")
-                            pass
-                    # YENİ LOG SONU
-
                     created_stroke_data = { # new_stroke_data -> created_stroke_data
                         'control_points': control_points_list_np, # list of np.array([x,y])
                         'knots': tck[0], # numpy array
@@ -138,6 +196,8 @@ class DrawingWidget(QWidget):
                         'thickness': self.default_line_thickness, # YENİ: Kalınlığı kaydet
                         'color': self.default_stroke_color, # YENİ: Rengi kaydet
                         'original_points_with_pressure': original_points_with_pressure # YENİ: Orijinal noktaları sakla
+                        # curve_points değişkenini burada saklamayı kaldırdık, 
+                        # orijinal DrawingWidget.py'deki gibi her çizimde hesaplanacak
                     }
                     # self.strokes.append(new_stroke_data) # <-- BU SATIR KALDIRILDI
                     #logging.debug(f"DrawingWidget ID: {id(self)}. tabletReleaseEvent: Storing new stroke with thickness: {self.default_line_thickness}")
@@ -180,33 +240,18 @@ class DrawingWidget(QWidget):
             # YENİ LOG: Çizim sırasındaki kalınlık ve tipi
             #logging.debug(f"DrawingWidget ID: {id(self)}. paintEvent: Drawing stroke {i} with effective_thickness: {stroke_thickness} (type: {type(stroke_thickness)}). (From stroke: {stroke_thickness_from_data}, Current widget default: {self.default_line_thickness})")
 
-            # Reconstruct tck from stored components
-            try:
-                # Emin olmak için control_points'in numpy array ve doğru yapıda olduğunu varsayalım
-                # veya burada bir kontrol/dönüşüm eklenebilir.
-                tck = (knots, np.asarray(control_points).T, degree)
-            except Exception as e:
-                #logging.error(f"DrawingWidget ID: {id(self)}. paintEvent: Error reconstructing tck for stroke {i}: {e}. Control points: {control_points}")
-                continue # Bu stroke'u atla
-
-            # Define pen for this specific stroke
-            try:
-                # stroke_thickness'ın float olduğundan emin olalım
-                pen = QPen(Qt.GlobalColor.black, float(stroke_thickness), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
-                painter.setPen(pen)
-            except Exception as e:
-                #logging.error(f"DrawingWidget ID: {id(self)}. paintEvent: Error creating QPen for stroke {i} with thickness {stroke_thickness}: {e}")
-                # Belki varsayılan bir pen ile devam edilebilir veya bu stroke atlanabilir
-                default_pen_for_error = QPen(Qt.GlobalColor.magenta, 1) # Hata durumunda farklı renkte çiz
-                painter.setPen(default_pen_for_error)
-
             # Draw the B-spline curve
             try:
-                x_fine, y_fine = splev(np.linspace(0, u[-1], 100), tck)
+                # Orijinal kod yaklaşımı: tck'dan doğrudan eğriyi hesapla
+                # Curve_points'i cache'leme yerine her seferinde hesaplayalım
+                tck = (knots, control_points.T, degree)  # Control points direkt .T ile çevrilir
+                x_fine, y_fine = splev(np.linspace(0, u[-1], 200), tck)
+                
                 path = QPainterPath()
                 path.moveTo(QPointF(x_fine[0], y_fine[0]))
                 for i in range(1, len(x_fine)):
                     path.lineTo(QPointF(x_fine[i], y_fine[i]))
+                
                 painter.drawPath(path)
             except Exception as e:
                 #logging.error(f"DrawingWidget ID: {id(self)}. paintEvent: Error drawing B-spline for stroke {i}: {e}")
@@ -214,9 +259,27 @@ class DrawingWidget(QWidget):
 
             # Draw control points
             painter.save() # Save painter state
-            painter.setPen(QPen(Qt.GlobalColor.red, 5, Qt.PenStyle.SolidLine))
-            for cp in control_points:
-                painter.drawPoint(QPointF(cp[0], cp[1]))
+            
+            # Seçili kontrol noktası varsa farklı bir renk kullan
+            if self.selected_control_point and self.selected_control_point[0] == i:
+                selected_idx = self.selected_control_point[1]
+                # Tüm kontrol noktalarını çiz
+                for cp_idx, cp in enumerate(control_points):
+                    if cp_idx == selected_idx:
+                        # Seçili nokta için özel çizim (daha büyük ve farklı renk)
+                        painter.setPen(QPen(Qt.GlobalColor.cyan, 2, Qt.PenStyle.SolidLine))
+                        painter.setBrush(Qt.GlobalColor.red)
+                        painter.drawRect(QPointF(cp[0], cp[1]).x() - 5, QPointF(cp[0], cp[1]).y() - 5, 10, 10)
+                    else:
+                        # Diğer noktalar normal
+                        painter.setPen(QPen(Qt.GlobalColor.red, 5, Qt.PenStyle.SolidLine))
+                        painter.drawPoint(QPointF(cp[0], cp[1]))
+            else:
+                # Hiç seçili nokta yoksa, standart çizim
+                painter.setPen(QPen(Qt.GlobalColor.red, 5, Qt.PenStyle.SolidLine))
+                for cp in control_points:
+                    painter.drawPoint(QPointF(cp[0], cp[1]))
+            
             painter.restore() # Restore painter state
 
         # Draw the current raw stroke with pressure sensitivity

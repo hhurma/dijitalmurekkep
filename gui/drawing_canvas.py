@@ -989,6 +989,37 @@ class DrawingCanvas(QWidget):
                 pass
             self.update()
             return # EDITABLE_LINE için canvas_tablet_handler'a gitme
+            
+        # --- Özel durum: EDITABLE_LINE_NODE_SELECTOR ---
+        # NODE_SELECTOR aracı da b_spline_widget içindeki seç-taşı fonksiyonlarını kullanır
+        elif self.current_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR:
+            if self.b_spline_widget:
+                if event_type == QTabletEvent.Type.TabletPress:
+                    # Kontrol noktasını seçmeyi dene
+                    selected = self.b_spline_widget.select_control_point(world_pos, tolerance=10.0)
+                    if selected:
+                        logging.debug(f"[EDITABLE_LINE_NODE_SELECTOR] Kontrol noktası seçildi.")
+                    self.update()
+                elif event_type == QTabletEvent.Type.TabletMove:
+                    # Eğer bir kontrol noktası seçiliyse, taşı
+                    if self.b_spline_widget.selected_control_point is not None:
+                        self.b_spline_widget.move_control_point(world_pos)
+                        self.update()
+                elif event_type == QTabletEvent.Type.TabletRelease:
+                    # Kontrol noktası taşımayı tamamla
+                    if self.b_spline_widget.selected_control_point is not None:
+                        # release_control_point'ten 4 değer dönüyor: stroke_idx, cp_idx, old_pos, new_pos
+                        stroke_idx, cp_idx, old_pos, new_pos = self.b_spline_widget.release_control_point()
+                        if stroke_idx is not None:
+                            # Komutu oluştur ve uygula
+                            command = UpdateBsplineControlPointCommand(self, stroke_idx, cp_idx, old_pos, new_pos)
+                            self.undo_manager.execute(command)
+                            if self._parent_page:
+                                self._parent_page.mark_as_modified()
+                    self.update()
+                    
+            # EDITABLE_LINE_NODE_SELECTOR için canvas_tablet_handler'a gitme
+            return
         
         # --- Diğer tüm araçlar için canvas_tablet_handler'ı kullan ---
         if event_type == QTabletEvent.Type.TabletPress:

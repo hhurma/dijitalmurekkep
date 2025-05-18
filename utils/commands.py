@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import QGraphicsPixmapItem
 import uuid
 import hashlib
 import numpy as np # YENİ: NumPy importu eklendi
+from scipy.interpolate import splev  # B-spline eğrisi hesaplaması için eklendi
 
 from gui.enums import ToolType # ToolType import'u EKLENDİ
 
@@ -1286,7 +1287,12 @@ class UpdateBsplineControlPointCommand(Command):
                 stroke_data = self.canvas.b_spline_strokes[self.stroke_idx]
                 if 'control_points' in stroke_data and \
                    0 <= self.cp_idx < len(stroke_data['control_points']):
+                    # DrawingWidget.py'deki gibi direkt kontrol noktasını değiştir
                     stroke_data['control_points'][self.cp_idx] = pos_array.copy()
+                    
+                    # Tüm curve_points hesaplama mantığını kaldırdık,
+                    # paintEvent bunu kendisi her frame'de hesaplayacak
+                    
                     self.canvas.update()
                     if hasattr(self.canvas, 'content_changed'):
                         self.canvas.content_changed.emit()
