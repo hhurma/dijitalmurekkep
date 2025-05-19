@@ -140,160 +140,127 @@ class DrawingWidget(QWidget):
             self.current_stroke.append((world_pos, event.pressure()))
             self.update()
 
-    def tabletReleaseEvent(self, world_pos: QPointF, event: QTabletEvent):
-        # Aynı şekilde, bu metod da sadece yeni çizgi biterken çağrılmalı.
-        # NODE_SELECTOR modunda komut oluşturma DrawingCanvas'ta.
-        created_stroke_data = None # Dönecek değeri başlat
+    def _preprocess_stroke_points(self, stroke_points_with_pressure):
+        # Ardışık tekrarlı noktaları kaldır
+        if not stroke_points_with_pressure:
+            return []
+        unique_points_with_pressure = [stroke_points_with_pressure[0]]
+        for i in range(1, len(stroke_points_with_pressure)):
+            if stroke_points_with_pressure[i][0] != stroke_points_with_pressure[i-1][0]:
+                unique_points_with_pressure.append(stroke_points_with_pressure[i])
+        return unique_points_with_pressure
+
+    def _downsample_points(self, points_with_pressure, factor=5, min_points=4):
+        if len(points_with_pressure) < min_points:
+            return points_with_pressure
+        downsampled = points_with_pressure[::factor]
+        if len(downsampled) < min_points:
+            return points_with_pressure
+        return downsampled
+
+    def tabletReleaseEvent(self, world_pos: QPointF, event):
+        created_stroke_data = None
         if self.current_stroke:
             if len(self.current_stroke) > 1:
-                # B-spline oluştur ve sakla
-                points_np = np.array([[p.x(), p.y()] for p, pressure in self.current_stroke])
-                original_points_with_pressure = [(p, pressure) for p, pressure in self.current_stroke]
-                
-                # YENİ: Minimum nokta sayısı kontrolü
-                k = 3 # Kübik spline için derece
+                # Ardışık tekrarlı noktaları kaldır
+                unique_points_with_pressure = self._preprocess_stroke_points(self.current_stroke)
+                # Downsampling uygula
+                downsampled_points_with_pressure = self._downsample_points(unique_points_with_pressure, factor=5, min_points=4)
+                points_np = np.array([[p.x(), p.y()] for p, pressure in downsampled_points_with_pressure])
+                k = 3  # Kübik spline
                 if points_np.shape[0] < k + 1:
                     logging.warning(f"DrawingWidget: B-spline oluşturmak için yeterli nokta yok ({points_np.shape[0]} adet). En az {k+1} nokta gerekli. Stroke atlanıyor.")
-                    self.current_stroke = [] # Mevcut stroke'u temizle
+                    self.current_stroke = []
                     self.update()
-                    return None # Fonksiyondan çık ve None döndür
-
+                    return None
                 try:
-                    # smoothing değerini artırarak kontrol noktası sayısını azaltmayı dene
-                    # Önceki sabit değer 5.0 idi. Şimdi nokta sayısına orantılı yapalım.
-                    smoothing_factor = points_np.shape[0] * 0.75 
-                    #logging.debug(f"DrawingWidget: splprep çağrılıyor. Nokta sayısı: {points_np.shape[0]}, Smoothing faktörü: {smoothing_factor:.2f}, Derece: {k}")
-                    tck, u = splprep(points_np.T, s=smoothing_factor, k=k)
-                    # tck = (knots, control_points_scipy, degree)
-                    # control_points_scipy, scipy'den (K, Ndim) şeklinde bir array döner (K kontrol noktası, Ndim=2)
-                    
-                    # Düzeltilmiş kontrol noktası saklama:
-                    # tck[1] muhtemelen [array_x_coords, array_y_coords] listesini veya (2,K) array'ini veriyor.
-                    # Bunları birleştirip (K,2) formatına getirelim.
-                    if isinstance(tck[1], list) and len(tck[1]) == 2: # Eğer [array_x, array_y] listesi ise
-                        control_points_x = tck[1][0]
-                        control_points_y = tck[1][1]
-                        # Stack them vertically (as columns) then transpose to get (K, 2)
-                        control_points_combined_np_array = np.vstack((control_points_x, control_points_y)).T
-                    elif isinstance(tck[1], np.ndarray) and tck[1].shape[0] == 2: # Eğer (2,K) ndarray ise
+                    s_factor = len(points_np) * 3.0  # Dinamik smoothing
+                    tck, u = splprep(points_np.T, s=s_factor, k=k)
+                    # Kontrol noktalarını (K,2) formatına getir
+                    if isinstance(tck[1], list) and len(tck[1]) == 2:
+                        control_points_combined_np_array = np.vstack((tck[1][0], tck[1][1])).T
+                    elif isinstance(tck[1], np.ndarray) and tck[1].shape[0] == 2:
                         control_points_combined_np_array = tck[1].T
-                    elif isinstance(tck[1], np.ndarray) and tck[1].shape[1] == 2: # Eğer (K,2) ndarray ise (zaten istediğimiz format)
+                    elif isinstance(tck[1], np.ndarray) and tck[1].shape[1] == 2:
                         control_points_combined_np_array = tck[1]
                     else:
                         logging.error(f"DrawingWidget: Beklenmeyen tck[1] formatı: {type(tck[1])}, shape: {tck[1].shape if hasattr(tck[1], 'shape') else 'N/A'}")
-                        # Hata durumunda boş liste ile devam etmeyi veya hata fırlatmayı seçebiliriz.
-                        control_points_list_np = [] # Geçici olarak boş liste
-                        raise ValueError("Beklenmeyen tck[1] formatı splprep'ten") # veya raise
-
-                    # Şimdi her bir satırı (yani [x,y] çiftini) alıp ayrı bir np.array olarak listeye ekliyoruz.
+                        raise ValueError("Beklenmeyen tck[1] formatı splprep'ten")
                     control_points_list_np = [np.array(cp_row) for cp_row in control_points_combined_np_array]
-
-                    created_stroke_data = { # new_stroke_data -> created_stroke_data
-                        'control_points': control_points_list_np, # list of np.array([x,y])
-                        'knots': tck[0], # numpy array
-                        'degree': tck[2], # int
-                        'u': u, # numpy array (parametre değerleri)
-                        'thickness': self.default_line_thickness, # YENİ: Kalınlığı kaydet
-                        'color': self.default_stroke_color, # YENİ: Rengi kaydet
-                        'original_points_with_pressure': original_points_with_pressure # YENİ: Orijinal noktaları sakla
-                        # curve_points değişkenini burada saklamayı kaldırdık, 
-                        # orijinal DrawingWidget.py'deki gibi her çizimde hesaplanacak
+                    x_fine, y_fine = splev(np.linspace(0, u[-1], 2000), tck)
+                    curve_points_np = np.column_stack((x_fine, y_fine))
+                    created_stroke_data = {
+                        'control_points': control_points_list_np,
+                        'knots': tck[0],
+                        'degree': tck[2],
+                        'u': u,
+                        'thickness': self.default_line_thickness,
+                        'color': self.default_stroke_color,
+                        'original_points_with_pressure': downsampled_points_with_pressure,
+                        'curve_points': curve_points_np
                     }
-                    # self.strokes.append(new_stroke_data) # <-- BU SATIR KALDIRILDI
-                    #logging.debug(f"DrawingWidget ID: {id(self)}. tabletReleaseEvent: Storing new stroke with thickness: {self.default_line_thickness}")
-                    #logging.debug(f"DrawingWidget: New B-spline stroke added to self.strokes. Count: {len(self.strokes)}")
                 except Exception as e:
-                    #logging.error(f"DrawingWidget: B-spline oluşturulurken hata: {e}", exc_info=True)
-                    created_stroke_data = None # Hata durumunda None ata
+                    logging.error(f"DrawingWidget: B-spline oluşturulurken hata: {e}", exc_info=True)
+                    created_stroke_data = None
             self.current_stroke = []
         self.update()
-        return created_stroke_data # Oluşturulan stroke verisini veya None döndür
+        return created_stroke_data
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        # Default pen for B-splines - This will be set per stroke now
-        # pen = QPen(Qt.GlobalColor.black, 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
-        # painter.setPen(pen)
-
-        # Draw completed B-splines and control points
-        if not self.strokes:
-            #logging.debug(f"DrawingWidget ID: {id(self)}. paintEvent: self.strokes is empty. Nothing to draw for B-splines.") # YENİ LOG
-            pass
-        for i, stroke_data in enumerate(self.strokes): # YENİ: index için enumerate
-            #logging.debug(f"DrawingWidget ID: {id(self)}. paintEvent: Processing stroke {i}. Data keys: {list(stroke_data.keys()) if isinstance(stroke_data, dict) else 'Not a dict'}") # YENİ LOG
-            pass
-            control_points = stroke_data.get('control_points') # .get() ile daha güvenli erişim
+        for i, stroke_data in enumerate(self.strokes):
+            control_points = stroke_data.get('control_points')
             knots = stroke_data.get('knots')
             degree = stroke_data.get('degree')
             u = stroke_data.get('u')
-            
             if control_points is None or knots is None or degree is None or u is None:
-                #logging.error(f"DrawingWidget ID: {id(self)}. paintEvent: Stroke {i} is missing critical B-spline data. Skipping.")
-                continue # Bu stroke'u atla
-
-            # Get original points with pressure (not directly used for B-spline path rendering here)
-            # original_points_with_pressure = stroke_data.get('original_points_with_pressure', []) # Yorum satırı yapıldı
-            stroke_thickness_from_data = stroke_data.get('thickness') # YENİ: Önce direkt al
-            stroke_thickness = stroke_thickness_from_data if stroke_thickness_from_data is not None else self.default_line_thickness # YENİ: Sonra fallback
-
-            # YENİ LOG: Çizim sırasındaki kalınlık ve tipi
-            #logging.debug(f"DrawingWidget ID: {id(self)}. paintEvent: Drawing stroke {i} with effective_thickness: {stroke_thickness} (type: {type(stroke_thickness)}). (From stroke: {stroke_thickness_from_data}, Current widget default: {self.default_line_thickness})")
-
-            # Draw the B-spline curve
+                continue
+            stroke_thickness = stroke_data.get('thickness', self.default_line_thickness)
             try:
-                # Orijinal kod yaklaşımı: tck'dan doğrudan eğriyi hesapla
-                # Curve_points'i cache'leme yerine her seferinde hesaplayalım
-                tck = (knots, control_points.T, degree)  # Control points direkt .T ile çevrilir
-                x_fine, y_fine = splev(np.linspace(0, u[-1], 200), tck)
-                
-                path = QPainterPath()
-                path.moveTo(QPointF(x_fine[0], y_fine[0]))
-                for i in range(1, len(x_fine)):
-                    path.lineTo(QPointF(x_fine[i], y_fine[i]))
-                
+                if 'curve_points' in stroke_data and stroke_data['curve_points'] is not None:
+                    curve_points = stroke_data['curve_points']
+                    path = QPainterPath()
+                    path.moveTo(QPointF(curve_points[0][0], curve_points[0][1]))
+                    for j in range(1, len(curve_points)):
+                        path.lineTo(QPointF(curve_points[j][0], curve_points[j][1]))
+                else:
+                    tck = (knots, np.array(control_points).T, degree)
+                    x_fine, y_fine = splev(np.linspace(0, u[-1], 2000), tck)
+                    path = QPainterPath()
+                    path.moveTo(QPointF(x_fine[0], y_fine[0]))
+                    for j in range(1, len(x_fine)):
+                        path.lineTo(QPointF(x_fine[j], y_fine[j]))
+                stroke_pen = QPen(Qt.GlobalColor.black, stroke_thickness, Qt.PenStyle.SolidLine, 
+                                 Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+                stroke_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                painter.setPen(stroke_pen)
                 painter.drawPath(path)
             except Exception as e:
-                #logging.error(f"DrawingWidget ID: {id(self)}. paintEvent: Error drawing B-spline for stroke {i}: {e}")
-                continue # Bu stroke'u atla
-
-            # Draw control points
-            painter.save() # Save painter state
-            
-            # Seçili kontrol noktası varsa farklı bir renk kullan
+                continue
+            painter.save()
             if self.selected_control_point and self.selected_control_point[0] == i:
                 selected_idx = self.selected_control_point[1]
-                # Tüm kontrol noktalarını çiz
                 for cp_idx, cp in enumerate(control_points):
                     if cp_idx == selected_idx:
-                        # Seçili nokta için özel çizim (daha büyük ve farklı renk)
                         painter.setPen(QPen(Qt.GlobalColor.cyan, 2, Qt.PenStyle.SolidLine))
                         painter.setBrush(Qt.GlobalColor.red)
                         painter.drawRect(QPointF(cp[0], cp[1]).x() - 5, QPointF(cp[0], cp[1]).y() - 5, 10, 10)
                     else:
-                        # Diğer noktalar normal
                         painter.setPen(QPen(Qt.GlobalColor.red, 5, Qt.PenStyle.SolidLine))
                         painter.drawPoint(QPointF(cp[0], cp[1]))
             else:
-                # Hiç seçili nokta yoksa, standart çizim
                 painter.setPen(QPen(Qt.GlobalColor.red, 5, Qt.PenStyle.SolidLine))
                 for cp in control_points:
                     painter.drawPoint(QPointF(cp[0], cp[1]))
-            
-            painter.restore() # Restore painter state
-
-        # Draw the current raw stroke with pressure sensitivity
+            painter.restore()
         if len(self.current_stroke) > 1:
-            painter.save() # Save painter state
-            # Draw segments with varying thickness based on pressure
+            painter.save()
             for i in range(len(self.current_stroke) - 1):
                 point1, pressure1 = self.current_stroke[i]
                 point2, pressure2 = self.current_stroke[i+1]
-
-                # Map pressure (0.0 to 1.0) to pen width (e.g., 1 to 10)
-                pen_width = 1 + pressure1 * 9 # Vary from 1 to 10
-
+                pen_width = 1 + pressure1 * 9
                 pen = QPen(Qt.GlobalColor.blue, pen_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
                 painter.setPen(pen)
                 painter.drawLine(point1, point2)
-            painter.restore() # Restore painter state 
+            painter.restore() 

@@ -1290,6 +1290,24 @@ class UpdateBsplineControlPointCommand(Command):
                     # DrawingWidget.py'deki gibi direkt kontrol noktasını değiştir
                     stroke_data['control_points'][self.cp_idx] = pos_array.copy()
                     
+                    # Eğer istersen, daha pürüzsüz çizim için burada curve_points hesaplayabilirsin
+                    # Bu zorunlu değil, ama özellikle karmaşık spiraller için faydalı olabilir
+                    try:
+                        knots = stroke_data.get('knots')
+                        degree = stroke_data.get('degree')
+                        u = stroke_data.get('u')
+                        control_points = stroke_data.get('control_points')
+                        
+                        if knots is not None and degree is not None and u is not None and control_points is not None:
+                            # Daha pürüzsüz rendering için önbellekleme opsiyonel
+                            tck = (knots, np.array(control_points).T, degree)
+                            # 2000 nokta kullanarak çok yüksek çözünürlüklü eğri
+                            x_fine, y_fine = splev(np.linspace(0, u[-1], 2000), tck)
+                            stroke_data['curve_points'] = np.column_stack((x_fine, y_fine))
+                    except Exception as e:
+                        # Hata olursa sessizce geç, paintEvent zaten çizecek
+                        pass
+                    
                     # Tüm curve_points hesaplama mantığını kaldırdık,
                     # paintEvent bunu kendisi her frame'de hesaplayacak
                     
