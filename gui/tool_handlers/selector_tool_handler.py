@@ -276,10 +276,21 @@ def handle_selector_resize_move(canvas: 'DrawingCanvas', pos: QPointF, event: QT
             shape_data = canvas.shapes[shape_index]
             tool_type = shape_data[0]
             if tool_type == ToolType.LINE:
+                tolerance_px = 8
                 if canvas.grabbed_handle_type == 'start':
-                    canvas.shapes[shape_index][3] = pos
+                    new_pos = pos
+                    if getattr(canvas, 'snap_lines_to_grid', False):
+                        snap_pos = canvas._snap_point_to_grid(new_pos)
+                        if (new_pos - snap_pos).manhattanLength() <= tolerance_px:
+                            new_pos = snap_pos
+                    canvas.shapes[shape_index][3] = new_pos
                 elif canvas.grabbed_handle_type == 'end':
-                    canvas.shapes[shape_index][4] = pos
+                    new_pos = pos
+                    if getattr(canvas, 'snap_lines_to_grid', False):
+                        snap_pos = canvas._snap_point_to_grid(new_pos)
+                        if (new_pos - snap_pos).manhattanLength() <= tolerance_px:
+                            new_pos = snap_pos
+                    canvas.shapes[shape_index][4] = new_pos
                 canvas.update()
                 return
                 
