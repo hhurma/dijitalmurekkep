@@ -64,7 +64,7 @@ def handle_shape_press(canvas: 'DrawingCanvas', pos: QPointF):
     canvas.drawing = True
     canvas.drawing_shape = True
     # --- YENİ: Grid'e snap --- #
-    if canvas.current_tool == ToolType.LINE and getattr(canvas, 'snap_lines_to_grid', False):
+    if canvas.current_tool in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE] and getattr(canvas, 'snap_lines_to_grid', False):
         canvas.shape_start_point = canvas._snap_point_to_grid(pos)
         canvas.shape_end_point = canvas._snap_point_to_grid(pos)
     else:
@@ -77,7 +77,7 @@ def handle_shape_move(canvas: 'DrawingCanvas', pos: QPointF):
     """Şekil çizimi için hareket olayını yönetir."""
     if canvas.drawing_shape: # Sadece şekil çizimi aktifse güncelle
         # --- YENİ: Grid'e snap --- #
-        if canvas.current_tool == ToolType.LINE and getattr(canvas, 'snap_lines_to_grid', False):
+        if canvas.current_tool in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE] and getattr(canvas, 'snap_lines_to_grid', False):
             canvas.shape_end_point = canvas._snap_point_to_grid(pos)
         else:
             canvas.shape_end_point = pos
@@ -88,7 +88,7 @@ def handle_shape_release(canvas: 'DrawingCanvas', pos: QPointF):
     """Şekil çizimi için bırakma olayını yönetir."""
     if canvas.drawing_shape:
         # --- YENİ: Grid'e snap --- #
-        if canvas.current_tool == ToolType.LINE and getattr(canvas, 'snap_lines_to_grid', False):
+        if canvas.current_tool in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE] and getattr(canvas, 'snap_lines_to_grid', False):
             canvas.shape_end_point = canvas._snap_point_to_grid(pos)
         else:
             canvas.shape_end_point = pos # Son konumu al

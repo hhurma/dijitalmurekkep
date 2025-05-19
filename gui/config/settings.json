@@ -23,7 +23,7 @@
   "grid_visible_on_snap": true,
   "grid_show_for_line_tool_only": false,
   "grid_apply_to_all_pages": true,
-  "grid_thick_line_interval": 4,
+  "grid_thick_line_interval": 5,
   "grid_thin_color": [
     0.0,
     0.0,
@@ -36,7 +36,7 @@
     0.0,
     0.1568627450980392
   ],
-  "grid_thin_width": 0.9999999999999992,
+  "grid_thin_width": 1.0,
   "grid_thick_width": 1.0,
   "recent_files": [
     "C:/Users/gilan/Desktop/programlama/draw_new_rules/deneme.dnd"
