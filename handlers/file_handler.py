@@ -193,11 +193,18 @@ def handle_load_notebook(main_window: 'MainWindow', page_manager: 'PageManager')
             # Yüklenen veriyi canvas'a ata
             new_page.get_canvas().lines = page_content.get('lines', [])
             new_page.get_canvas().shapes = page_content.get('shapes', [])
-            
-            # --- YENİ: B-Spline strokes verilerini canvas'a ata --- #
+              # --- YENİ: B-Spline strokes verilerini canvas'a ata --- #
             if 'bspline_strokes' in page_content and hasattr(new_page.get_canvas(), 'b_spline_strokes'):
-                new_page.get_canvas().b_spline_strokes = page_content.get('bspline_strokes', [])
-                logging.debug(f"B-Spline strokes yüklendi: {len(new_page.get_canvas().b_spline_strokes)} adet")
+                canvas = new_page.get_canvas()
+                # B-spline veri listesini canvas'a ata
+                b_spline_data = page_content.get('bspline_strokes', [])
+                canvas.b_spline_strokes = b_spline_data
+                
+                # ÖNEMLİ: b_spline_widget.strokes referansını güncelle (bu olmadığında görsel olarak çizilmiyor)
+                if hasattr(canvas, 'b_spline_widget') and canvas.b_spline_widget:
+                    canvas.b_spline_widget.strokes = canvas.b_spline_strokes
+                    
+                logging.debug(f"B-Spline strokes yüklendi: {len(canvas.b_spline_strokes)} adet")
             # --- --- --- --- --- --- --- --- --- --- --- --- --- --- #
 
             # --- YENİ: Resim verisini Page nesnesine ata --- #
@@ -521,10 +528,16 @@ def handle_open_recent_file(main_window: 'MainWindow', page_manager: 'PageManage
             canvas = new_page.get_canvas()
             canvas.lines = page_content.get('lines', [])
             canvas.shapes = page_content.get('shapes', [])
-            
-            # --- YENİ: B-Spline strokes verilerini canvas'a ata --- #
+              # --- YENİ: B-Spline strokes verilerini canvas'a ata --- #
             if 'bspline_strokes' in page_content and hasattr(canvas, 'b_spline_strokes'):
-                canvas.b_spline_strokes = page_content.get('bspline_strokes', [])
+                # B-spline veri listesini canvas'a ata
+                b_spline_data = page_content.get('bspline_strokes', [])
+                canvas.b_spline_strokes = b_spline_data
+                
+                # ÖNEMLİ: b_spline_widget.strokes referansını güncelle (bu olmadığında görsel olarak çizilmiyor)
+                if hasattr(canvas, 'b_spline_widget') and canvas.b_spline_widget:
+                    canvas.b_spline_widget.strokes = canvas.b_spline_strokes
+                    
                 logging.debug(f"B-Spline strokes yüklendi: {len(canvas.b_spline_strokes)} adet")
             # --- --- --- --- --- --- --- --- --- --- --- --- --- --- #
 
