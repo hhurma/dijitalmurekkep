@@ -334,18 +334,22 @@ def handle_selector_resize_move(canvas: 'DrawingCanvas', pos: QPointF, event: QT
                                 canvas.shapes[index][3] = transformed_points
                             else:
                                 # Diğer şekiller için standart işlemler
-                                original_p1 = original_item_data[3]
-                                original_p2 = original_item_data[4]
-                                logging.debug(f"  Shape[{index}] P1 (Original): {original_p1}, P2 (Original): {original_p2}")
-                                relative_p1 = original_p1 - original_center
-                                scaled_p1 = QPointF(relative_p1.x() * scale_x, relative_p1.y() * scale_y)
-                                transformed_p1 = scaled_p1 + original_center + translate_delta
-                                relative_p2 = original_p2 - original_center
-                                scaled_p2 = QPointF(relative_p2.x() * scale_x, relative_p2.y() * scale_y)
-                                transformed_p2 = scaled_p2 + original_center + translate_delta
-                                logging.debug(f"    P1 (Transformed): {transformed_p1}, P2 (Transformed): {transformed_p2}")
-                                canvas.shapes[index][3] = transformed_p1
-                                canvas.shapes[index][4] = transformed_p2
+                                original_p1 = original_item_data[3];
+                                original_p2 = original_item_data[4];
+                                logging.debug(f"  Shape[{index}] P1 (Original): {original_p1}, P2 (Original): {original_p2}");
+                                relative_p1 = original_p1 - original_center;
+                                scaled_p1 = QPointF(relative_p1.x() * scale_x, relative_p1.y() * scale_y);
+                                transformed_p1 = scaled_p1 + original_center + translate_delta;
+                                relative_p2 = original_p2 - original_center;
+                                scaled_p2 = QPointF(relative_p2.x() * scale_x, relative_p2.y() * scale_y);
+                                transformed_p2 = scaled_p2 + original_center + translate_delta;
+                                logging.debug(f"    P1 (Transformed): {transformed_p1}, P2 (Transformed): {transformed_p2}");
+                                # --- SNAP TO GRID --- #
+                                if shape_tool_type in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE] and getattr(canvas, 'snap_lines_to_grid', False):
+                                    transformed_p1 = canvas._snap_point_to_grid(transformed_p1)
+                                    transformed_p2 = canvas._snap_point_to_grid(transformed_p2)
+                                canvas.shapes[index][3] = transformed_p1;
+                                canvas.shapes[index][4] = transformed_p2;
                         else: logging.warning(f"Resize Move: Geçersiz shapes index {index}")
                     # --- YENİ: B-Spline (düzenlenebilir çizgi) için boyutlandırma --- #
                     elif item_type == 'bspline_strokes':
@@ -479,6 +483,22 @@ def handle_selector_move_selection_release(canvas: 'DrawingCanvas', pos: QPointF
             if not calculated_final_states or len(calculated_final_states) != len(initial_states_for_command):
                 logging.error("Move Release: _calculate_final_states_for_move beklenen sonucu vermedi. Komut oluşturulmayacak.")
             else:
+                # --- SNAP TO GRID (TOLERANSLI) --- #
+                tolerance_px = 8
+                for i, (item_type, index) in enumerate(current_selected_refs):
+                    if item_type == 'shapes' and i < len(calculated_final_states):
+                        shape_data = calculated_final_states[i]
+                        tool_type = shape_data[0]
+                        if tool_type in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE] and getattr(canvas, 'snap_lines_to_grid', False):
+                            p1 = shape_data[3]
+                            p2 = shape_data[4]
+                            snap_p1 = canvas._snap_point_to_grid(p1)
+                            snap_p2 = canvas._snap_point_to_grid(p2)
+                            if (p1 - snap_p1).manhattanLength() <= tolerance_px:
+                                shape_data[3] = snap_p1
+                            if (p2 - snap_p2).manhattanLength() <= tolerance_px:
+                                shape_data[4] = snap_p2
+                # --- --- --- --- --- --- --- --- --- #
                 command = MoveItemsCommand(
                     canvas=canvas,
                     item_indices=current_selected_refs, # [(type, index), ...]
@@ -557,6 +577,22 @@ def handle_selector_resize_release(canvas: 'DrawingCanvas', pos: QPointF, event:
     
     if canvas.grabbed_handle_type and canvas.original_resize_states:
         final_states = canvas._get_current_selection_states(canvas._parent_page)
+        # --- SNAP TO GRID (TOLERANSLI) --- #
+        tolerance_px = 8
+        for i, (item_type, index) in enumerate(canvas.selected_item_indices):
+            if item_type == 'shapes' and i < len(final_states):
+                shape_data = final_states[i]
+                tool_type = shape_data[0]
+                if tool_type in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE] and getattr(canvas, 'snap_lines_to_grid', False):
+                    p1 = shape_data[3]
+                    p2 = shape_data[4]
+                    snap_p1 = canvas._snap_point_to_grid(p1)
+                    snap_p2 = canvas._snap_point_to_grid(p2)
+                    if (p1 - snap_p1).manhattanLength() <= tolerance_px:
+                        shape_data[3] = snap_p1
+                    if (p2 - snap_p2).manhattanLength() <= tolerance_px:
+                        shape_data[4] = snap_p2
+        # --- --- --- --- --- --- --- --- --- #
         final_bbox = canvas._get_combined_bbox([]) # Pass empty list, it uses canvas.selected_item_indices
         orig_bbox_str = f"({canvas.resize_original_bbox.x():.1f},{canvas.resize_original_bbox.y():.1f}, w={canvas.resize_original_bbox.width():.1f}, h={canvas.resize_original_bbox.height():.1f})"
         final_bbox_str = f"({final_bbox.x():.1f},{final_bbox.y():.1f}, w={final_bbox.width():.1f}, h={final_bbox.height():.1f})" if not final_bbox.isNull() else "Null"

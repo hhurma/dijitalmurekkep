@@ -1269,16 +1269,17 @@ class DrawingCanvas(QWidget):
 
             if item_type == 'lines':
                 if 0 <= item_original_idx < len(self.lines):
-                    # Orijinal noktaları al (QPointF listesi olmalı)
                     original_points = original_item_data[2] 
                     if original_points and all(isinstance(p, QPointF) for p in original_points):
-                        new_points = [QPointF(p.x() + total_dx, p.y() + total_dy) for p in original_points]
+                        # --- SNAP TO GRID --- #
+                        if getattr(self, 'snap_lines_to_grid', False):
+                            new_points = [self._snap_point_to_grid(QPointF(p.x() + total_dx, p.y() + total_dy)) for p in original_points]
+                        else:
+                            new_points = [QPointF(p.x() + total_dx, p.y() + total_dy) for p in original_points]
                         self.lines[item_original_idx][2] = new_points
                     else:
-                        # logging.warning(f"_reposition: lines[{item_original_idx}] için original_points beklenen formatta değil.") # Çok sık log üretebilir
                         pass
                 else:
-                    # logging.warning(f"_reposition: Geçersiz lines index: {item_original_idx}") # Çok sık log üretebilir
                     pass
             elif item_type == 'shapes':
                 if 0 <= item_original_idx < len(self.shapes):
@@ -1289,7 +1290,21 @@ class DrawingCanvas(QWidget):
                             new_control_points = [QPointF(p.x() + total_dx, p.y() + total_dy) for p in original_control_points]
                             self.shapes[item_original_idx][3] = new_control_points
                         else:
-                            # logging.warning(f"_reposition: EDITABLE_LINE[{item_original_idx}] için original_control_points beklenen formatta değil.") # Çok sık log
+                            pass
+                    elif shape_tool_type in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE]:
+                        original_p1 = original_item_data[3]
+                        original_p2 = original_item_data[4];
+                        if isinstance(original_p1, QPointF) and isinstance(original_p2, QPointF):
+                            # --- SNAP TO GRID --- #
+                            if getattr(self, 'snap_lines_to_grid', False):
+                                new_p1 = self._snap_point_to_grid(QPointF(original_p1.x() + total_dx, original_p1.y() + total_dy))
+                                new_p2 = self._snap_point_to_grid(QPointF(original_p2.x() + total_dx, original_p2.y() + total_dy))
+                            else:
+                                new_p1 = QPointF(original_p1.x() + total_dx, original_p1.y() + total_dy)
+                                new_p2 = QPointF(original_p2.x() + total_dx, original_p2.y() + total_dy)
+                            self.shapes[item_original_idx][3] = new_p1
+                            self.shapes[item_original_idx][4] = new_p2
+                        else:
                             pass
                     else: # Diğer şekiller
                         original_p1 = original_item_data[3]
@@ -1298,10 +1313,8 @@ class DrawingCanvas(QWidget):
                             self.shapes[item_original_idx][3] = QPointF(original_p1.x() + total_dx, original_p1.y() + total_dy)
                             self.shapes[item_original_idx][4] = QPointF(original_p2.x() + total_dx, original_p2.y() + total_dy)
                         else:
-                            # logging.warning(f"_reposition: shapes[{item_original_idx}] için original_p1/p2 beklenen formatta değil.") # Çok sık log
                             pass
                 else:
-                    # logging.warning(f"_reposition: Geçersiz shapes index: {item_original_idx}") # Çok sık log
                     pass
             elif item_type == 'images':
                 if self._parent_page and 0 <= item_original_idx < len(self._parent_page.images):
@@ -1311,20 +1324,15 @@ class DrawingCanvas(QWidget):
                         new_rect.translate(total_dx, total_dy)
                         self._parent_page.images[item_original_idx]['rect'] = new_rect
                     else:
-                        # logging.warning(f"_reposition: images[{item_original_idx}] için original_rect beklenen formatta değil.") # Çok sık log
                         pass
                 else:
-                    # logging.warning(f"_reposition: Geçersiz images index: {item_original_idx}") # Çok sık log
                     pass
             elif item_type == 'bspline_strokes':
                 if 0 <= item_original_idx < len(self.b_spline_strokes):
                     if original_item_data and 'control_points' in original_item_data:
                         original_control_points = original_item_data['control_points']
-                        
-                        # YENİ: Format kontrolü ve dönüşüm
                         if isinstance(original_control_points, np.ndarray) and original_control_points.ndim == 2 and original_control_points.shape[1] == 2:
                             original_control_points = [np.array(row) for row in original_control_points]
-                        
                         if isinstance(original_control_points, list) and original_control_points and all(isinstance(cp, np.ndarray) and cp.shape == (2,) for cp in original_control_points):
                             new_control_points = [
                                 np.array([cp[0] + total_dx, cp[1] + total_dy]) for cp in original_control_points
@@ -1338,7 +1346,6 @@ class DrawingCanvas(QWidget):
                 else:
                     logging.warning(f"_reposition: Geçersiz bspline_strokes index: {item_original_idx}")
             else:
-                # logging.warning(f"_reposition_selected_items_from_initial: Bilinmeyen öğe tipi: {item_type}") # Çok sık log
                 pass
             something_moved = True
         if something_moved:
