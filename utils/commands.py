@@ -81,6 +81,7 @@ class DrawLineCommand(Command):
             else:
                 return
 
+            self.canvas._cache_dirty = True
             self.canvas.update()
             if hasattr(self.canvas, 'selection_changed'):
                 self.canvas.selection_changed.emit()
@@ -95,6 +96,7 @@ class DrawLineCommand(Command):
         try:
             if 0 <= self._added_index < len(self.canvas.lines):
                 del self.canvas.lines[self._added_index]
+                self.canvas._cache_dirty = True
                 self.canvas.update()
             else:
                 pass
@@ -162,6 +164,7 @@ class DrawShapeCommand(Command):
                 self.canvas.shapes.append(shape_data_to_add)
                 self._shape_added = True
 
+            self.canvas._cache_dirty = True
             self.canvas.update()
             if hasattr(self.canvas, 'selection_changed'):
                 self.canvas.selection_changed.emit()
@@ -179,6 +182,7 @@ class DrawShapeCommand(Command):
             if 0 <= self._added_index < len(self.canvas.shapes):
                 del self.canvas.shapes[self._added_index]
                 self._shape_added = False
+                self.canvas._cache_dirty = True
                 self.canvas.update()
                 if hasattr(self.canvas, 'selection_changed'):
                     self.canvas.selection_changed.emit()
@@ -257,6 +261,7 @@ class ClearCanvasCommand(Command):
             self.canvas.drawing = False
             self.canvas.drawing_shape = False
             self._was_cleared = True # Bu genel bir flag olarak kalabilir
+            self.canvas._cache_dirty = True
             self.canvas.update()
             logging.debug("ClearCanvasCommand executed (lines, shapes, images ve b_spline_strokes).") # Log güncellendi
             if hasattr(self.canvas, 'selection_changed'):
@@ -288,6 +293,7 @@ class ClearCanvasCommand(Command):
 
             self.canvas.drawing = False
             self.canvas.drawing_shape = False
+            self.canvas._cache_dirty = True
             self.canvas.update()
             logging.debug("ClearCanvasCommand undo: Canvas eski haline getirildi (lines, shapes, images ve b_spline_strokes).") # Log güncellendi
             if hasattr(self.canvas, 'selection_changed'):
@@ -352,12 +358,14 @@ class MoveItemsCommand(Command):
 
     def execute(self):
         self._apply_state(self.final_states)
+        self.canvas._cache_dirty = True
         self.canvas.update()
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
 
     def undo(self):
         self._apply_state(self.original_states)
+        self.canvas._cache_dirty = True
         self.canvas.update()
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
@@ -440,12 +448,14 @@ class ResizeItemsCommand(Command):
             self._is_first_execution = False
         else:
             self._apply_state(self.final_states)
+        self.canvas._cache_dirty = True
         self.canvas.update()
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
 
     def undo(self):
         self._apply_state(self.original_states)
+        self.canvas._cache_dirty = True
         self.canvas.update()
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
@@ -545,6 +555,7 @@ class EraseCommand(Command):
 
     def execute(self):
         """Hesaplanan değişiklikleri canvas'a uygular (asıl silme işlemi burada yapılır)."""
+        self.canvas._cache_dirty = True # Set dirty at the beginning of modifications
         #logging.debug(f"Executing EraseCommand...")
         lines_applied = 0
         shapes_applied = 0
@@ -610,7 +621,7 @@ class EraseCommand(Command):
             f"EraseCommand execute finished. Applied changes to {lines_applied} lines, "
             f"removed {shapes_applied} shapes, removed {b_splines_applied} b-splines."
         ) """
-        self.canvas.update()
+        self.canvas.update() # Already set dirty, just update
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
 
@@ -627,6 +638,7 @@ class EraseCommand(Command):
                 self.canvas.b_spline_strokes.clear()
                 self.canvas.b_spline_strokes.extend(copy.deepcopy(self._b_splines_before_erase))
 
+            self.canvas._cache_dirty = True
             self.canvas.update()
             logging.debug("Undo finished: Canvas state restored.")
             if hasattr(self.canvas, 'selection_changed'):
@@ -892,6 +904,7 @@ class RotateItemsCommand(Command):
         self._apply_item_states(self.final_states_safe)
         if self.canvas:
             # self.canvas._load_qgraphics_pixmap_items_from_page() # KALDIRILDI
+            self.canvas._cache_dirty = True
             self.canvas.update()
             self.canvas.selection_changed.emit() # Seçim değişmese de tutamaçlar vs. güncellenebilir
         # logging.debug("RotateCommand execute finished.") # Log eklendi
@@ -901,6 +914,7 @@ class RotateItemsCommand(Command):
         self._apply_item_states(self.original_states_safe)
         if self.canvas:
             # self.canvas._load_qgraphics_pixmap_items_from_page() # KALDIRILDI
+            self.canvas._cache_dirty = True
             self.canvas.update()
             self.canvas.selection_changed.emit()
         # logging.debug("RotateCommand undo finished.") # Log eklendi
@@ -969,6 +983,7 @@ class PasteItemsCommand(Command):
         # Canvas'ı yeniden çiz
         if hasattr(self.canvas, '_load_qgraphics_items'):
             self.canvas._load_qgraphics_items()
+        self.canvas._cache_dirty = True
         self.canvas.update()
         return True
     
@@ -986,6 +1001,7 @@ class PasteItemsCommand(Command):
         
         if hasattr(self.canvas, '_load_qgraphics_items'):
             self.canvas._load_qgraphics_items()
+        self.canvas._cache_dirty = True
         self.canvas.update()
         logging.info("PasteItemsCommand: Undo ile yapıştırılan öğeler kaldırıldı.")
         return True
@@ -1029,6 +1045,7 @@ class DeleteItemsCommand(Command):
         if hasattr(self.canvas, '_load_qgraphics_pixmap_items_from_page'):
             self.canvas._load_qgraphics_pixmap_items_from_page()
         self.canvas.selected_item_indices = []
+        self.canvas._cache_dirty = True
         self.canvas.update()
         logging.info(f"DeleteItemsCommand: {len(self.deleted_items)} öğe silindi.")
         if hasattr(self.canvas, 'selection_changed'):
@@ -1057,6 +1074,7 @@ class DeleteItemsCommand(Command):
                 self.canvas._parent_page.images.insert(idx, img_data)
         if hasattr(self.canvas, '_load_qgraphics_pixmap_items_from_page'):
             self.canvas._load_qgraphics_pixmap_items_from_page()
+        self.canvas._cache_dirty = True
         self.canvas.update()
         logging.debug(f"DeleteItemsCommand.undo: canvas.update() çağrıldı, id={id(self.canvas)}")
         logging.info("DeleteItemsCommand: Undo ile silinen öğeler geri getirildi.")
@@ -1121,6 +1139,7 @@ class DrawEditableLineCommand(Command):
                 self.canvas.shapes.append(shape_data_to_add)
                 self._line_added = True
 
+            self.canvas._cache_dirty = True
             self.canvas.update()
             if hasattr(self.canvas, 'content_changed'):
                 self.canvas.content_changed.emit()
@@ -1141,6 +1160,7 @@ class DrawEditableLineCommand(Command):
             if 0 <= self._added_index < len(self.canvas.shapes):
                 del self.canvas.shapes[self._added_index]
                 self._line_added = False
+                self.canvas._cache_dirty = True
                 self.canvas.update()
                 if hasattr(self.canvas, 'content_changed'):
                     self.canvas.content_changed.emit()
@@ -1187,6 +1207,7 @@ class UpdateEditableLineCommand:
                 self.canvas.shapes[self.shape_index][2] = self.new_width
             if self.new_color is not None:
                 self.canvas.shapes[self.shape_index][1] = self.new_color
+            self.canvas._cache_dirty = True
             self.canvas.update()
     
     def undo(self):
@@ -1197,6 +1218,7 @@ class UpdateEditableLineCommand:
                 self.canvas.shapes[self.shape_index][2] = self.original_width
             if self.original_color is not None:
                 self.canvas.shapes[self.shape_index][1] = self.original_color
+            self.canvas._cache_dirty = True
             self.canvas.update()
     
     def redo(self):
@@ -1227,6 +1249,8 @@ class DrawBsplineCommand(Command):
             return
 
         if not self._stroke_added: # İlk execute
+            if '_cached_points' not in self.stroke_data:
+                self.stroke_data['_cached_points'] = None
             self.canvas.b_spline_strokes.append(copy.deepcopy(self.stroke_data))
             self._added_index = len(self.canvas.b_spline_strokes) - 1
             self._stroke_added = True
@@ -1239,9 +1263,12 @@ class DrawBsplineCommand(Command):
             else:
                 # Bu durum beklenmedik, belki sona ekleyebiliriz veya hata verebiliriz.
                 logging.warning(f"DrawBsplineCommand execute (redo): Invalid _added_index {self._added_index}. Appending to end.")
+                if '_cached_points' not in self.stroke_data: # Ensure for redo append case as well
+                    self.stroke_data['_cached_points'] = None
                 self.canvas.b_spline_strokes.append(copy.deepcopy(self.stroke_data))
                 self._added_index = len(self.canvas.b_spline_strokes) - 1 # Index'i güncelle
         
+        self.canvas._cache_dirty = True
         self.canvas.update()
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
@@ -1261,6 +1288,7 @@ class DrawBsplineCommand(Command):
                 logging.debug(f"DrawBsplineCommand undo: Stroke removed from index {self._added_index}.")
                 # self._stroke_added = False # UNDO SONRASI FALSE YAPMA, REDO İÇİN TRUE KALMALI VE INDEX KORUNMALI
                                         # Diğer komutlar (DrawLine, DrawShape) da kendi flag'lerini undo'da değiştirmiyor.
+                self.canvas._cache_dirty = True
                 self.canvas.update()
                 if hasattr(self.canvas, 'selection_changed'):
                     self.canvas.selection_changed.emit()
@@ -1289,6 +1317,7 @@ class UpdateBsplineControlPointCommand(Command):
                    0 <= self.cp_idx < len(stroke_data['control_points']):
                     # DrawingWidget.py'deki gibi direkt kontrol noktasını değiştir
                     stroke_data['control_points'][self.cp_idx] = pos_array.copy()
+                    stroke_data['_cached_points'] = None # Invalidate cached points
                     
                     # Eğer istersen, daha pürüzsüz çizim için burada curve_points hesaplayabilirsin
                     # Bu zorunlu değil, ama özellikle karmaşık spiraller için faydalı olabilir
@@ -1311,6 +1340,7 @@ class UpdateBsplineControlPointCommand(Command):
                     # Tüm curve_points hesaplama mantığını kaldırdık,
                     # paintEvent bunu kendisi her frame'de hesaplayacak
                     
+                    self.canvas._cache_dirty = True
                     self.canvas.update()
                     if hasattr(self.canvas, 'content_changed'):
                         self.canvas.content_changed.emit()

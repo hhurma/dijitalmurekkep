@@ -153,6 +153,10 @@ class DrawingCanvas(QWidget):
         self._parent_page = parent  # EditablePage referansı
         self.scaled_width = None
         self.scaled_height = None
+
+        # Offscreen buffer and dirty flag for caching
+        self._static_content_cache = None
+        self._cache_dirty = True
         
         # Undo/Redo Manager
         self.undo_manager = undo_manager
@@ -487,241 +491,184 @@ class DrawingCanvas(QWidget):
         return export_data
 
     def paintEvent(self, event: QPaintEvent):
-        #logging.debug(f"[PaintEvent BAŞLANGIÇ] Canvas ID: {id(self)}, Shapes ({len(self.shapes)} adet): {self.shapes}") # YENİ LOG
         """Ana çizim olayını yönetir. Tüm elemanları tuvale çizer."""
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Arka planı çiz
-        painter.fillRect(self.rect(), rgba_to_qcolor(self.background_color))
-        
-        # DÜZELTME: Önce PDF arka planını kontrol et ve çiz
-        if self._has_page_background and self._page_background_pixmap and not self._page_background_pixmap.isNull():
-            # PDF sayfası veya özel arka plan varsa, onu çiz
-            painter.drawPixmap(0, 0, self._page_background_pixmap)
-            logging.debug(f"Canvas({id(self)}): Özel PDF arka planı çizildi. Boyut: {self._page_background_pixmap.size()}")
-        elif self._background_pixmap and not self._background_pixmap.isNull():
-            # Normal şablon arka planını çiz
-            painter.drawPixmap(0, 0, self._background_pixmap)
+        # Cache Initialization/Recreation
+        if self._static_content_cache is None or self._static_content_cache.size() != self.size():
+            self._static_content_cache = QPixmap(self.size())
+            self._cache_dirty = True
+            logging.debug(f"Canvas cache recreated. Size: {self.size()}")
 
-        # Eğer aktif bir sayfa varsa ve resimler varsa, önce onları çiz
-        # Bu kısım page.images üzerinden yönetilecek
-        # canvas_drawing_helpers.draw_images(self, painter)
+        # Populating the Cache (if dirty)
+        if self._cache_dirty:
+            logging.debug(f"Canvas cache is dirty. Repopulating...")
+            cache_painter = QPainter(self._static_content_cache)
+            cache_painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Kalıcı öğeleri çiz (çizgiler, şekiller, eski editable_line'lar)
-        # Not: draw_items içinde zaten img_data kontrolü var, yukarıdaki draw_images kaldırılabilir.
-        canvas_drawing_helpers.draw_items(self, painter) 
-
-        # --- YENİ: Grid ve Şablon Çizimi (Eğer snap_lines_to_grid aktifse veya şablon GRID ise) ---
-        canvas_drawing_helpers.draw_grid_and_template(self, painter)
-        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-
-        # --- Geçici (anlık) çizim: Kalem, çizgi, dikdörtgen, daire ---
-        if self.drawing:
-            if self.current_tool == ToolType.PEN:
-                if len(self.current_line_points) > 1:
-                    utils_drawing_helpers.draw_pen_stroke(
-                        painter, self.current_line_points, self.current_color, self.current_pen_width
-                    )
-            elif self.current_tool in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE]:
-                if self.drawing_shape and not self.shape_start_point.isNull() and not self.shape_end_point.isNull():
-                    temp_shape_data = [
-                        self.current_tool, 
-                        self.current_color, 
-                        self.current_pen_width,
-                        self.shape_start_point, 
-                        self.shape_end_point,
-                        self.line_style if hasattr(self, 'line_style') else 'solid'
-                    ]
-                    # Dolgu bilgisi, eğer araç ve fill_enabled uygunsa eklenir
-                    if self.current_tool in [ToolType.RECTANGLE, ToolType.CIRCLE] and self.fill_enabled:
-                        # self.current_fill_rgba'nın alfa değeri gerçekten 0'dan büyükse ekleyelim.
-                        # Aslında self.fill_enabled kontrolü yeterli olmalı.
-                        temp_shape_data.append(self.current_fill_rgba) 
-                    
-                    utils_drawing_helpers.draw_shape(painter, temp_shape_data)
-
-        # YENİ: B-Spline çizgilerini ve kontrol noktalarını çiz (DrawingWidget'tan alınan mantıkla)
-        if self.current_tool == ToolType.EDITABLE_LINE or (self.b_spline_widget and self.b_spline_widget.strokes): # YENİ KOŞUL: b_spline_widget ve onun strokes'ları kontrol ediliyor
-            # painter.save() # Gerekirse painter durumunu koru
+            # 1. Draw background color to cache
+            cache_painter.fillRect(self._static_content_cache.rect(), rgba_to_qcolor(self.background_color))
             
-            # DrawingWidget'ın paintEvent'indeki gibi strokes'ları çiz
-            # pen = QPen(Qt.GlobalColor.black, 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin) # ESKİ SABİT PEN
-            # painter.setPen(pen) # ESKİ
+            # 2. Draw background pixmap (template/PDF) to cache
+            if self._has_page_background and self._page_background_pixmap and not self._page_background_pixmap.isNull():
+                cache_painter.drawPixmap(0, 0, self._page_background_pixmap)
+            elif self._background_pixmap and not self._background_pixmap.isNull():
+                cache_painter.drawPixmap(0, 0, self._background_pixmap)
 
-            # Tamamlanmış B-spline'ları çiz
-            # for stroke_data in self.b_spline_strokes: # self.b_spline_widget.strokes yerine canvas'taki kopyayı kullan # ESKİ DÖNGÜ
-            if self.b_spline_widget: # b_spline_widget'ın varlığını kontrol et
-                for i, stroke_data in enumerate(self.b_spline_widget.strokes): # YENİ DÖNGÜ: enumerate ile index (i) alınıyor
+            # 3. Draw static items to cache
+            canvas_drawing_helpers.draw_items(self, cache_painter) 
+
+            # 4. Draw grid to cache
+            canvas_drawing_helpers.draw_grid_and_template(self, cache_painter)
+            
+            # 5. Draw B-Splines to cache
+            if self.b_spline_widget and self.b_spline_widget.strokes:
+                # Iterating over self.b_spline_widget.strokes as it's the authoritative source
+                for i, stroke_data in enumerate(self.b_spline_widget.strokes): 
                     control_points_np = stroke_data.get('control_points')
                     knots = stroke_data.get('knots')
                     degree = stroke_data.get('degree')
                     u_params = stroke_data.get('u')
                     
                     if control_points_np is None or knots is None or degree is None or u_params is None:
-                        #logging.warning(f"DrawingCanvas paintEvent: B-Spline stroke data missing for a stroke. Skipping.")
+                        logging.warning(f"DrawingCanvas paintEvent (cache): B-Spline stroke {i} data missing. Skipping.")
                         continue
 
-                    stroke_thickness_from_data = stroke_data.get('thickness')
-                    # Kalınlık için widget'ın varsayılanını veya genel bir varsayılanı kullanabiliriz.
-                    # Şimdilik widget'ın varsayılanını kullanalım, eğer stroke'ta yoksa.
-                    effective_thickness = stroke_thickness_from_data if stroke_thickness_from_data is not None else self.b_spline_widget.default_line_thickness
+                    effective_thickness = stroke_data.get('thickness', self.b_spline_widget.default_line_thickness)
+                    stroke_color_data = stroke_data.get('color', [0.0, 0.0, 0.0, 1.0])
+                    current_pen_qcolor = rgba_to_qcolor(stroke_color_data)
                     
-                    # YENİ: Her stroke için dinamik pen
-                    stroke_color_data = stroke_data.get('color', [0.0, 0.0, 0.0, 1.0]) # Varsayılan siyah
-                    current_pen_qcolor = rgba_to_qcolor(stroke_color_data) 
                     try:
                         pen = QPen(current_pen_qcolor, float(effective_thickness), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
-                        painter.setPen(pen)
+                        cache_painter.setPen(pen)
                     except Exception as e:
-                        #logging.error(f"DrawingCanvas paintEvent: Error creating QPen for B-Spline stroke with thickness {effective_thickness}: {e}")
-                        default_pen_for_error = QPen(Qt.GlobalColor.magenta, 1) # Hata durumunda farklı renkte çiz
-                        painter.setPen(default_pen_for_error)
+                        logging.error(f"DrawingCanvas paintEvent (cache): Error creating QPen for B-Spline stroke {i}: {e}")
+                        default_pen_for_error = QPen(Qt.GlobalColor.magenta, 1)
+                        cache_painter.setPen(default_pen_for_error)
                     
-                    # original_points_with_pressure = stroke_data.get('original_points_with_pressure', [])
+                    x_fine, y_fine = None, None # Initialize to ensure they are defined
+                    cached_eval_points = stroke_data.get('_cached_points')
 
-                    # tck'yı yeniden oluştur
-                    try:
-                        # Kontrol noktalarını (2, N) formatına getir
-                        # Önce kontrol noktalarının geçerliliğini kontrol edelim
-                        if not control_points_np or not isinstance(control_points_np, list) or not all(isinstance(cp, np.ndarray) and cp.shape == (2,) for cp in control_points_np):
-                            #logging.error(f"DrawingCanvas paintEvent: Invalid control_points_np for tck creation. Stroke index {i}. Skipping. CP Data: {control_points_np}") # stroke_data'nın indexini logla
-                            continue
-                        if len(control_points_np) < degree + 1: # k+1 kontrol noktası olmalı (scipy için)
-                            #logging.error(f"DrawingCanvas paintEvent: Not enough control points for degree {degree}. Need {degree+1}, got {len(control_points_np)}. Stroke index {i}. Skipping.")
-                            continue
-
-                        control_points_for_scipy = np.array(control_points_np).T 
-                        tck = (knots, control_points_for_scipy, degree)
-
-                        # YENİ LOGLAR BAŞLANGIÇ (Doğru Konum)
-                        #logging.debug(f"DrawingCanvas paintEvent: Stroke {i} - About to call splev.") # i'yi stroke_data'nın indexi olarak kullan
-                        #logging.debug(f"  knots (t): shape={knots.shape if hasattr(knots, 'shape') else 'N/A'}, len={len(knots) if knots is not None else 'N/A'}")
-                        
-                        cp_shape_str = 'N/A'
-                        N_cp_str = 'N/A'
-                        if hasattr(control_points_for_scipy, 'shape'):
-                            cp_shape_str = str(control_points_for_scipy.shape)
-                            if len(control_points_for_scipy.shape) == 2: # (ndim, n_control_points)
-                                N_cp_str = str(control_points_for_scipy.shape[1])
-                        
-                        #logging.debug(f"  control_points_for_scipy (c): shape={cp_shape_str}, N_cp={N_cp_str}")
-                        #logging.debug(f"  degree (k): {degree}")
-                        
-                        if u_params is not None and len(u_params) > 0:
-                             # u_params'ın son elemanının varlığını ve içeriğini kontrol et
-                             if u_params[-1] is not None:
-                                 #logging.debug(f"  u_params for splev: min_u={np.min(u_params)}, max_u={np.max(u_params)}, num_eval_points=100, u_last={u_params[-1]}")
-                                 pass
-                             else:
-                                 #logging.error(f"  u_params for splev: u_params[-1] is None. Stroke index {i}. Skipping splev.")
-                                 continue # splev'i atla
-                        else:
-                             #logging.error(f"  u_params for splev: u_params is None or empty. Stroke index {i}. Skipping splev.")
-                             continue # splev'i atla
-                        # YENİ LOGLAR BİTİŞ
-
-                    except Exception as e:
-                        #logging.error(f"DrawingCanvas paintEvent: Error reconstructing tck for B-Spline (Stroke index {i}): {e}. Control Points: {control_points_np}, Knots: {knots}, Degree: {degree}") # stroke_data'nın indexini logla
-                        continue
-
-
-                    # B-spline eğrisini çiz
-                    # TODO: Koordinat dönüşümlerini uygula (world_to_screen)
-                    # Şu an DrawingWidget kendi koordinatlarında çiziyor, canvas'a uyarlamalıyız.
-                    # SciPy'den gelen noktalar doğrudan ekran koordinatı gibi varsayılıyor.
-                    # Eğer dünya koordinatlarında saklanıyorsa screen_to_world / world_to_screen dönüşümü gerekir.
-                    # Şimdilik event.pos() ile gelen canvas pixel koordinatları kullanıldığını varsayıyoruz.
-                    try:
-                        x_fine, y_fine = splev(np.linspace(0, u_params[-1], 100), tck)
-                        path = QPainterPath()
-                        if len(x_fine) > 0:
-                            # BURADAKİ world_to_screen KULLANIMI DOĞRU GÖRÜNÜYOR, DrawingWidget'tan gelen noktalar
-                            # zaten tabletReleaseEvent içinde dünya koordinatları olarak kabul ediliyor.
-                            path.moveTo(self.world_to_screen(QPointF(x_fine[0], y_fine[0]))) 
-                            for i in range(1, len(x_fine)):
-                                path.lineTo(self.world_to_screen(QPointF(x_fine[i], y_fine[i]))) 
-                            painter.drawPath(path)
-                    except Exception as e:
-                        #logging.error(f"DrawingCanvas paintEvent: Error drawing B-Spline path: {e}")
-                        continue
-
-                    # B-Spline kontrol noktalarını çiz (kırmızı)
-                    # YENİ KOŞUL: Sadece EDITABLE_LINE_NODE_SELECTOR aracı aktifse kontrol noktalarını çiz
-                    if self.current_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR:
-                        painter.save()
-                        painter.setPen(QPen(Qt.GlobalColor.red, 5, Qt.PenStyle.SolidLine))
-                        for cp_np in control_points_np:
-                            # cp_np bir numpy array [x, y]
-                            screen_cp = self.world_to_screen(QPointF(cp_np[0], cp_np[1])) 
-                            painter.drawPoint(screen_cp) 
-                        painter.restore()
-
-                        # Seçili B-Spline kontrol noktasını farklı çiz (DrawingWidget'ta yok, eklenebilir)
-                        # BU BLOK DA AYNI KOŞULA TAŞINACAK
-                        # if self.b_spline_widget.selected_control_point is not None: # b_spline_widget kontrolü yukarıda yapıldı
-                        if self.b_spline_widget and self.b_spline_widget.selected_control_point is not None:
-                            stroke_idx_widget, cp_idx_widget = self.b_spline_widget.selected_control_point
-                            # self.b_spline_widget.strokes içindeki index ile eşleşmeli
-                            # Bu döngü zaten self.b_spline_widget.strokes üzerinde olduğu için stroke_idx_widget'ı
-                            # mevcut stroke ile karşılaştırabiliriz veya doğrudan kullanabiliriz eğer indexler tutarlıysa.
-                            # Şimdilik, seçili kontrol noktasının koordinatlarını doğrudan alalım.
+                    if cached_eval_points:
+                        x_fine, y_fine = cached_eval_points
+                        # logging.debug(f"DrawingCanvas paintEvent (cache): Using cached points for B-Spline stroke {i}")
+                    else:
+                        # logging.debug(f"DrawingCanvas paintEvent (cache): Calculating points for B-Spline stroke {i}")
+                        try:
+                            if not control_points_np or not isinstance(control_points_np, list) or not all(isinstance(cp, np.ndarray) and cp.shape == (2,) for cp in control_points_np):
+                                logging.warning(f"DrawingCanvas paintEvent (cache): Invalid control_points_np for B-Spline stroke {i}. Skipping.")
+                                continue
+                            if len(control_points_np) < degree + 1:
+                                logging.warning(f"DrawingCanvas paintEvent (cache): Not enough control points for degree {degree} in B-Spline stroke {i}. Skipping.")
+                                continue
                             
-                            # Mevcut stroke_data'nın indeksi lazım. enumerate(self.b_spline_widget.strokes) kullanılabilir.
-                            # Veya seçili stroke'u bulmak için:
-                            current_stroke_index_in_widget_list = -1
-                            for idx_w, s_w_data in enumerate(self.b_spline_widget.strokes):
-                                if s_w_data is stroke_data: # Referans eşitliği ile kontrol
-                                    current_stroke_index_in_widget_list = idx_w
-                                    break
+                            control_points_for_scipy = np.array(control_points_np).T
+                            tck = (knots, control_points_for_scipy, degree)
+                            
+                            if not (u_params is not None and len(u_params) > 0 and u_params[-1] is not None):
+                                logging.warning(f"DrawingCanvas paintEvent (cache): Invalid u_params for B-Spline stroke {i}. Skipping.")
+                                continue
+                                
+                            x_fine, y_fine = splev(np.linspace(0, u_params[-1], 100), tck)
+                            stroke_data['_cached_points'] = (x_fine, y_fine) # Store calculated points
+                            # logging.debug(f"DrawingCanvas paintEvent (cache): Calculated and cached points for B-Spline stroke {i}")
 
-                            if stroke_idx_widget == current_stroke_index_in_widget_list and 0 <= cp_idx_widget < len(control_points_np):
-                                selected_cp_np = control_points_np[cp_idx_widget] # Doğrudan mevcut stroke'un kontrol noktasını al
-                                selected_cp_world = QPointF(selected_cp_np[0], selected_cp_np[1])
-                                selected_cp_screen = self.world_to_screen(selected_cp_world) 
-                                painter.save()
-                                painter.setPen(QPen(Qt.GlobalColor.magenta, 8, Qt.PenStyle.SolidLine))
-                                painter.setBrush(Qt.GlobalColor.magenta)
-                                painter.drawEllipse(selected_cp_screen, 4, 4) 
-                                painter.restore()
-                    # YENİ KOŞUL SONU (Kontrol noktası ve seçili nokta çizimi için)
-
-            # Aktif (çizilmekte olan) B-spline stroke'u çiz (DrawingWidget'taki gibi)
-            if self.b_spline_widget and len(self.b_spline_widget.current_stroke) > 1: # b_spline_widget kontrolü eklendi
-                painter.save()
-                for i in range(len(self.b_spline_widget.current_stroke) - 1):
-                    point1_world_qpoint, pressure1 = self.b_spline_widget.current_stroke[i]
-                    point2_world_qpoint, pressure2 = self.b_spline_widget.current_stroke[i+1]
+                        except Exception as e:
+                            logging.error(f"DrawingCanvas paintEvent (cache): Error calculating B-Spline path for stroke {i}: {e}", exc_info=True)
+                            continue # Skip drawing this spline if calculation fails
                     
-                    # pointX_world_qpoint QPointF nesneleri (dünya koordinatlarında)
-                    point1_screen = self.world_to_screen(point1_world_qpoint) # YENİ: world_to_screen
-                    point2_screen = self.world_to_screen(point2_world_qpoint) # YENİ: world_to_screen
-
-                    pen_width = 1 + pressure1 * 9 # Basınca göre kalınlık
-                    pen = QPen(Qt.GlobalColor.blue, pen_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
-                    painter.setPen(pen)
-                    painter.drawLine(point1_screen, point2_screen) # YENİ: screen koordinatlarını kullan
-                painter.restore()
+                    if x_fine is not None and y_fine is not None and len(x_fine) > 0:
+                        path = QPainterPath()
+                        path.moveTo(self.world_to_screen(QPointF(x_fine[0], y_fine[0])))
+                        for idx in range(1, len(x_fine)):
+                            path.lineTo(self.world_to_screen(QPointF(x_fine[idx], y_fine[idx])))
+                        cache_painter.drawPath(path)
+                    else:
+                        # This case should ideally not be reached if logic above is correct,
+                        # but as a safeguard:
+                        logging.warning(f"DrawingCanvas paintEvent (cache): No points to draw for B-Spline stroke {i} after cache check/calculation.")
             
-            # Seçili B-Spline kontrol noktasını farklı çiz (DrawingWidget'ta yok, eklenebilir)
-            if self.b_spline_widget.selected_control_point is not None:
-                stroke_idx, cp_idx = self.b_spline_widget.selected_control_point
-                if 0 <= stroke_idx < len(self.b_spline_widget.strokes):
-                    selected_cp_np = self.b_spline_widget.strokes[stroke_idx]['control_points'][cp_idx]
-                    selected_cp_world = QPointF(selected_cp_np[0], selected_cp_np[1])
-                    selected_cp_screen = self.world_to_screen(selected_cp_world) # YENİ: world_to_screen
+            self._cache_dirty = False
+            cache_painter.end()
+            logging.debug(f"Canvas cache repopulated.")
+
+        # Main Drawing Logic
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Draw the populated cache
+        painter.drawPixmap(0, 0, self._static_content_cache)
+
+        # --- DYNAMIC ELEMENTS DRAWN ON TOP OF CACHE ---
+
+        # 6. Draw currently drawing pen stroke (if self.drawing and self.current_tool == ToolType.PEN)
+        if self.drawing and self.current_tool == ToolType.PEN:
+            if len(self.current_line_points) > 1:
+                utils_drawing_helpers.draw_pen_stroke(
+                    painter, self.current_line_points, self.current_color, self.current_pen_width
+                )
+        
+        # 7. Draw currently drawing shape (if self.drawing_shape for LINE, RECTANGLE, CIRCLE)
+        elif self.current_tool in [ToolType.LINE, ToolType.RECTANGLE, ToolType.CIRCLE]:
+            if self.drawing_shape and not self.shape_start_point.isNull() and not self.shape_end_point.isNull():
+                temp_shape_data = [
+                    self.current_tool, 
+                    self.current_color, 
+                    self.current_pen_width,
+                    self.shape_start_point, 
+                    self.shape_end_point,
+                    self.line_style if hasattr(self, 'line_style') else 'solid'
+                ]
+                if self.current_tool in [ToolType.RECTANGLE, ToolType.CIRCLE] and self.fill_enabled:
+                    temp_shape_data.append(self.current_fill_rgba) 
+                utils_drawing_helpers.draw_shape(painter, temp_shape_data)
+
+        # Draw B-Spline control points if EDITABLE_LINE_NODE_SELECTOR is active (Dynamic, as it depends on current tool)
+        if self.current_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR and self.b_spline_widget and self.b_spline_widget.strokes:
+            if self.b_spline_widget:
+                for i, stroke_data in enumerate(self.b_spline_widget.strokes): # Renamed i_loop to i
+                    control_points_np = stroke_data.get('control_points')
+                    if control_points_np is None: continue #Should not happen if drawn in cache
+
                     painter.save()
-                    painter.setPen(QPen(Qt.GlobalColor.magenta, 8, Qt.PenStyle.SolidLine))
-                    painter.setBrush(Qt.GlobalColor.magenta)
-                    painter.drawEllipse(selected_cp_screen, 4, 4) # YENİ: screen koordinatlarını kullan
+                    painter.setPen(QPen(Qt.GlobalColor.red, 5, Qt.PenStyle.SolidLine))
+                    for cp_np in control_points_np:
+                        screen_cp = self.world_to_screen(QPointF(cp_np[0], cp_np[1])) 
+                        painter.drawPoint(screen_cp) 
                     painter.restore()
-            # YENİ KOŞUL SONU (Kontrol noktası çizimi için)
-            
-            # painter.restore() # Eğer başta save yapıldıysa
 
-        # Geçici işaretçi izini çiz
+                    if self.b_spline_widget.selected_control_point is not None:
+                        stroke_idx_widget, cp_idx_widget = self.b_spline_widget.selected_control_point
+                        current_stroke_index_in_widget_list = -1
+                        for idx_w, s_w_data in enumerate(self.b_spline_widget.strokes):
+                            if s_w_data is stroke_data:
+                                current_stroke_index_in_widget_list = idx_w
+                                break
+                        if stroke_idx_widget == current_stroke_index_in_widget_list and 0 <= cp_idx_widget < len(control_points_np):
+                            selected_cp_np = control_points_np[cp_idx_widget]
+                            selected_cp_world = QPointF(selected_cp_np[0], selected_cp_np[1])
+                            selected_cp_screen = self.world_to_screen(selected_cp_world) 
+                            painter.save()
+                            painter.setPen(QPen(Qt.GlobalColor.magenta, 8, Qt.PenStyle.SolidLine))
+                            painter.setBrush(Qt.GlobalColor.magenta)
+                            painter.drawEllipse(selected_cp_screen, 4, 4) 
+                            painter.restore()
+        
+        # Draw active (currently drawing) B-spline stroke (Dynamic)
+        if self.current_tool == ToolType.EDITABLE_LINE and self.b_spline_widget and len(self.b_spline_widget.current_stroke) > 1:
+            painter.save()
+            for i in range(len(self.b_spline_widget.current_stroke) - 1): # Renamed i_loop to i
+                point1_world_qpoint, pressure1 = self.b_spline_widget.current_stroke[i]
+                point2_world_qpoint, pressure2 = self.b_spline_widget.current_stroke[i+1]
+                point1_screen = self.world_to_screen(point1_world_qpoint)
+                point2_screen = self.world_to_screen(point2_world_qpoint)
+                pen_width = 1 + pressure1 * 9
+                pen = QPen(Qt.GlobalColor.blue, pen_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+                painter.setPen(pen)
+                painter.drawLine(point1_screen, point2_screen)
+            painter.restore()
+
+        # 8. Draw temporary pointer trails (TEMPORARY_POINTER tool)
         if self.current_tool == ToolType.TEMPORARY_POINTER and self.pointer_trail_points:
-            # Dış Halo (en geniş kısım)
             path = QPainterPath()
             path.moveTo(self.pointer_trail_points[0][0])
             for p, _ in self.pointer_trail_points[1:]:
@@ -729,18 +676,14 @@ class DrawingCanvas(QWidget):
             glow_pen = QPen(QColor(255, 80, 0, 40), 25, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
             painter.setPen(glow_pen)
             painter.drawPath(path)
-            
-            # Orta katman (ana parlaklık)
-            path = QPainterPath()
+            path = QPainterPath() # Re-init path
             path.moveTo(self.pointer_trail_points[0][0])
             for p, _ in self.pointer_trail_points[1:]:
                 path.lineTo(p)
             mid_pen = QPen(QColor(255, 160, 30, 90), 15, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
             painter.setPen(mid_pen)
             painter.drawPath(path)
-            
-            # İç çekirdek (en parlak kısım)
-            path = QPainterPath()
+            path = QPainterPath() # Re-init path
             path.moveTo(self.pointer_trail_points[0][0])
             for p, _ in self.pointer_trail_points[1:]:
                 path.lineTo(p)
@@ -748,141 +691,114 @@ class DrawingCanvas(QWidget):
             painter.setPen(core_pen)
             painter.drawPath(path)
 
-        # --- YENİ: Lazer İşaretçiyi Çiz (Ekran Koordinatlarında) --- #
+        # 9. Draw laser pointer (LASER_POINTER tool)
         if self.laser_pointer_active and not self.last_cursor_pos_screen.isNull():
              painter.save()
              painter.setRenderHint(QPainter.RenderHint.Antialiasing)
              painter.setPen(Qt.PenStyle.NoPen)
-
              center_pos = self.last_cursor_pos_screen
              base_size = self.laser_pointer_size
-             radius = base_size * 0.8 # Glow efekti için yarıçapı biraz artıralım
-             
-             # Radyal gradyan oluştur
+             radius = base_size * 0.8
              gradient = QRadialGradient(center_pos, radius)
-             
-             # Merkez renk (daha opak)
              center_color = QColor(self.laser_pointer_color)
              center_color.setAlpha(220) 
              gradient.setColorAt(0.0, center_color)
-
-             # Orta renk (yarı saydam)
              mid_color = QColor(self.laser_pointer_color)
              mid_color.setAlpha(100) 
              gradient.setColorAt(0.4, mid_color)
-             
-             # Dış renk (tamamen saydam)
              outer_color = QColor(self.laser_pointer_color)
              outer_color.setAlpha(0)
              gradient.setColorAt(1.0, outer_color)
-
              painter.setBrush(QBrush(gradient))
              painter.drawEllipse(center_pos, radius, radius)
              painter.restore()
-        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- -- #
         
-        # --- YENİ: Geçici Çizgileri Çiz (tamamlanmış izler) --- #
+        # 10. Draw completed temporary lines (fade-out effect)
         if hasattr(self, 'temporary_lines') and self.temporary_lines:
             for points, color_tuple, width, start_time, animating in self.temporary_lines:
                 if len(points) > 1:
-                    # Önce dış parlama çizgisi (glow efekti)
                     path = QPainterPath()
                     path.moveTo(points[0][0])
                     for p, _ in points[1:]:
                         path.lineTo(p)
-                    
-                    # Dış glow - daha kalın ve yarı saydam
-                    glow_width = width * 5.0  # Daha geniş glow efekti
+                    glow_width = width * 5.0
                     glow_color = QColor()
                     glow_color.setRgbF(color_tuple[0], color_tuple[1], color_tuple[2], color_tuple[3] * 0.5)
                     glow_pen = QPen(glow_color, glow_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
                     painter.setPen(glow_pen)
                     painter.drawPath(path)
                     
-                    # Orta katman - parlak
-                    path = QPainterPath()
+                    path = QPainterPath() # Re-init path
                     path.moveTo(points[0][0])
                     for p, _ in points[1:]:
                         path.lineTo(p)
                     mid_width = width * 2.0
                     mid_color = QColor()
-                    mid_color.setRgbF(1.0, 0.9, 0.5, 0.7)  # Sarımsı parlak
+                    mid_color.setRgbF(1.0, 0.9, 0.5, 0.7)
                     mid_pen = QPen(mid_color, mid_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
                     painter.setPen(mid_pen)
                     painter.drawPath(path)
                     
-                    # İç çekirdek çizgi - ince ve beyaz
-                    path = QPainterPath()
+                    path = QPainterPath() # Re-init path
                     path.moveTo(points[0][0])
                     for p, _ in points[1:]:
                         path.lineTo(p)
                     core_width = width * 0.8
-                    core_color = QColor(255, 255, 255, 220)  # Beyaz ve opak
+                    core_color = QColor(255, 255, 255, 220)
                     core_pen = QPen(core_color, core_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
                     painter.setPen(core_pen)
                     painter.drawPath(path)
         
-        # Aktif geçici çizimi çiz
+        # 11. Draw active temporary drawing (TEMPORARY_POINTER tool, current_temporary_line_points)
         if self.current_tool == ToolType.TEMPORARY_POINTER and self.temporary_drawing_active and len(self.current_temporary_line_points) > 1:
-            # Dış glow (en geniş parçalı halo efekti)
             path = QPainterPath()
             path.moveTo(self.current_temporary_line_points[0][0])
             for p, _ in self.current_temporary_line_points[1:]:
                 path.lineTo(p)
-            glow_width = self.temp_pointer_width * 8.0  # Daha geniş dış halo
-            glow_color = QColor(255, 100, 30, 80)  # Turuncu çok hafif saydam
+            glow_width = self.temp_pointer_width * 8.0
+            glow_color = QColor(255, 100, 30, 80)
             glow_pen = QPen(glow_color, glow_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
             painter.setPen(glow_pen)
             painter.drawPath(path)
             
-            # Orta katman (ana parlaklık)
-            path = QPainterPath()
+            path = QPainterPath() # Re-init path
             path.moveTo(self.current_temporary_line_points[0][0])
             for p, _ in self.current_temporary_line_points[1:]:
                 path.lineTo(p)
-            mid_width = self.temp_pointer_width * 4.0  # Daha kalın orta katman
-            mid_color = QColor(255, 180, 50, 150)  # Altın sarısı, yarı saydam
+            mid_width = self.temp_pointer_width * 4.0
+            mid_color = QColor(255, 180, 50, 150)
             mid_pen = QPen(mid_color, mid_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
             painter.setPen(mid_pen)
             painter.drawPath(path)
             
-            # İç çekirdek (en parlak kısım)
-            path = QPainterPath()
+            path = QPainterPath() # Re-init path
             path.moveTo(self.current_temporary_line_points[0][0])
             for p, _ in self.current_temporary_line_points[1:]:
                 path.lineTo(p)
-            core_width = self.temp_pointer_width * 1.5  # Daha kalın çekirdek
-            core_color = QColor(255, 255, 255, 250)  # Neredeyse opak beyaz
+            core_width = self.temp_pointer_width * 1.5
+            core_color = QColor(255, 255, 255, 250)
             core_pen = QPen(core_color, core_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
             painter.setPen(core_pen)
             painter.drawPath(path)
-        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- -- #
 
-        # Seçim overlayı
+        # 12. Draw selection overlay (handles, bounding boxes for selected items)
         canvas_drawing_helpers.draw_selection_overlay(self, painter)
         
-        # Seçim dikdörtgeni çiz
+        # 13. Draw selection rectangle (if self.selecting)
         canvas_drawing_helpers.draw_selection_rectangle(self, painter)
 
-        # --- Silgi Önizlemesi --- #
-        if self.current_tool == ToolType.ERASER and self.underMouse(): # Sadece fare canvas üzerindeyken çiz
-            last_pos_screen_qpoint = self.mapFromGlobal(QCursor.pos()) # Global fare pozisyonunu widget koordinatlarına çevir (QPoint döndürür)
-            if self.rect().contains(last_pos_screen_qpoint): # Widget sınırları içindeyse
+        # 14. Draw eraser preview (if ERASER tool)
+        if self.current_tool == ToolType.ERASER and self.underMouse():
+            last_pos_screen_qpoint = self.mapFromGlobal(QCursor.pos())
+            if self.rect().contains(last_pos_screen_qpoint):
                 painter.save()
-                eraser_radius = self.eraser_width / 2.0 # Bu float
-                
-                # QPoint'i QPointF'ye dönüştür
+                eraser_radius = self.eraser_width / 2.0
                 last_pos_screen_qpointf = QPointF(last_pos_screen_qpoint)
-                
-                # Silgi önizlemesi için renk ve fırça
-                preview_color = QColor(128, 128, 128, 100) # Yarı şeffaf gri
+                preview_color = QColor(128, 128, 128, 100)
                 painter.setBrush(QBrush(preview_color))
-                painter.setPen(Qt.PenStyle.NoPen) # Kenarlık olmasın
-                
-                # Daire şeklinde önizleme çiz (QPointF merkez ve float yarıçaplarla)
+                painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawEllipse(last_pos_screen_qpointf, eraser_radius, eraser_radius)
                 painter.restore()
-        # --- --- --- --- --- -- #
 
     def screen_to_world(self, screen_pos: QPointF) -> QPointF:
         if self._parent_page:
@@ -1489,6 +1405,7 @@ class DrawingCanvas(QWidget):
             if self.current_template != template_type:
                 self.current_template = template_type
                 logging.info(f"Arka plan şablonu değiştirildi: {template_type.name}")
+                self._cache_dirty = True # Added line
                 self.update()
         else:
             logging.warning(f"Geçersiz şablon tipi: {template_type}")
@@ -1539,12 +1456,14 @@ class DrawingCanvas(QWidget):
     def update_line_spacing(self, spacing_pt: int):
         # logging.debug(f"Anlık çizgi aralığı güncelleniyor: {spacing_pt} pt") # Yorum satırı yapıldı
         self.line_spacing_pt = spacing_pt
+        self._cache_dirty = True
         self.update()
 
     @pyqtSlot(int)
     def update_grid_spacing(self, spacing_pt: int):
         # logging.debug(f"Anlık ızgara aralığı güncelleniyor: {spacing_pt} pt") # Yorum satırı yapıldı
         self.grid_spacing_pt = spacing_pt
+        self._cache_dirty = True
         self.update()
         
     @pyqtSlot(tuple)
@@ -1552,6 +1471,7 @@ class DrawingCanvas(QWidget):
         if isinstance(color_rgba, (list, tuple)) and len(color_rgba) >= 3:
             # logging.debug(f"Anlık çizgi rengi güncelleniyor: {color_rgba}") # Yorum satırı yapıldı
             self.template_line_color = color_rgba
+            self._cache_dirty = True
             self.update()
         else:
              logging.warning(f"Geçersiz anlık çizgi rengi verisi alındı: {color_rgba}")
@@ -1561,6 +1481,7 @@ class DrawingCanvas(QWidget):
         if isinstance(color_rgba, (list, tuple)) and len(color_rgba) >= 3:
             # logging.debug(f"Anlık ızgara rengi güncelleniyor: {color_rgba}") # Yorum satırı yapıldı
             self.template_grid_color = color_rgba
+            self._cache_dirty = True
             self.update()
         else:
              logging.warning(f"Geçersiz anlık ızgara rengi verisi alındı: {color_rgba}")
@@ -1572,16 +1493,7 @@ class DrawingCanvas(QWidget):
         self.line_spacing_pt = settings.get("line_spacing_pt", self.line_spacing_pt)
         self.grid_spacing_pt = settings.get("grid_spacing_pt", self.grid_spacing_pt)
         
-        try:
-            template_name = settings.get('template_type_name')
-            if template_name:
-                self.current_template = TemplateType[template_name]
-        except KeyError:
-             logging.warning(f"Ayarlarda geçersiz template_type_name: '{template_name}', şablon tipi değiştirilmedi.")
-        except Exception as e:
-            logging.error(f"Şablon tipi güncellenirken hata: {e}")
-            
-        template_changed = False
+        template_changed = False # Moved definition earlier
         try:
             template_name = settings.get('template_type_name')
             if template_name:
@@ -1596,6 +1508,7 @@ class DrawingCanvas(QWidget):
         except Exception as e:
             logging.error(f"Şablon tipi güncellenirken hata: {e}")
             
+        self._cache_dirty = True # Set cache dirty before potential load or update
         # Eğer şablon tipi değiştiyse, yeni arka planı yükle, aksi takdirde sadece güncelle
         if template_changed:
             # logging.debug("Template type changed, reloading background image.") # Yorum satırı yapıldı
@@ -1940,6 +1853,7 @@ class DrawingCanvas(QWidget):
         self._current_background_image_path = None
 
         if self._parent_page is None:
+            self._cache_dirty = True # Ensure cache is dirty even if parent_page is None
             self.update()
             return
 
@@ -1948,6 +1862,7 @@ class DrawingCanvas(QWidget):
 
         if template_type == TemplateType.PLAIN:
             self._current_background_image_path = None
+            self._cache_dirty = True # Ensure cache is dirty for PLAIN template
             self.update()
             return
 
@@ -1982,6 +1897,7 @@ class DrawingCanvas(QWidget):
         else:
             self.setMinimumSize(600, 800)
 
+        self._cache_dirty = True # Added line
         self.update()
 
     def resizeEvent(self, event):
@@ -2000,6 +1916,7 @@ class DrawingCanvas(QWidget):
                 self._pdf_background_source_path = None # YENİ: Eğer yol verilmezse temizle
             logging.info(f"DrawingCanvas ({id(self)}): Özel sayfa arka planı ayarlandı. _has_page_background = {self._has_page_background}. Pixmap boyutu: {pixmap.size()}. Kaynak Yolu: {self._pdf_background_source_path}")
             self.setMinimumSize(pixmap.size())
+            self._cache_dirty = True # Added line
             self.update() 
             self.updateGeometry() # Geometri güncellemesini iste
             self.adjustSize() # Boyutu içeriğe göre ayarla
@@ -2008,8 +1925,9 @@ class DrawingCanvas(QWidget):
             self._has_page_background = False
             self._pdf_background_source_path = None # YENİ: Arka plan kaldırılırsa yolu da temizle
             logging.warning(f"DrawingCanvas ({id(self)}): set_page_background_pixmap çağrıldı ama pixmap geçersiz. Özel arka plan kaldırıldı. _has_page_background = {self._has_page_background}")
+            self._cache_dirty = True # Added line
             self.load_background_template_image() # Özel arka plan yoksa şablonu yükle
-            self.update()
+            # self.update() is called by load_background_template_image which also sets _cache_dirty
             self.updateGeometry()
             self.adjustSize()
     # --- --- --- --- --- --- --- --- --- --- --- -- #
@@ -2264,6 +2182,7 @@ class DrawingCanvas(QWidget):
 
     def set_fill_enabled(self, enabled: bool):
         self.fill_enabled = enabled
+        self._cache_dirty = True
         self.update()
 
     def update(self, *args, **kwargs):
@@ -2380,6 +2299,7 @@ class DrawingCanvas(QWidget):
         self.grid_show_for_line_tool_only = settings_dict.get('grid_show_for_line_tool_only', getattr(self, 'grid_show_for_line_tool_only', CANVAS_DEFAULT_GRID_SETTINGS['grid_show_for_line_tool_only']))
         self.snap_lines_to_grid = settings_dict.get('grid_snap_enabled', getattr(self, 'snap_lines_to_grid', CANVAS_DEFAULT_GRID_SETTINGS['grid_snap_enabled']))
         self.grid_visible_on_snap = settings_dict.get('grid_visible_on_snap', getattr(self, 'grid_visible_on_snap', CANVAS_DEFAULT_GRID_SETTINGS['grid_visible_on_snap']))
+        self._cache_dirty = True
         self.update()
 
     def _update_pointer_trail(self):

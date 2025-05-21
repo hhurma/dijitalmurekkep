@@ -144,6 +144,7 @@ class Page(QWidget):
                 self.drawing_canvas.updateGeometry() # Boyut ipuçlarının değiştiğini bildir
             if hasattr(self.drawing_canvas, 'adjustSize'):
                  self.drawing_canvas.adjustSize() # Canvas'ı yeni sizeHint'e göre ayarla
+            self.drawing_canvas._cache_dirty = True
             self.drawing_canvas.update() # Son olarak yeniden çizim yap
             
     def set_pan(self, pan_offset: QPointF):
@@ -153,6 +154,7 @@ class Page(QWidget):
              self.pan_offset = pan_offset
              logging.debug(f"Sayfa {self.page_number} pan ofseti: ({self.pan_offset.x():.1f}, {self.pan_offset.y():.1f})")
              self.view_changed.emit()
+             self.drawing_canvas._cache_dirty = True
              self.drawing_canvas.update()
              
     def reset_view(self):
@@ -173,6 +175,7 @@ class Page(QWidget):
                 self.drawing_canvas.updateGeometry()
             if hasattr(self.drawing_canvas, 'adjustSize'):
                 self.drawing_canvas.adjustSize()
+            self.drawing_canvas._cache_dirty = True
             self.drawing_canvas.update()
 
     # --- YENİ: Pixmap Yükleme Metodu --- #
