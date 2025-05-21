@@ -494,16 +494,22 @@ class DrawingCanvas(QWidget):
         """Ana çizim olayını yönetir. Tüm elemanları tuvale çizer."""
         
         # Cache Initialization/Recreation
-        if self._static_content_cache is None or self._static_content_cache.size() != self.size():
-            self._static_content_cache = QPixmap(self.size())
+        dpr = self.devicePixelRatioF() # Get device pixel ratio
+        scaled_size = self.size() * dpr
+
+        if self._static_content_cache is None or self._static_content_cache.size() != scaled_size:
+            self._static_content_cache = QPixmap(scaled_size)
+            self._static_content_cache.setDevicePixelRatio(dpr) # Set it on the pixmap
             self._cache_dirty = True
-            logging.debug(f"Canvas cache recreated. Size: {self.size()}")
+            logging.debug(f"Canvas cache recreated with DPR {dpr}. Scaled Size: {scaled_size}, Original Size: {self.size()}")
 
         # Populating the Cache (if dirty)
         if self._cache_dirty:
             logging.debug(f"Canvas cache is dirty. Repopulating...")
             cache_painter = QPainter(self._static_content_cache)
-            cache_painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            cache_painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            cache_painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+            cache_painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
 
             # 1. Draw background color to cache
             cache_painter.fillRect(self._static_content_cache.rect(), rgba_to_qcolor(self.background_color))
@@ -593,7 +599,8 @@ class DrawingCanvas(QWidget):
 
         # Main Drawing Logic
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
 
         # Draw the populated cache
         painter.drawPixmap(0, 0, self._static_content_cache)
