@@ -3,7 +3,7 @@ from scipy.interpolate import splev, splprep
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 from PyQt6.QtWidgets import QWidget, QSizePolicy, QApplication
 from PyQt6.QtGui import QColor, QTabletEvent, QPainter, QPen, QBrush, QCursor, QPaintEvent, QPainterPath, QRadialGradient, QPixmap, QVector2D, QTransform, QTouchEvent, QEventPoint
-from PyQt6.QtCore import Qt, QPointF, QRectF, QTimer, QSize, QEvent
+from PyQt6.QtCore import Qt, QPointF, QRectF, QTimer, QSize, QEvent, QRectF
 from collections import defaultdict
 from OpenGL import GL
 import logging
@@ -454,6 +454,16 @@ class DrawingCanvas(QWidget):
 
         # --- YENİ: Düzenlenebilir Çizgi (Eski Bezier) Kontrol Noktası Seçici Aracı Özellikleri --- # 
 
+    def get_visible_world_rect(self) -> QRectF:
+        """Calculates the rectangle of the visible area in world coordinates."""
+        if not self._parent_page:
+            # Return a null QRectF if parent_page is not available
+            return QRectF()
+
+        top_left_world = self.screen_to_world(QPointF(0, 0))
+        bottom_right_world = self.screen_to_world(QPointF(self.width(), self.height()))
+        return QRectF(top_left_world, bottom_right_world).normalized()
+
     def get_image_export_data(self) -> List[dict]:
         """Sahnedeki resim öğelerinden PDF dışa aktarma için veri toplar."""
         export_data = []
@@ -543,16 +553,13 @@ class DrawingCanvas(QWidget):
 
         # YENİ: B-Spline çizgilerini ve kontrol noktalarını çiz (DrawingWidget'tan alınan mantıkla)
         if self.current_tool == ToolType.EDITABLE_LINE or (self.b_spline_widget and self.b_spline_widget.strokes): # YENİ KOŞUL: b_spline_widget ve onun strokes'ları kontrol ediliyor
-            # painter.save() # Gerekirse painter durumunu koru
-            
-            # DrawingWidget'ın paintEvent'indeki gibi strokes'ları çiz
-            # pen = QPen(Qt.GlobalColor.black, 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin) # ESKİ SABİT PEN
-            # painter.setPen(pen) # ESKİ
-
-            # Tamamlanmış B-spline'ları çiz
-            # for stroke_data in self.b_spline_strokes: # self.b_spline_widget.strokes yerine canvas'taki kopyayı kullan # ESKİ DÖNGÜ
+            visible_world_rect = self.get_visible_world_rect()
             if self.b_spline_widget: # b_spline_widget'ın varlığını kontrol et
                 for i, stroke_data in enumerate(self.b_spline_widget.strokes): # YENİ DÖNGÜ: enumerate ile index (i) alınıyor
+                    bspline_bbox = geometry_helpers.get_bspline_bounding_box(stroke_data)
+                    if not visible_world_rect.isNull() and not visible_world_rect.intersects(bspline_bbox):
+                        continue
+
                     control_points_np = stroke_data.get('control_points')
                     knots = stroke_data.get('knots')
                     degree = stroke_data.get('degree')
@@ -563,11 +570,8 @@ class DrawingCanvas(QWidget):
                         continue
 
                     stroke_thickness_from_data = stroke_data.get('thickness')
-                    # Kalınlık için widget'ın varsayılanını veya genel bir varsayılanı kullanabiliriz.
-                    # Şimdilik widget'ın varsayılanını kullanalım, eğer stroke'ta yoksa.
                     effective_thickness = stroke_thickness_from_data if stroke_thickness_from_data is not None else self.b_spline_widget.default_line_thickness
                     
-                    # YENİ: Her stroke için dinamik pen
                     stroke_color_data = stroke_data.get('color', [0.0, 0.0, 0.0, 1.0]) # Varsayılan siyah
                     current_pen_qcolor = rgba_to_qcolor(stroke_color_data) 
                     try:
@@ -578,12 +582,7 @@ class DrawingCanvas(QWidget):
                         default_pen_for_error = QPen(Qt.GlobalColor.magenta, 1) # Hata durumunda farklı renkte çiz
                         painter.setPen(default_pen_for_error)
                     
-                    # original_points_with_pressure = stroke_data.get('original_points_with_pressure', [])
-
-                    # tck'yı yeniden oluştur
                     try:
-                        # Kontrol noktalarını (2, N) formatına getir
-                        # Önce kontrol noktalarının geçerliliğini kontrol edelim
                         if not control_points_np or not isinstance(control_points_np, list) or not all(isinstance(cp, np.ndarray) and cp.shape == (2,) for cp in control_points_np):
                             #logging.error(f"DrawingCanvas paintEvent: Invalid control_points_np for tck creation. Stroke index {i}. Skipping. CP Data: {control_points_np}") # stroke_data'nın indexini logla
                             continue
@@ -593,90 +592,45 @@ class DrawingCanvas(QWidget):
 
                         control_points_for_scipy = np.array(control_points_np).T 
                         tck = (knots, control_points_for_scipy, degree)
-
-                        # YENİ LOGLAR BAŞLANGIÇ (Doğru Konum)
-                        #logging.debug(f"DrawingCanvas paintEvent: Stroke {i} - About to call splev.") # i'yi stroke_data'nın indexi olarak kullan
-                        #logging.debug(f"  knots (t): shape={knots.shape if hasattr(knots, 'shape') else 'N/A'}, len={len(knots) if knots is not None else 'N/A'}")
                         
-                        cp_shape_str = 'N/A'
-                        N_cp_str = 'N/A'
-                        if hasattr(control_points_for_scipy, 'shape'):
-                            cp_shape_str = str(control_points_for_scipy.shape)
-                            if len(control_points_for_scipy.shape) == 2: # (ndim, n_control_points)
-                                N_cp_str = str(control_points_for_scipy.shape[1])
-                        
-                        #logging.debug(f"  control_points_for_scipy (c): shape={cp_shape_str}, N_cp={N_cp_str}")
-                        #logging.debug(f"  degree (k): {degree}")
-                        
-                        if u_params is not None and len(u_params) > 0:
-                             # u_params'ın son elemanının varlığını ve içeriğini kontrol et
-                             if u_params[-1] is not None:
-                                 #logging.debug(f"  u_params for splev: min_u={np.min(u_params)}, max_u={np.max(u_params)}, num_eval_points=100, u_last={u_params[-1]}")
-                                 pass
-                             else:
-                                 #logging.error(f"  u_params for splev: u_params[-1] is None. Stroke index {i}. Skipping splev.")
-                                 continue # splev'i atla
-                        else:
-                             #logging.error(f"  u_params for splev: u_params is None or empty. Stroke index {i}. Skipping splev.")
+                        if u_params is None or len(u_params) == 0 or u_params[-1] is None:
+                             #logging.error(f"  u_params for splev: u_params is None, empty or u_params[-1] is None. Stroke index {i}. Skipping splev.")
                              continue # splev'i atla
-                        # YENİ LOGLAR BİTİŞ
 
                     except Exception as e:
                         #logging.error(f"DrawingCanvas paintEvent: Error reconstructing tck for B-Spline (Stroke index {i}): {e}. Control Points: {control_points_np}, Knots: {knots}, Degree: {degree}") # stroke_data'nın indexini logla
                         continue
 
-
-                    # B-spline eğrisini çiz
-                    # TODO: Koordinat dönüşümlerini uygula (world_to_screen)
-                    # Şu an DrawingWidget kendi koordinatlarında çiziyor, canvas'a uyarlamalıyız.
-                    # SciPy'den gelen noktalar doğrudan ekran koordinatı gibi varsayılıyor.
-                    # Eğer dünya koordinatlarında saklanıyorsa screen_to_world / world_to_screen dönüşümü gerekir.
-                    # Şimdilik event.pos() ile gelen canvas pixel koordinatları kullanıldığını varsayıyoruz.
                     try:
                         x_fine, y_fine = splev(np.linspace(0, u_params[-1], 100), tck)
                         path = QPainterPath()
                         if len(x_fine) > 0:
-                            # BURADAKİ world_to_screen KULLANIMI DOĞRU GÖRÜNÜYOR, DrawingWidget'tan gelen noktalar
-                            # zaten tabletReleaseEvent içinde dünya koordinatları olarak kabul ediliyor.
                             path.moveTo(self.world_to_screen(QPointF(x_fine[0], y_fine[0]))) 
-                            for i in range(1, len(x_fine)):
-                                path.lineTo(self.world_to_screen(QPointF(x_fine[i], y_fine[i]))) 
+                            for point_idx in range(1, len(x_fine)): # Renamed i to point_idx to avoid conflict
+                                path.lineTo(self.world_to_screen(QPointF(x_fine[point_idx], y_fine[point_idx]))) 
                             painter.drawPath(path)
                     except Exception as e:
                         #logging.error(f"DrawingCanvas paintEvent: Error drawing B-Spline path: {e}")
                         continue
 
-                    # B-Spline kontrol noktalarını çiz (kırmızı)
-                    # YENİ KOŞUL: Sadece EDITABLE_LINE_NODE_SELECTOR aracı aktifse kontrol noktalarını çiz
                     if self.current_tool == ToolType.EDITABLE_LINE_NODE_SELECTOR:
                         painter.save()
                         painter.setPen(QPen(Qt.GlobalColor.red, 5, Qt.PenStyle.SolidLine))
                         for cp_np in control_points_np:
-                            # cp_np bir numpy array [x, y]
                             screen_cp = self.world_to_screen(QPointF(cp_np[0], cp_np[1])) 
                             painter.drawPoint(screen_cp) 
                         painter.restore()
 
-                        # Seçili B-Spline kontrol noktasını farklı çiz (DrawingWidget'ta yok, eklenebilir)
-                        # BU BLOK DA AYNI KOŞULA TAŞINACAK
-                        # if self.b_spline_widget.selected_control_point is not None: # b_spline_widget kontrolü yukarıda yapıldı
                         if self.b_spline_widget and self.b_spline_widget.selected_control_point is not None:
                             stroke_idx_widget, cp_idx_widget = self.b_spline_widget.selected_control_point
-                            # self.b_spline_widget.strokes içindeki index ile eşleşmeli
-                            # Bu döngü zaten self.b_spline_widget.strokes üzerinde olduğu için stroke_idx_widget'ı
-                            # mevcut stroke ile karşılaştırabiliriz veya doğrudan kullanabiliriz eğer indexler tutarlıysa.
-                            # Şimdilik, seçili kontrol noktasının koordinatlarını doğrudan alalım.
-                            
-                            # Mevcut stroke_data'nın indeksi lazım. enumerate(self.b_spline_widget.strokes) kullanılabilir.
-                            # Veya seçili stroke'u bulmak için:
                             current_stroke_index_in_widget_list = -1
                             for idx_w, s_w_data in enumerate(self.b_spline_widget.strokes):
-                                if s_w_data is stroke_data: # Referans eşitliği ile kontrol
+                                if s_w_data is stroke_data: 
                                     current_stroke_index_in_widget_list = idx_w
                                     break
 
                             if stroke_idx_widget == current_stroke_index_in_widget_list and 0 <= cp_idx_widget < len(control_points_np):
-                                selected_cp_np = control_points_np[cp_idx_widget] # Doğrudan mevcut stroke'un kontrol noktasını al
+                                selected_cp_np = control_points_np[cp_idx_widget] 
                                 selected_cp_world = QPointF(selected_cp_np[0], selected_cp_np[1])
                                 selected_cp_screen = self.world_to_screen(selected_cp_world) 
                                 painter.save()
@@ -684,21 +638,21 @@ class DrawingCanvas(QWidget):
                                 painter.setBrush(Qt.GlobalColor.magenta)
                                 painter.drawEllipse(selected_cp_screen, 4, 4) 
                                 painter.restore()
-                    # YENİ KOŞUL SONU (Kontrol noktası ve seçili nokta çizimi için)
 
             # Aktif (çizilmekte olan) B-spline stroke'u çiz (DrawingWidget'taki gibi)
             if self.b_spline_widget and len(self.b_spline_widget.current_stroke) > 1: # b_spline_widget kontrolü eklendi
                 painter.save()
                 for i in range(len(self.b_spline_widget.current_stroke) - 1):
-                    point1_world_qpoint, pressure1 = self.b_spline_widget.current_stroke[i]
-                    point2_world_qpoint, pressure2 = self.b_spline_widget.current_stroke[i+1]
+                    # Renamed loop variable from i to current_stroke_idx to avoid conflict
+                    for current_stroke_idx in range(len(self.b_spline_widget.current_stroke) - 1):
+                        point1_world_qpoint, pressure1 = self.b_spline_widget.current_stroke[current_stroke_idx]
+                        point2_world_qpoint, pressure2 = self.b_spline_widget.current_stroke[current_stroke_idx+1]
                     
-                    # pointX_world_qpoint QPointF nesneleri (dünya koordinatlarında)
-                    point1_screen = self.world_to_screen(point1_world_qpoint) # YENİ: world_to_screen
-                    point2_screen = self.world_to_screen(point2_world_qpoint) # YENİ: world_to_screen
+                        point1_screen = self.world_to_screen(point1_world_qpoint) 
+                        point2_screen = self.world_to_screen(point2_world_qpoint) 
 
-                    pen_width = 1 + pressure1 * 9 # Basınca göre kalınlık
-                    pen = QPen(Qt.GlobalColor.blue, pen_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+                        pen_width = 1 + pressure1 * 9 
+                        pen = QPen(Qt.GlobalColor.blue, pen_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
                     painter.setPen(pen)
                     painter.drawLine(point1_screen, point2_screen) # YENİ: screen koordinatlarını kullan
                 painter.restore()

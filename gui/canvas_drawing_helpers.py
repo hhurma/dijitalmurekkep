@@ -40,6 +40,7 @@ def draw_items(canvas: 'DrawingCanvas', painter: QPainter):
     from .enums import ToolType # Fonksiyon içinde import
     from utils.drawing_helpers import draw_pen_stroke, draw_shape
     # logging.debug(f"draw_items: shapes id={id(canvas.shapes)}, canvas id={id(canvas)}")
+    visible_world_rect = canvas.get_visible_world_rect()
     # --- ÖNCE RESİMLERİ ÇİZ (YENİ: img_data kullanarak) --- #
     if canvas._parent_page and hasattr(canvas._parent_page, 'images') and canvas._parent_page.images:
         for item_index, img_data in enumerate(canvas._parent_page.images):
@@ -49,6 +50,8 @@ def draw_items(canvas: 'DrawingCanvas', painter: QPainter):
             uuid = img_data.get('uuid')
 
             if current_pixmap and not current_pixmap.isNull() and current_rect and current_rect.isValid():
+                if not visible_world_rect.isNull() and not visible_world_rect.intersects(current_rect):
+                    continue
                 # logging.debug(f"draw_items: Drawing image index {item_index} (UUID: {uuid}) using img_data - rect: {current_rect}, angle: {current_angle:.1f}, pixmap_size: {current_pixmap.size()}")
                 painter.save()
                 item_pos = current_rect.topLeft()
@@ -75,6 +78,9 @@ def draw_items(canvas: 'DrawingCanvas', painter: QPainter):
     # --- ÇİZGİLERİ ÇİZ --- #
     if hasattr(canvas, 'lines') and canvas.lines:
         for line_data in canvas.lines:
+            line_bbox = geometry_helpers.get_item_bounding_box(line_data, 'lines')
+            if not visible_world_rect.isNull() and not visible_world_rect.intersects(line_bbox):
+                continue
             if len(line_data) >= 4:
                 color, width, points, line_style = line_data[0], line_data[1], line_data[2], line_data[3]
             else:
@@ -87,6 +93,9 @@ def draw_items(canvas: 'DrawingCanvas', painter: QPainter):
         for i, shape_data in enumerate(canvas.shapes):
             if not shape_data or len(shape_data) < 5:
                 logging.warning(f"draw_items: Geçersiz shape_data atlanıyor: index={i}, data={shape_data}")
+                continue
+            shape_bbox = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
+            if not visible_world_rect.isNull() and not visible_world_rect.intersects(shape_bbox):
                 continue
             # line_style ve fill_rgba shape_data'da varsa draw_shape'a aktar
             if len(shape_data) >= 6:
