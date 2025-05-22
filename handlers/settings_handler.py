@@ -43,32 +43,33 @@ def handle_open_template_settings(main_window: 'MainWindow'):
                 active_canvas.apply_template_settings(settings)
             except Exception as e:
                 logging.error(f"Error applying temporary settings: {e}")
-                
-    if active_canvas:
-        try:
-            # Sinyalleri aktif canvas'ın metodlarına bağla
-            dialog.line_spacing_changed.connect(active_canvas.update_line_spacing)
-            dialog.grid_spacing_changed.connect(active_canvas.update_grid_spacing)
-            # Yeni renk sinyallerini bağla
-            dialog.line_color_changed.connect(active_canvas.update_line_color)
-            dialog.grid_color_changed.connect(active_canvas.update_grid_color)
-            # Yeni apply sinyalini bağla
-            dialog.apply_settings_requested.connect(_handle_apply_request)
-            
-            logging.debug("Dialog sinyalleri aktif canvas'a bağlandı.")
-        except AttributeError as e:
-             logging.error(f"Canvas'ta güncelleme metodu bulunamadı: {e}")
-        except Exception as e:
-             logging.error(f"Dialog sinyallerini bağlarken hata: {e}")
-    else:
-        logging.warning("Ayarları anlık güncellemek için aktif canvas bulunamadı.")
+
+    # --- YENİ: Şablon tipi değiştiğinde tüm canvasları güncelle --- #
+    def _handle_template_type_changed():
+        new_settings = dialog.get_settings()
+        for i in range(main_window.page_manager.count()):
+            scroll_area = main_window.page_manager.widget(i)
+            page = None
+            if hasattr(scroll_area, 'widget'):
+                widget_inside = scroll_area.widget()
+                if widget_inside.__class__.__name__ == 'Page':
+                    page = widget_inside
+            if page and hasattr(page, 'get_canvas'):
+                canvas = page.get_canvas()
+                if canvas:
+                    try:
+                        canvas.apply_template_settings(new_settings)
+                        canvas.load_background_template_image()
+                    except Exception as e:
+                        logging.error(f"Canvas {i} güncellenirken hata: {e}")
+
+    dialog.template_type_combo.currentIndexChanged.connect(_handle_template_type_changed)
     # --- --- ---
 
     # --- YENİ: Şablon Oluşturma Sinyal Bağlantıları --- #
     try:
-        # --- DÜZELTME: Lambda ile main_window'u geçir --- #
-        dialog.generate_templates_requested.connect(lambda settings_dict: handle_generate_template_images(main_window))
-        # dialog.generate_templates_requested.connect(main_window._handle_templates_generated) # Bu bağlantı kaldırıldı
+        # --- DÜZELTME: Lambda ile main_window'u ve settings_dict'i geçir --- #
+        dialog.generate_templates_requested.connect(lambda settings_dict: handle_generate_template_images(main_window, settings_override=settings_dict))
         logging.debug("Şablon oluşturma sinyali bağlandı.")
     except Exception as e:
         logging.error(f"Şablon oluşturma sinyali bağlanırken hata: {e}")
@@ -79,73 +80,52 @@ def handle_open_template_settings(main_window: 'MainWindow'):
         logging.info("Sayfa ayarları dialogu kabul edildi.")
         
         # --- YENİ: MainWindow'daki ayarları güncelle --- #
-        # Sadece template ile ilgili kısmı güncellemek daha güvenli
         main_window.settings['template_settings'] = new_settings
-        # --- --- --- --- --- --- --- --- --- --- --- --- #
-
-        # Ayarları aktif canvas'a uygula
-        canvas = main_window.page_manager.get_current_page().get_canvas() if main_window.page_manager.get_current_page() else None
-        if canvas:
-            canvas.apply_template_settings(new_settings)
-        
-        # --- DÜZELTME: settings argümanını gönder --- #    
         main_window._save_settings(main_window.settings) # Ayarları JSON'a kaydet
-        # --- --- --- --- --- --- --- --- --- --- --- -- #
-
-        # 3. Tüm mevcut canvasları yeni ayarlarla güncelle
+        # Tüm mevcut canvasları yeni ayarlarla güncelle
         logging.debug("Mevcut tüm canvaslar güncelleniyor...")
         for i in range(main_window.page_manager.count()):
-            # --- DEĞİŞİKLİK: ScrollArea'dan Page'i al --- #
             scroll_area = main_window.page_manager.widget(i)
             page = None
             if isinstance(scroll_area, QScrollArea):
                 widget_inside = scroll_area.widget()
                 if widget_inside.__class__.__name__ == 'Page':
                     page = widget_inside
-            # --- --- --- --- --- --- --- --- --- --- -- #
-
             if page and hasattr(page, 'get_canvas'):
                 canvas = page.get_canvas()
                 if canvas:
                     try:
-                         canvas.apply_template_settings(new_settings) # Bu metodu Canvas'a ekleyeceğiz
-                         logging.debug(f"Canvas {i} güncellendi.")
+                        canvas.apply_template_settings(new_settings)
+                        logging.debug(f"Canvas {i} güncellendi.")
                     except Exception as e:
-                         logging.error(f"Canvas {i} güncellenirken hata: {e}")
-                         
+                        logging.error(f"Canvas {i} güncellenirken hata: {e}")
         logging.info("Sayfa ayarları başarıyla güncellendi ve kaydedildi.")
     else:
         logging.info("Sayfa ayarları dialogu iptal edildi.")
-        # İptal durumunda anlık değişiklikleri geri al? 
-        # Şimdilik sadece kaydetmiyoruz. Anlık renk değişimi yapmadığımız için sorun yok.
-        # Aralıkları eski haline getirmek için orijinal ayarları saklayıp burada geri yükleyebiliriz.
         if active_canvas: 
-             try:
-                 # Orijinal ayarlarla canvas'ı eski haline getir
-                 active_canvas.apply_template_settings(current_settings) 
-                 logging.debug("İptal edildi, aktif canvas eski ayarlara döndürüldü.")
-             except Exception as e:
-                  logging.error(f"İptal sonrası canvas eski haline getirilirken hata: {e}")
+            try:
+                active_canvas.apply_template_settings(current_settings) 
+                logging.debug("İptal edildi, aktif canvas eski ayarlara döndürüldü.")
+            except Exception as e:
+                logging.error(f"İptal sonrası canvas eski haline getirilirken hata: {e}")
 
     # --- Bağlantıları Kes (Bellek sızıntısını önlemek için) ---
     if active_canvas:
         try:
-             dialog.line_spacing_changed.disconnect(active_canvas.update_line_spacing)
-             dialog.grid_spacing_changed.disconnect(active_canvas.update_grid_spacing)
-             # Yeni renk ve apply bağlantılarını kes
-             dialog.line_color_changed.disconnect(active_canvas.update_line_color)
-             dialog.grid_color_changed.disconnect(active_canvas.update_grid_color)
-             dialog.apply_settings_requested.disconnect(_handle_apply_request)
-             logging.debug("Dialog sinyal bağlantıları aktif canvas'tan kesildi.")
-        except TypeError: # Zaten bağlı değilse hata vermez
-             pass 
+            dialog.line_spacing_changed.disconnect(active_canvas.update_line_spacing)
+            dialog.grid_spacing_changed.disconnect(active_canvas.update_grid_spacing)
+            dialog.line_color_changed.disconnect(active_canvas.update_line_color)
+            dialog.grid_color_changed.disconnect(active_canvas.update_grid_color)
+            dialog.apply_settings_requested.disconnect(_handle_apply_request)
+            logging.debug("Dialog sinyal bağlantıları aktif canvas'tan kesildi.")
+        except TypeError:
+            pass 
         except Exception as e:
-             logging.error(f"Dialog sinyal bağlantılarını keserken hata: {e}")
+            logging.error(f"Dialog sinyal bağlantılarını keserken hata: {e}")
     # --- YENİ: Şablon Oluşturma Sinyal Bağlantısını Kes --- #
     try:
         # --- DÜZELTME: Bağlantıyı kes --- #
         dialog.generate_templates_requested.disconnect()
-        # dialog.generate_templates_requested.disconnect(main_window._handle_templates_generated) # Bu bağlantı kaldırıldı
         logging.debug("Şablon oluşturma sinyal bağlantısı kesildi.")
     except TypeError: # Zaten bağlı değilse
         pass
@@ -203,9 +183,9 @@ def handle_open_pointer_settings(main_window: 'MainWindow'):
 # --- --- --- --- --- --- --- --- --- --- # 
 
 # --- İMZA GÜNCELLENDİ: Tekrar MainWindow alır --- #
-def handle_generate_template_images(main_window: 'MainWindow'):
-    """Mevcut CANVAS boyutlarına ve KAYDEDİLMİŞ ayarlara göre 
-       HEM DİKEY HEM YATAY şablon arka plan resimlerini (JPG) oluşturur.
+def handle_generate_template_images(main_window: 'MainWindow', settings_override: dict = None):
+    """Mevcut CANVAS boyutlarına ve KAYDEDİLMİŞ ayarlara göre HEM DİKEY HEM YATAY şablon arka plan resimlerini (JPG) oluşturur.
+       settings_override verilirse, bu ayarları kullanır ve main_window.settings['template_settings'] olarak günceller.
     """
     logging.info("Mevcut Canvas boyutuna özel DİKEY ve YATAY şablon arka plan resimleri oluşturuluyor...")
     
@@ -227,9 +207,16 @@ def handle_generate_template_images(main_window: 'MainWindow'):
     logging.info(f"Kullanılacak Canvas boyutları: {canvas_width}x{canvas_height}")
 
     try:
-        # 1. Gerekli Ayarları Al (Kaydedilmiş ayarlardan)
-        settings = main_window.settings
-        template_settings = settings.get('template_settings', {}) 
+        # 1. Gerekli Ayarları Al (Kaydedilmiş ayarlardan veya override'dan)
+        if settings_override is not None:
+            template_settings = settings_override.copy()
+            main_window.settings['template_settings'] = template_settings
+            # Aktif canvas'a da uygula
+            canvas.apply_template_settings(template_settings)
+        else:
+            settings = main_window.settings
+            template_settings = settings.get('template_settings', {}) 
+
         line_color_rgba = template_settings.get("line_color", (0.8, 0.8, 1.0, 0.7))
         grid_color_rgba = template_settings.get("grid_color", (0.9, 0.9, 0.9, 0.8))
         line_spacing_pt = template_settings.get("line_spacing_pt", 28)
@@ -315,4 +302,9 @@ def handle_apply_pointer_settings(dialog: PointerSettingsDialog, main_window: 'M
     # ... (eski kodun ilgili kısmı buraya gelecek veya pass olacak)
     pass # Linter hatasını gidermek için geçici
 
+# --- --- --- --- --- --- --- --- --- --- # 
+
+# --- TemplateSettingsDialog'dan gelen generate_templates_requested sinyalini yakalayan fonksiyon --- #
+def handle_generate_templates_requested(main_window: 'MainWindow', settings_dict: dict):
+    handle_generate_template_images(main_window, settings_override=settings_dict)
 # --- --- --- --- --- --- --- --- --- --- # 

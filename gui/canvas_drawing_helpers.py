@@ -426,7 +426,14 @@ def draw_eraser_preview(canvas: 'DrawingCanvas', painter: QPainter):
     painter.restore() 
 
 def draw_grid_and_template(canvas: 'DrawingCanvas', painter: QPainter):
-    from .enums import TemplateType # Fonksiyon içinde import
+    from .enums import TemplateType
+
+    # Eğer arka plan pixmap yüklüyse ve şablon tipi grid/çizgili ise tekrar çizme
+    if (
+        canvas._background_pixmap is not None and not canvas._background_pixmap.isNull() and
+        canvas.current_template in [TemplateType.GRID, TemplateType.LINES_AND_GRID, TemplateType.LINED, TemplateType.DOT_GRID]
+    ):
+        return
 
     painter.save()
     # Gerekirse dünya koordinatlarına geçiş (eğer grid dünya birimleriyle tanımlanıyorsa)

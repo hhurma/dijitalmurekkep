@@ -100,6 +100,7 @@ class MainWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.settings = {}  # --- HATA DÜZELTME: settings her zaman tanımlı olsun ---
+        self.last_tool_action = None  # Son kullanılan araç action'ı (doldur checkbox kontrolü için)
         
         # --- Ayarları Yükle ---
         self._load_settings() # Artık recent_files'ı da yükleyecek
@@ -645,17 +646,25 @@ class MainWindow(QMainWindow):
         self.fill_enable_checkbox.setToolTip("Doldurma Aktif/Pasif")
         self.fill_enable_checkbox.stateChanged.connect(self._handle_fill_enable_changed)
         toolbar.addWidget(self.fill_enable_checkbox)
-        toolbar.addWidget(QLabel("Doldur"))
+        # Eski: toolbar.addWidget(QLabel("Doldur"))
+        self.fill_icon_label = QLabel()
+        self.fill_icon_label.setPixmap(qta.icon('fa5s.fill-drip').pixmap(20, 20))
+        self.fill_icon_label.setToolTip("Doldur")
+        toolbar.addWidget(self.fill_icon_label)
         toolbar.addSeparator()
         # --- --- --- --- --- --- --- --- --- ---
 
         # --- YENİ: Çizgiler grid'e uysun Checkbox --- #
         self.snap_line_to_grid_checkbox = QCheckBox()
         self.snap_line_to_grid_checkbox.setChecked(False)
-        self.snap_line_to_grid_checkbox.setToolTip("Düz çizgiler grid'e yapışsın (snap)")
+        self.snap_line_to_grid_checkbox.setToolTip("Çizgileri grid'e uydur")
         self.snap_line_to_grid_checkbox.stateChanged.connect(self._handle_snap_line_to_grid_changed)
         toolbar.addWidget(self.snap_line_to_grid_checkbox)
-        toolbar.addWidget(QLabel("Çizgiler grid'e uysun"))
+        # Eski: toolbar.addWidget(QLabel("Çizgileri grid'e uydur"))
+        self.grid_snap_icon_label = QLabel()
+        self.grid_snap_icon_label.setPixmap(qta.icon('fa5s.th-large').pixmap(20, 20))
+        self.grid_snap_icon_label.setToolTip("Çizgileri grid'e uydur")
+        toolbar.addWidget(self.grid_snap_icon_label)
         toolbar.addSeparator()
         # --- --- --- --- --- --- --- --- --- ---
 
@@ -876,7 +885,7 @@ class MainWindow(QMainWindow):
                 canvas.selection_changed.disconnect()
             except Exception:
                 pass
-            canvas.selection_changed.connect(lambda: self._update_width_spinbox_for_tool(self.select_tool_action))
+            canvas.selection_changed.connect(lambda: self._update_width_spinbox_for_tool(self.tool_actions.checkedAction()))
 
             # --- Doldurma rengi ve alpha'yı da canvas'a uygula --- #
             if canvas:
@@ -1501,102 +1510,35 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(QAction)
     def _update_width_spinbox_for_tool(self, action: QAction):
-        """Seçilen araca göre kalınlık spinbox'ının değerini ve tooltip'ini günceller."""
+        logging.debug(f"[_update_width_spinbox_for_tool] Çağrıldı. action={action}, text={getattr(action, 'text', lambda: None)() if action else None}")
         if not action:
             self.width_spinbox.setEnabled(False)
             self.width_spinbox.setToolTip("")
-            #logging.debug("_update_width_spinbox_for_tool: Boş action geldi, spinbox pasif.")
             return
-
         current_page = self.page_manager.get_current_page()
         if not current_page:
             self.width_spinbox.setEnabled(False)
             self.width_spinbox.setToolTip("")
-            #logging.debug("_update_width_spinbox_for_tool: Aktif sayfa yok, spinbox pasif.")
             return
-
         drawing_canvas = current_page.get_canvas() # DrawingCanvas örneğini al
         if not drawing_canvas:
             self.width_spinbox.setEnabled(False)
             self.width_spinbox.setToolTip("")
-            #logging.debug("_update_width_spinbox_for_tool: DrawingCanvas yok, spinbox pasif.")
             return
-        
         self.width_spinbox.setEnabled(False) # Varsayılan olarak pasif
         self.width_spinbox.setToolTip("")
-
-        if action == self.editable_line_tool_action:
-            if hasattr(drawing_canvas, 'b_spline_widget') and drawing_canvas.b_spline_widget:
-                self.width_spinbox.setToolTip("Düzenlenebilir Çizgi Kalınlığı")
-                self.width_spinbox.blockSignals(True)
-                self.width_spinbox.setValue(drawing_canvas.b_spline_widget.default_line_thickness)
-                self.width_spinbox.blockSignals(False)
-                self.width_spinbox.setEnabled(True)
-                #logging.debug(f"Spinbox, Düzenlenebilir Çizgi (b_spline_widget) için ayarlandı: {drawing_canvas.b_spline_widget.default_line_thickness}")
-            else:
-                self.width_spinbox.setValue(self.settings.get('pen_width', 2))
-                #logging.debug("Spinbox, Düzenlenebilir Çizgi için ayarlandı (b_spline_widget yok, varsayılan pen_width).")
-                self.width_spinbox.setEnabled(True) 
-
-        elif action == self.pen_tool_action:
-            self.width_spinbox.setToolTip("Kalem Kalınlığı")
-            self.width_spinbox.blockSignals(True)
-            # self.width_spinbox.setValue(self.current_pen_width) # MainWindow'daki genel değer yerine doğrudan canvas'tan okuyalım
-            self.width_spinbox.setValue(int(drawing_canvas.current_pen_width)) # DrawingCanvas'ın kendi kalem kalınlığı
-            self.width_spinbox.blockSignals(False)
-            self.width_spinbox.setEnabled(True)
-            #logging.debug(f"Spinbox, Kalem aracı için (DrawingCanvas) ayarlandı: {drawing_canvas.current_pen_width}")
-
-        elif action == self.line_tool_action:
-            self.width_spinbox.setToolTip("Çizgi Kalınlığı")
-            self.width_spinbox.blockSignals(True)
-            self.width_spinbox.setValue(int(drawing_canvas.current_pen_width))
-            self.width_spinbox.blockSignals(False)
-            self.width_spinbox.setEnabled(True)
-            #logging.debug(f"Spinbox, Çizgi aracı için (DrawingCanvas) ayarlandı: {drawing_canvas.current_pen_width}")
-
-        elif action == self.rect_tool_action:
-            self.width_spinbox.setToolTip("Dikdörtgen Çizgi Kalınlığı")
-            self.width_spinbox.blockSignals(True)
-            self.width_spinbox.setValue(int(drawing_canvas.current_pen_width))
-            self.width_spinbox.blockSignals(False)
-            self.width_spinbox.setEnabled(True)
-            #logging.debug(f"Spinbox, Dikdörtgen aracı için (DrawingCanvas) ayarlandı: {drawing_canvas.current_pen_width}")
-
-        elif action == self.circle_tool_action:
-            self.width_spinbox.setToolTip("Daire Çizgi Kalınlığı")
-            self.width_spinbox.blockSignals(True)
-            self.width_spinbox.setValue(int(drawing_canvas.current_pen_width))
-            self.width_spinbox.blockSignals(False)
-            self.width_spinbox.setEnabled(True)
-            #logging.debug(f"Spinbox, Daire aracı için (DrawingCanvas) ayarlandı: {drawing_canvas.current_pen_width}")
-
-        elif action == self.eraser_tool_action:
-            self.width_spinbox.setToolTip("Silgi Kalınlığı")
-            self.width_spinbox.blockSignals(True)
-            # self.width_spinbox.setValue(self.current_eraser_width)
-            self.width_spinbox.setValue(int(drawing_canvas.eraser_width)) # DrawingCanvas'ın kendi silgi kalınlığı
-            self.width_spinbox.blockSignals(False)
-            self.width_spinbox.setEnabled(True)
-            #logging.debug(f"Spinbox, Silgi aracı için (DrawingCanvas) ayarlandı: {drawing_canvas.eraser_width}")
-        
-        elif action == self.select_tool_action:
-            # Bu kısım, projenizin orijinal mantığına göre daha detaylı ele alınmalıdır.
-            # Orijinal kodunuzda `canvas.selected_item_indices` üzerinden bir mantık vardı.
-            # Eğer seçili öğe bir DrawingWidget stroke ise, onun kalınlığını göstermemiz gerekir.
-            # Şimdilik genel bir mesajla bırakıyorum.
-            self.width_spinbox.setToolTip("Seçili Öğenin Kalınlığı (Detaylı implementasyon gerekli)")
-            self.width_spinbox.setEnabled(False) # Veya seçili öğenin tipine göre aktif edilebilir
-            #logging.debug("Spinbox, Seçim aracı için ayarlandı (detaylı mantık eklenebilir).")
-
         # --- Doldurma rengi ve şeffaflık kontrollerinin aktifliği ---
         if hasattr(self, 'fill_color_button') and hasattr(self, 'fill_alpha_slider') and hasattr(self, 'fill_enable_checkbox'):
             fill_active = self.fill_enable_checkbox.isChecked()
             can_fill = action in [self.rect_tool_action, self.circle_tool_action] # Sadece bu araçlar için dolgu aktif
-            
+            logging.debug(f"[fill_enable_checkbox] can_fill={can_fill}, fill_active={fill_active}, action={action}, last_tool_action={getattr(self, 'last_tool_action', None)}")
             self.fill_color_button.setEnabled(fill_active and can_fill)
             self.fill_alpha_slider.setEnabled(fill_active and can_fill)
-            self.fill_enable_checkbox.setEnabled(can_fill) # Checkbox sadece doldurulabilir araçlarda aktif olmalı
+            # Checkbox'ın aktifliği sadece araç değişiminde güncellensin
+            if getattr(self, 'last_tool_action', None) != action:
+                logging.debug(f"[fill_enable_checkbox] setEnabled({can_fill}) çağrılıyor. Önceki last_tool_action={getattr(self, 'last_tool_action', None)}, yeni action={action}")
+                self.fill_enable_checkbox.setEnabled(can_fill)
+                self.last_tool_action = action
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- #
 
     def _log_and_call(self, func, description: str):

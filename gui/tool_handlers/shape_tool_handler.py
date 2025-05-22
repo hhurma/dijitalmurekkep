@@ -144,6 +144,26 @@ def handle_shape_release(canvas: 'DrawingCanvas', pos: QPointF):
         canvas.shape_start_point = QPointF()
         canvas.shape_end_point = QPointF()
         canvas.update()
+        # --- Doldur checkbox'ı güncelle --- #
+        main_window = canvas.parent()
+        if main_window and hasattr(main_window, '_update_width_spinbox_for_tool'):
+            # current_tool'a karşılık gelen QAction'ı bul
+            tool_action_map = {
+                getattr(main_window, 'rect_tool_action', None): ToolType.RECTANGLE,
+                getattr(main_window, 'circle_tool_action', None): ToolType.CIRCLE,
+                getattr(main_window, 'line_tool_action', None): ToolType.LINE,
+                getattr(main_window, 'pen_tool_action', None): ToolType.PEN,
+                getattr(main_window, 'eraser_tool_action', None): ToolType.ERASER,
+                getattr(main_window, 'select_tool_action', None): ToolType.SELECTOR,
+                getattr(main_window, 'editable_line_tool_action', None): ToolType.EDITABLE_LINE,
+            }
+            action_for_tool = None
+            for action, tooltype in tool_action_map.items():
+                if tooltype == canvas.current_tool and action is not None:
+                    action_for_tool = action
+                    break
+            if action_for_tool:
+                main_window._update_width_spinbox_for_tool(action_for_tool)
     else:
          # logging.debug("Shape Release: drawing_shape was False. No action taken.") # KALDIRILDI
          pass # drawing_shape False ise bir işlem yapılmıyorsa pass eklenebilir 

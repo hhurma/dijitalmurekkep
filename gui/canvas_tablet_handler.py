@@ -607,11 +607,7 @@ def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEven
         # Silgi yoluna yeni nokta ekle
         canvas.current_eraser_path.append(pos)
         canvas.pressure = event.pressure()  # Baskı değerini güncelle
-        
-        # Silme işlemi yap
-        from utils import erasing_helpers
-        erasing_helpers.erase_at_position(canvas, pos, canvas.eraser_width)
-        
+        canvas.update()  # Sadece önizleme için güncelle
         action_performed = True
 
     # --- LAZER İŞARETÇİ ARACI İÇİN HAREKET --- #
@@ -732,26 +728,11 @@ def handle_tablet_release(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
 
     # --- SİLGİ ARACI İÇİN BIRAKMA --- #
     elif canvas.current_tool == ToolType.ERASER and canvas.erasing:
-        if canvas.temporary_erasing and canvas.current_eraser_path:
-            # Geçici silme modu - silinen yolları eski haline getir
-            # logging.debug("Silgi bırakma: Geçici silme modu, erased_this_stroke temizleniyor.")
-            canvas.temporary_erasing = False # Geçici silmeyi bitir
-        else:
-            # Normal silme - silinen yolları silgi komutu ile kalıcı olarak sil
-            from utils.commands import EraseCommand
-            from utils.erasing_helpers import EraseChanges
-            
-            if canvas.erased_this_stroke and len(canvas.erased_this_stroke) > 0:
-                changes = EraseChanges(canvas.erased_this_stroke)
-                command = EraseCommand(canvas, changes)
-                canvas.undo_manager.execute(command)
-                # logging.debug(f"Silgi bırakma: EraseCommand executed with {len(canvas.erased_this_stroke)} items.")
-                if canvas._parent_page:
-                    canvas._parent_page.mark_as_modified()
-        
-        canvas.erased_this_stroke = []
-        canvas.current_eraser_path = []
+        if len(canvas.current_eraser_path) > 1:
+            from utils import erasing_helpers
+            erasing_helpers.erase_at_position(canvas, canvas.current_eraser_path, canvas.eraser_width)
         canvas.erasing = False
+        canvas.current_eraser_path = []
         action_performed = True
     
     # --- LAZER İŞARETÇİ ARACI İÇİN BIRAKMA --- #

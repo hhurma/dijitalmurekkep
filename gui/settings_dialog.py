@@ -114,8 +114,7 @@ class TemplateSettingsDialog(QDialog):
         # --- Buton Kutusu ---
         self.button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | 
-            QDialogButtonBox.StandardButton.Cancel | 
-            QDialogButtonBox.StandardButton.Apply 
+            QDialogButtonBox.StandardButton.Cancel
         )
 
         # --- Ana Layout'a Ekleme ---
@@ -129,7 +128,6 @@ class TemplateSettingsDialog(QDialog):
         # --- Sinyal Bağlantıları ---
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
-        self.button_box.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(self._apply_changes)
         self.template_type_combo.currentIndexChanged.connect(self._update_widget_states)
         self.line_color_button.clicked.connect(self._pick_line_color)
         self.grid_color_button.clicked.connect(self._pick_grid_color)
@@ -167,10 +165,14 @@ class TemplateSettingsDialog(QDialog):
 
         # Renkler
         line_rgba = self.current_settings.get('line_color', (0.8, 0.8, 1.0, 0.7))
-        self._update_color_button(self.line_color_button, rgba_to_qcolor(line_rgba))
+        line_color = rgba_to_qcolor(line_rgba)
+        self._update_color_button(self.line_color_button, line_color)
+        self.line_color_button.setProperty('selected_color', line_color)
         
         grid_rgba = self.current_settings.get('grid_color', (0.9, 0.9, 0.9, 0.8))
-        self._update_color_button(self.grid_color_button, rgba_to_qcolor(grid_rgba))
+        grid_color = rgba_to_qcolor(grid_rgba)
+        self._update_color_button(self.grid_color_button, grid_color)
+        self.grid_color_button.setProperty('selected_color', grid_color)
         
         # --- YENİ: PDF DPI ---
         current_dpi = self.current_settings.get('pdf_export_image_dpi', 150)
@@ -218,8 +220,7 @@ class TemplateSettingsDialog(QDialog):
     def _pick_line_color(self):
         """Çizgi rengi seçimi için QColorDialog açar ve sinyal emitler."""
         initial_color = self.line_color_button.property("selected_color") or QColor(Qt.GlobalColor.blue)
-        color = QColorDialog.getColor(initial_color, self, "Çizgi Rengini Seçin", 
-                                      QColorDialog.ColorDialogOption.ShowAlphaChannel)
+        color = QColorDialog.getColor(initial_color, self, "Çizgi Rengini Seçin", QColorDialog.ColorDialogOption.ShowAlphaChannel)
         if color.isValid():
             self._update_color_button(self.line_color_button, color)
             rgba_color = qcolor_to_rgba(color)
@@ -229,8 +230,7 @@ class TemplateSettingsDialog(QDialog):
     def _pick_grid_color(self):
         """Izgara rengi seçimi için QColorDialog açar ve sinyal emitler."""
         initial_color = self.grid_color_button.property("selected_color") or QColor(Qt.GlobalColor.lightGray)
-        color = QColorDialog.getColor(initial_color, self, "Izgara Rengini Seçin", 
-                                      QColorDialog.ColorDialogOption.ShowAlphaChannel)
+        color = QColorDialog.getColor(initial_color, self, "Izgara Rengini Seçin", QColorDialog.ColorDialogOption.ShowAlphaChannel)
         if color.isValid():
             self._update_color_button(self.grid_color_button, color)
             rgba_color = qcolor_to_rgba(color)

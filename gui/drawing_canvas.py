@@ -491,7 +491,7 @@ class DrawingCanvas(QWidget):
         return export_data
 
     def paintEvent(self, event: QPaintEvent):
-        logging.info(f"[PAINT] paintEvent çağrıldı. dirty={self._cache_dirty}, cache var mı={self._static_content_cache is not None}")
+        #logging.info(f"[PAINT] paintEvent çağrıldı. dirty={self._cache_dirty}, cache var mı={self._static_content_cache is not None}")
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
@@ -506,10 +506,11 @@ class DrawingCanvas(QWidget):
                 self._static_content_cache.size().height() != int(cache_size.height())):
                 cache_needs_update = True
         if self._cache_dirty or cache_needs_update:
-            logging.info(f"[CACHE] paintEvent: Cache güncellenecek. dirty={self._cache_dirty}, cache_needs_update={cache_needs_update}")
+            #logging.info(f"[CACHE] paintEvent: Cache güncellenecek. dirty={self._cache_dirty}, cache_needs_update={cache_needs_update}")
             self._update_static_content_cache()
         else:
-            logging.info(f"[CACHE] paintEvent: Cache kullanılacak. dirty={self._cache_dirty}, cache_needs_update={cache_needs_update}")
+            #logging.info(f"[CACHE] paintEvent: Cache kullanılacak. dirty={self._cache_dirty}, cache_needs_update={cache_needs_update}")
+            pass
         if self._static_content_cache:
             painter.drawPixmap(0, 0, self._static_content_cache)
         # --- SADECE GEÇİCİ/AKTİF ÇİZİMLER --- #
@@ -1563,7 +1564,7 @@ class DrawingCanvas(QWidget):
              logging.warning(f"Geçersiz anlık ızgara rengi verisi alındı: {color_rgba}")
         
     def apply_template_settings(self, settings: dict):
-        # logging.debug(f"Canvas'a yeni şablon ayarları uygulanıyor: {settings}") # Bu kalsın, bu ikinciyi kapatalım (eğer iki tane varsa)
+        logging.debug(f"Canvas'a yeni şablon ayarları uygulanıyor: {settings}")
         self.template_line_color = settings.get("line_color", self.template_line_color)
         self.template_grid_color = settings.get("grid_color", self.template_grid_color)
         self.line_spacing_pt = settings.get("line_spacing_pt", self.line_spacing_pt)
@@ -1573,34 +1574,19 @@ class DrawingCanvas(QWidget):
             template_name = settings.get('template_type_name')
             if template_name:
                 self.current_template = TemplateType[template_name]
+                if self.current_template == TemplateType.PLAIN:
+                    self._background_pixmap = None
+                    self._current_background_image_path = None
+                    self._static_content_cache = None
         except KeyError:
-             logging.warning(f"Ayarlarda geçersiz template_type_name: '{template_name}', şablon tipi değiştirilmedi.")
+            logging.warning(f"Ayarlarda geçersiz template_type_name: '{template_name}', şablon tipi değiştirilmedi.")
         except Exception as e:
             logging.error(f"Şablon tipi güncellenirken hata: {e}")
-            
-        template_changed = False
-        try:
-            template_name = settings.get('template_type_name')
-            if template_name:
-                # Ayarlardan gelen isim büyük/küçük harf duyarlı olabilir, Enum ile eşleştir
-                new_template = TemplateType[template_name.upper()] 
-                if self.current_template != new_template:
-                    self.current_template = new_template
-                    template_changed = True
-        except KeyError:
-             # Eğer settings'de template_type_name yoksa veya geçersizse, hata logla ama çökme
-             logging.warning(f"Ayarlarda geçersiz veya eksik template_type_name: '{settings.get('template_type_name')}', şablon tipi değiştirilmedi.")
-        except Exception as e:
-            logging.error(f"Şablon tipi güncellenirken hata: {e}")
-            
-        # Eğer şablon tipi değiştiyse, yeni arka planı yükle, aksi takdirde sadece güncelle
-        if template_changed:
-            # logging.debug("Template type changed, reloading background image.") # Yorum satırı yapıldı
-            self.load_background_template_image() # Arka planı yeniden yükle
-        else:
-            # Sadece renk/aralık gibi diğer ayarlar değiştiyse update yeterli
-            # (load_background_template_image zaten update çağırıyor)
-            self.update()
+        
+        self.invalidate_cache(reason="Şablon ayarı değişti")
+        self.load_background_template_image()
+        self.update()
+        self.invalidate_cache(reason="Arka plan şablonu yüklendi")
     # --- --- --- --- --- --- --- --- --- ---
 
     def set_parent_page(self, page: 'Page'):
@@ -1664,6 +1650,10 @@ class DrawingCanvas(QWidget):
             template_name = settings.get('template_type_name')
             if template_name:
                 self.current_template = TemplateType[template_name]
+                if self.current_template == TemplateType.PLAIN:
+                    self._background_pixmap = None
+                    self._current_background_image_path = None
+                    self._static_content_cache = None
         except KeyError:
              logging.warning(f"Ayarlarda geçersiz template_type_name: '{template_name}', şablon tipi değiştirilmedi.")
         except Exception as e:
@@ -1980,6 +1970,7 @@ class DrawingCanvas(QWidget):
             self.setMinimumSize(600, 800)
 
         self.update()
+        self.invalidate_cache(reason="Arka plan şablonu yüklendi")
 
     def resizeEvent(self, event):
         """Widget yeniden boyutlandırıldığında çağrılır."""
@@ -2532,15 +2523,15 @@ class DrawingCanvas(QWidget):
 
     def invalidate_cache(self, reason: str = ""): 
         """Cache'i geçersiz kılar, bir sonraki paint'te güncellenir. Sebep loglanır."""
-        logging.info(f"[CACHE] invalidate_cache çağrıldı. Sebep: {reason}, Önceki dirty={self._cache_dirty}")
+        #logging.info(f"[CACHE] invalidate_cache çağrıldı. Sebep: {reason}, Önceki dirty={self._cache_dirty}")
         self._cache_dirty = True
-        logging.info(f"[CACHE] invalidate_cache sonrası dirty={self._cache_dirty}")
+        #logging.info(f"[CACHE] invalidate_cache sonrası dirty={self._cache_dirty}")
         self.update()
 
     def _update_static_content_cache(self):
         """Sabit içerik cache'ini günceller. Log eklenir."""
         if self.width() <= 0 or self.height() <= 0:
-            logging.info("[CACHE] _update_static_content_cache: Boyutlar geçersiz, cache güncellenmedi.")
+            #logging.info("[CACHE] _update_static_content_cache: Boyutlar geçersiz, cache güncellenmedi.")
             return
         dpr = self.devicePixelRatioF() if hasattr(self, 'devicePixelRatioF') else 1.0
         cache_size = self.size() * dpr
@@ -2568,4 +2559,4 @@ class DrawingCanvas(QWidget):
         pixmap = QPixmap.fromImage(image)
         self._static_content_cache = pixmap
         self._cache_dirty = False
-        logging.info(f"[CACHE] _update_static_content_cache: Cache güncellendi. DPI: {dpr}, Boyut: {self.size().width()}x{self.size().height()}, Format: {format_name}")
+        #logging.info(f"[CACHE] _update_static_content_cache: Cache güncellendi. DPI: {dpr}, Boyut: {self.size().width()}x{self.size().height()}, Format: {format_name}")
