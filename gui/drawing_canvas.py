@@ -454,6 +454,10 @@ class DrawingCanvas(QWidget):
 
         # --- YENİ: Düzenlenebilir Çizgi (Eski Bezier) Kontrol Noktası Seçici Aracı Özellikleri --- # 
 
+        # --- CACHE EKLEME --- #
+        self._static_content_cache: QPixmap | None = None
+        self._cache_dirty: bool = True
+
     def get_image_export_data(self) -> List[dict]:
         """Sahnedeki resim öğelerinden PDF dışa aktarma için veri toplar."""
         export_data = []
@@ -487,36 +491,28 @@ class DrawingCanvas(QWidget):
         return export_data
 
     def paintEvent(self, event: QPaintEvent):
-        #logging.debug(f"[PaintEvent BAŞLANGIÇ] Canvas ID: {id(self)}, Shapes ({len(self.shapes)} adet): {self.shapes}") # YENİ LOG
-        """Ana çizim olayını yönetir. Tüm elemanları tuvale çizer."""
+        logging.info(f"[PAINT] paintEvent çağrıldı. dirty={self._cache_dirty}, cache var mı={self._static_content_cache is not None}")
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
-        # Arka planı çiz
-        painter.fillRect(self.rect(), rgba_to_qcolor(self.background_color))
-        
-        # DÜZELTME: Önce PDF arka planını kontrol et ve çiz
-        if self._has_page_background and self._page_background_pixmap and not self._page_background_pixmap.isNull():
-            # PDF sayfası veya özel arka plan varsa, onu çiz
-            painter.drawPixmap(0, 0, self._page_background_pixmap)
-            logging.debug(f"Canvas({id(self)}): Özel PDF arka planı çizildi. Boyut: {self._page_background_pixmap.size()}")
-        elif self._background_pixmap and not self._background_pixmap.isNull():
-            # Normal şablon arka planını çiz
-            painter.drawPixmap(0, 0, self._background_pixmap)
-
-        # Eğer aktif bir sayfa varsa ve resimler varsa, önce onları çiz
-        # Bu kısım page.images üzerinden yönetilecek
-        # canvas_drawing_helpers.draw_images(self, painter)
-
-        # Kalıcı öğeleri çiz (çizgiler, şekiller, eski editable_line'lar)
-        # Not: draw_items içinde zaten img_data kontrolü var, yukarıdaki draw_images kaldırılabilir.
-        canvas_drawing_helpers.draw_items(self, painter) 
-
-        # --- YENİ: Grid ve Şablon Çizimi (Eğer snap_lines_to_grid aktifse veya şablon GRID ise) ---
-        canvas_drawing_helpers.draw_grid_and_template(self, painter)
-        # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-
-        # --- Geçici (anlık) çizim: Kalem, çizgi, dikdörtgen, daire ---
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        # --- CACHE KULLANIMI --- #
+        cache_needs_update = False
+        if self._static_content_cache is None:
+            cache_needs_update = True
+        else:
+            dpr = self.devicePixelRatioF() if hasattr(self, 'devicePixelRatioF') else 1.0
+            cache_size = self.size() * dpr
+            if (self._static_content_cache.size().width() != int(cache_size.width()) or
+                self._static_content_cache.size().height() != int(cache_size.height())):
+                cache_needs_update = True
+        if self._cache_dirty or cache_needs_update:
+            logging.info(f"[CACHE] paintEvent: Cache güncellenecek. dirty={self._cache_dirty}, cache_needs_update={cache_needs_update}")
+            self._update_static_content_cache()
+        else:
+            logging.info(f"[CACHE] paintEvent: Cache kullanılacak. dirty={self._cache_dirty}, cache_needs_update={cache_needs_update}")
+        if self._static_content_cache:
+            painter.drawPixmap(0, 0, self._static_content_cache)
+        # --- SADECE GEÇİCİ/AKTİF ÇİZİMLER --- #
         if self.drawing:
             if self.current_tool == ToolType.PEN:
                 if len(self.current_line_points) > 1:
@@ -533,13 +529,14 @@ class DrawingCanvas(QWidget):
                         self.shape_end_point,
                         self.line_style if hasattr(self, 'line_style') else 'solid'
                     ]
-                    # Dolgu bilgisi, eğer araç ve fill_enabled uygunsa eklenir
                     if self.current_tool in [ToolType.RECTANGLE, ToolType.CIRCLE] and self.fill_enabled:
-                        # self.current_fill_rgba'nın alfa değeri gerçekten 0'dan büyükse ekleyelim.
-                        # Aslında self.fill_enabled kontrolü yeterli olmalı.
                         temp_shape_data.append(self.current_fill_rgba) 
-                    
                     utils_drawing_helpers.draw_shape(painter, temp_shape_data)
+        # --- SADECE OVERLAY VE SEÇİM KUTUSU --- #
+        canvas_drawing_helpers.draw_selection_overlay(self, painter)
+        canvas_drawing_helpers.draw_selection_rectangle(self, painter)
+        # --- GEÇİCİ ÇİZİMLER, SİLGİ ÖNİZLEMESİ vb. --- #
+        # ... diğer geçici çizimler ve overlay kodları ...
 
         # YENİ: B-Spline çizgilerini ve kontrol noktalarını çiz (DrawingWidget'tan alınan mantıkla)
         if self.current_tool == ToolType.EDITABLE_LINE or (self.b_spline_widget and self.b_spline_widget.strokes): # YENİ KOŞUL: b_spline_widget ve onun strokes'ları kontrol ediliyor
@@ -2532,3 +2529,43 @@ class DrawingCanvas(QWidget):
         
         logging.info(f"[apply_grid_settings] Grid ayarları uygulandı. Snap: {self.snap_lines_to_grid}, Visible on Snap: {self.grid_visible_on_snap}")
         self.update()
+
+    def invalidate_cache(self, reason: str = ""): 
+        """Cache'i geçersiz kılar, bir sonraki paint'te güncellenir. Sebep loglanır."""
+        logging.info(f"[CACHE] invalidate_cache çağrıldı. Sebep: {reason}, Önceki dirty={self._cache_dirty}")
+        self._cache_dirty = True
+        logging.info(f"[CACHE] invalidate_cache sonrası dirty={self._cache_dirty}")
+        self.update()
+
+    def _update_static_content_cache(self):
+        """Sabit içerik cache'ini günceller. Log eklenir."""
+        if self.width() <= 0 or self.height() <= 0:
+            logging.info("[CACHE] _update_static_content_cache: Boyutlar geçersiz, cache güncellenmedi.")
+            return
+        dpr = self.devicePixelRatioF() if hasattr(self, 'devicePixelRatioF') else 1.0
+        cache_size = self.size() * dpr
+        # Transparanlık gereksinimine göre format seç
+        needs_alpha = self.background_color[3] < 1.0 if len(self.background_color) > 3 else False
+        from PyQt6.QtGui import QImage
+        if needs_alpha:
+            img_format = QImage.Format.Format_ARGB32_Premultiplied
+            format_name = "ARGB32_Premultiplied"
+        else:
+            img_format = QImage.Format.Format_RGB32
+            format_name = "RGB32"
+        image = QImage(int(cache_size.width()), int(cache_size.height()), img_format)
+        image.setDevicePixelRatio(dpr)
+        image.fill(rgba_to_qcolor(self.background_color))
+        with QPainter(image) as painter:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+            if self._has_page_background and self._page_background_pixmap and not self._page_background_pixmap.isNull():
+                painter.drawPixmap(0, 0, self._page_background_pixmap)
+            elif self._background_pixmap and not self._background_pixmap.isNull():
+                painter.drawPixmap(0, 0, self._background_pixmap)
+            canvas_drawing_helpers.draw_items(self, painter)
+            canvas_drawing_helpers.draw_grid_and_template(self, painter)
+        pixmap = QPixmap.fromImage(image)
+        self._static_content_cache = pixmap
+        self._cache_dirty = False
+        logging.info(f"[CACHE] _update_static_content_cache: Cache güncellendi. DPI: {dpr}, Boyut: {self.size().width()}x{self.size().height()}, Format: {format_name}")

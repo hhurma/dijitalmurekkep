@@ -587,4 +587,31 @@ def get_standard_handle_positions(bbox: QRectF) -> dict:
     }
 # --- --- --- --- --- --- --- --- --- ---
 
+def get_rotated_corners(rect, angle_degrees):
+    """
+    Bir QRectF'in köşe noktalarını, verilen derece cinsinden açıya göre döndürür.
+    Dönüş, dikdörtgenin merkezine göre yapılır.
+    """
+    cx = rect.center().x()
+    cy = rect.center().y()
+    angle_rad = math.radians(angle_degrees)
+    cos_a = math.cos(angle_rad)
+    sin_a = math.sin(angle_rad)
+
+    corners = [
+        QPointF(rect.left(), rect.top()),
+        QPointF(rect.right(), rect.top()),
+        QPointF(rect.right(), rect.bottom()),
+        QPointF(rect.left(), rect.bottom())
+    ]
+
+    rotated = []
+    for pt in corners:
+        dx = pt.x() - cx
+        dy = pt.y() - cy
+        x_new = cx + dx * cos_a - dy * sin_a
+        y_new = cy + dx * sin_a + dy * cos_a
+        rotated.append(QPointF(x_new, y_new))
+    return rotated
+
 # ... rest of the file ... 

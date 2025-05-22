@@ -30,48 +30,44 @@ def rgba_to_qcolor_local(rgba: tuple) -> QColor:
     return QColor(r, g, b, a)
 
 def draw_items(canvas: 'DrawingCanvas', painter: QPainter):
-    """Tüm kalıcı öğeleri (çizgiler, şekiller, resimler) çizer."""
-    # --- YENİ: Painter durumunu sıfırlama denemesi ---
-    painter.resetTransform()  # Tüm transformasyonları sıfırla
-    painter.setClipping(False) # Klip bölgesini kaldır
-    painter.setOpacity(1.0)    # Opaklığı tam yap
-    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver) # Varsayılan kompozisyon modu
-    # --- --- --- --- --- --- --- --- --- --- --- ---
-    from .enums import ToolType # Fonksiyon içinde import
+    """Tüm kalıcı öğeleri (çizgiler, şekiller, resimler) çizer. Optimizasyonlu."""
+    from .enums import ToolType
     from utils.drawing_helpers import draw_pen_stroke, draw_shape
-    # logging.debug(f"draw_items: shapes id={id(canvas.shapes)}, canvas id={id(canvas)}")
-    # --- ÖNCE RESİMLERİ ÇİZ (YENİ: img_data kullanarak) --- #
+    # --- RESİMLERİ ÇİZ (scaled_pixmap cache ile) --- #
     if canvas._parent_page and hasattr(canvas._parent_page, 'images') and canvas._parent_page.images:
         for item_index, img_data in enumerate(canvas._parent_page.images):
             current_pixmap = img_data.get('pixmap')
             current_rect = img_data.get('rect')
             current_angle = img_data.get('angle', 0.0)
             uuid = img_data.get('uuid')
-
             if current_pixmap and not current_pixmap.isNull() and current_rect and current_rect.isValid():
-                # logging.debug(f"draw_items: Drawing image index {item_index} (UUID: {uuid}) using img_data - rect: {current_rect}, angle: {current_angle:.1f}, pixmap_size: {current_pixmap.size()}")
-                painter.save()
-                item_pos = current_rect.topLeft()
                 item_size = current_rect.size()
-                item_rotation = current_angle
-
-                # Pixmap'i rect boyutuna göre orantılı ölçekle
-                scaled_pixmap = current_pixmap.scaled(
-                    int(item_size.width()), int(item_size.height()),
-                    Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
-                )
-
-                # Ortalamak için offset hesapla
+                cache_key = (int(item_size.width()), int(item_size.height()), float(current_angle))
+                if img_data.get('_scaled_pixmap_cache_key') != cache_key:
+                    scaled_pixmap = current_pixmap.scaled(
+                        int(item_size.width()), int(item_size.height()),
+                        Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+                    )
+                    img_data['_scaled_pixmap'] = scaled_pixmap
+                    img_data['_scaled_pixmap_cache_key'] = cache_key
+                else:
+                    scaled_pixmap = img_data.get('_scaled_pixmap')
+                if scaled_pixmap is None:
+                    continue  # Pixmap yoksa çizme
                 offset_x = (item_size.width() - scaled_pixmap.width()) / 2
                 offset_y = (item_size.height() - scaled_pixmap.height()) / 2
-
-                # Dönüşüm ve çizim
-                painter.translate(item_pos.x(), item_pos.y())
-                painter.translate(item_size.width() / 2, item_size.height() / 2)
-                painter.rotate(item_rotation)
-                painter.translate(-item_size.width() / 2, -item_size.height() / 2)
-                painter.drawPixmap(QPointF(offset_x, offset_y), scaled_pixmap)
-                painter.restore()
+                if current_angle != 0.0:
+                    painter.save()
+                    item_pos = current_rect.topLeft()
+                    painter.translate(item_pos.x(), item_pos.y())
+                    painter.translate(item_size.width() / 2, item_size.height() / 2)
+                    painter.rotate(current_angle)
+                    painter.translate(-item_size.width() / 2, -item_size.height() / 2)
+                    painter.drawPixmap(QPointF(offset_x, offset_y), scaled_pixmap)
+                    painter.restore()
+                else:
+                    item_pos = current_rect.topLeft()
+                    painter.drawPixmap(QPointF(item_pos.x() + offset_x, item_pos.y() + offset_y), scaled_pixmap)
     # --- ÇİZGİLERİ ÇİZ --- #
     if hasattr(canvas, 'lines') and canvas.lines:
         for line_data in canvas.lines:
@@ -83,12 +79,9 @@ def draw_items(canvas: 'DrawingCanvas', painter: QPainter):
             draw_pen_stroke(painter, points, color, width, line_style)
     # --- ŞEKİLLERİ ÇİZ --- #
     if hasattr(canvas, 'shapes') and canvas.shapes:
-        # logging.debug(f"draw_items: Shapes listesi dolu, {len(canvas.shapes)} adet şekil var. İçerik: {canvas.shapes}")
         for i, shape_data in enumerate(canvas.shapes):
             if not shape_data or len(shape_data) < 5:
-                logging.warning(f"draw_items: Geçersiz shape_data atlanıyor: index={i}, data={shape_data}")
                 continue
-            # line_style ve fill_rgba shape_data'da varsa draw_shape'a aktar
             if len(shape_data) >= 6:
                 line_style = shape_data[5]
             else:

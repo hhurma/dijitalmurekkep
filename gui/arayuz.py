@@ -1851,12 +1851,12 @@ class MainWindow(QMainWindow):
                             
                             # Resmi sayfanın images listesine ekle
                             page.images.append(image_data)
-                            
                             # YENİ: resim_islem_handler kullan
                             resim_islem_handler.handle_select_image(target_path)
                             
                             # Sayfayı değişti olarak işaretle ve güncelle
                             page.mark_as_modified()
+                            self.invalidate_cache(reason="Resim eklendi (doğrudan)")
                             self.update()
                         except Exception as e:
                             logging.error(f"Resim eklenirken hata: {e}", exc_info=True)

@@ -504,6 +504,7 @@ def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEven
                                 int(new_bbox.height())
                             )
                         
+                        canvas.invalidate_cache(reason="Resim boyutlandırma hareketi")
                         canvas.update()
                         action_performed = True
                         
@@ -539,6 +540,7 @@ def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEven
                         img_path = img_data['filepath']
                         resim_islem_handler.handle_rotate_image(img_path, new_angle)
                     
+                    canvas.invalidate_cache(reason="Resim döndürme hareketi")
                     canvas.update()
                     action_performed = True
                     
@@ -561,6 +563,7 @@ def handle_tablet_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEven
                             img_x = int(rect.x())
                             img_y = int(rect.y())
                             resim_islem_handler.handle_move_image(img_path, img_x, img_y)
+                        canvas.invalidate_cache(reason="Resim taşıma hareketi")
                 
                 canvas.last_move_pos = pos
                 action_performed = True

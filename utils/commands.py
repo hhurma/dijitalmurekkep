@@ -84,6 +84,8 @@ class DrawLineCommand(Command):
             self.canvas.update()
             if hasattr(self.canvas, 'selection_changed'):
                 self.canvas.selection_changed.emit()
+            if hasattr(self.canvas, 'invalidate_cache'):
+                self.canvas.invalidate_cache()
         except Exception as e:
             self._line_added = False
             self._added_index = -1
@@ -100,6 +102,8 @@ class DrawLineCommand(Command):
                 pass
             if hasattr(self.canvas, 'selection_changed'):
                 self.canvas.selection_changed.emit()
+            if hasattr(self.canvas, 'invalidate_cache'):
+                self.canvas.invalidate_cache()
         except IndexError:
             pass
         except Exception as e:
@@ -165,6 +169,8 @@ class DrawShapeCommand(Command):
             self.canvas.update()
             if hasattr(self.canvas, 'selection_changed'):
                 self.canvas.selection_changed.emit()
+            if hasattr(self.canvas, 'invalidate_cache'):
+                self.canvas.invalidate_cache()
         except Exception as e:
             self._shape_added = False
             self._added_index = -1
@@ -182,6 +188,8 @@ class DrawShapeCommand(Command):
                 self.canvas.update()
                 if hasattr(self.canvas, 'selection_changed'):
                     self.canvas.selection_changed.emit()
+                if hasattr(self.canvas, 'invalidate_cache'):
+                    self.canvas.invalidate_cache()
         except IndexError:
             logging.error(f"DrawShapeCommand undo: Index hatası oluştu. index={self._added_index}, shapes_len={len(self.canvas.shapes)}", exc_info=True)
         except Exception as e:
@@ -263,6 +271,8 @@ class ClearCanvasCommand(Command):
                 self.canvas.selection_changed.emit()
             if hasattr(self.canvas, '_load_qgraphics_pixmap_items_from_page'):
                 self.canvas._load_qgraphics_pixmap_items_from_page()
+            if hasattr(self.canvas, 'invalidate_cache'):
+                self.canvas.invalidate_cache()
         except Exception as e:
             logging.error(f"ClearCanvasCommand execute hatası: {e}", exc_info=True)
             self._was_cleared = False
@@ -294,6 +304,8 @@ class ClearCanvasCommand(Command):
                 self.canvas.selection_changed.emit()
             if hasattr(self.canvas, '_load_qgraphics_pixmap_items_from_page'):
                 self.canvas._load_qgraphics_pixmap_items_from_page()
+            if hasattr(self.canvas, 'invalidate_cache'):
+                self.canvas.invalidate_cache()
         except Exception as e:
             logging.error(f"ClearCanvasCommand undo: Hata oluştu: {e}", exc_info=True)
 
@@ -355,12 +367,16 @@ class MoveItemsCommand(Command):
         self.canvas.update()
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
+        if hasattr(self.canvas, 'invalidate_cache'):
+            self.canvas.invalidate_cache()
 
     def undo(self):
         self._apply_state(self.original_states)
         self.canvas.update()
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
+        if hasattr(self.canvas, 'invalidate_cache'):
+            self.canvas.invalidate_cache()
 
     def _apply_state(self, states: List[Any]):
         """Verilen state listesini (tam öğe verileri içeren) canvas'a uygular."""
@@ -443,12 +459,16 @@ class ResizeItemsCommand(Command):
         self.canvas.update()
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
+        if hasattr(self.canvas, 'invalidate_cache'):
+            self.canvas.invalidate_cache()
 
     def undo(self):
         self._apply_state(self.original_states)
         self.canvas.update()
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
+        if hasattr(self.canvas, 'invalidate_cache'):
+            self.canvas.invalidate_cache()
 
     def _apply_state(self, states: List[Any]):
         """Verilen state listesini (tam öğe verileri içeren) canvas'a uygular."""
@@ -613,6 +633,8 @@ class EraseCommand(Command):
         self.canvas.update()
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
+        if hasattr(self.canvas, 'invalidate_cache'):
+            self.canvas.invalidate_cache()
 
     def undo(self):
         logging.debug(
@@ -631,6 +653,8 @@ class EraseCommand(Command):
             logging.debug("Undo finished: Canvas state restored.")
             if hasattr(self.canvas, 'selection_changed'):
                 self.canvas.selection_changed.emit()
+            if hasattr(self.canvas, 'invalidate_cache'):
+                self.canvas.invalidate_cache()
         except Exception as e:
             logging.error(f"Error during EraseCommand undo: {e}", exc_info=True)
 
@@ -726,11 +750,11 @@ class AddImageCommand(Command):
 
             # if self.canvas: self.canvas.update() # Doğrudan canvas update'i yerine page değişikliğini işaretle
             if self.page and self._item_successfully_added_to_page_list:
-                 self.page.mark_as_modified()
-                 # Canvas'ın kendisini güncellemesi page değişikliği sinyali ile tetiklenmeli.
-                 if self.page.drawing_canvas:
-                     self.page.drawing_canvas.update()
-                 logging.info(f"AddImageCommand executed: Image UUID={uuid_to_add} added to page list.")
+                self.page.mark_as_modified()
+                if self.page.drawing_canvas:
+                    self.page.drawing_canvas.invalidate_cache(reason="Resim eklendi")
+                    self.page.drawing_canvas.update()
+                logging.info(f"AddImageCommand executed: Image UUID={uuid_to_add} added to page list.")
 
         except Exception as e:
             logging.error(f"Komut execute edilirken hata oluştu: AddImageCommand - {e}", exc_info=True)
@@ -768,10 +792,10 @@ class AddImageCommand(Command):
             # if self.canvas: self.canvas.update() # Doğrudan canvas update'i yerine page değişikliğini işaretle
             if self.page:
                 self.page.mark_as_modified()
-                # Canvas'ın kendisini güncellemesi page değişikliği sinyali ile tetiklenmeli.
                 if self.page.drawing_canvas:
-                     self.page.drawing_canvas.update()
-            logging.info(f"AddImageCommand undone: Image UUID={self.image_data.get('uuid')}")
+                    self.page.drawing_canvas.invalidate_cache(reason="Resim silindi")
+                    self.page.drawing_canvas.update()
+                logging.info(f"AddImageCommand undone: Image UUID={self.image_data.get('uuid')}")
         except Exception as e:
             logging.error(f"Komut undo edilirken hata oluştu: AddImageCommand - {e}", exc_info=True)
 
@@ -1033,6 +1057,8 @@ class DeleteItemsCommand(Command):
         logging.info(f"DeleteItemsCommand: {len(self.deleted_items)} öğe silindi.")
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
+        if hasattr(self.canvas, 'invalidate_cache'):
+            self.canvas.invalidate_cache()
 
     def undo(self):
         # Silinen öğeleri eski indekslerine geri ekle
@@ -1063,6 +1089,8 @@ class DeleteItemsCommand(Command):
         logging.debug(f"DeleteItemsCommand.undo: BİTİŞ. shapes id={id(self.canvas.shapes)}, içerik={self.canvas.shapes}")
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
+        if hasattr(self.canvas, 'invalidate_cache'):
+            self.canvas.invalidate_cache()
 
 class DrawEditableLineCommand(Command):
     """Düzenlenebilir Bezier çizgisi çizme işlemini temsil eder."""
@@ -1126,6 +1154,8 @@ class DrawEditableLineCommand(Command):
                 self.canvas.content_changed.emit()
             if hasattr(self.canvas, 'selection_changed'):
                 self.canvas.selection_changed.emit()
+            if hasattr(self.canvas, 'invalidate_cache'):
+                self.canvas.invalidate_cache()
         except Exception as e:
             logging.error(f"DrawEditableLineCommand execute hatası: {e}", exc_info=True)
             self._line_added = False
@@ -1146,6 +1176,8 @@ class DrawEditableLineCommand(Command):
                     self.canvas.content_changed.emit()
                 if hasattr(self.canvas, 'selection_changed'):
                     self.canvas.selection_changed.emit()
+            if hasattr(self.canvas, 'invalidate_cache'):
+                self.canvas.invalidate_cache()
         except IndexError:
             logging.error(f"DrawEditableLineCommand undo: Index hatası oluştu. index={self._added_index}, shapes_len={len(self.canvas.shapes)}", exc_info=True)
         except Exception as e:
@@ -1188,6 +1220,8 @@ class UpdateEditableLineCommand:
             if self.new_color is not None:
                 self.canvas.shapes[self.shape_index][1] = self.new_color
             self.canvas.update()
+            if hasattr(self.canvas, 'invalidate_cache'):
+                self.canvas.invalidate_cache()
     
     def undo(self):
         """Komutu geri alır: Düzenlenebilir çizginin kontrol noktalarını, kalınlığını ve rengini orijinal haline döndürür."""
@@ -1198,6 +1232,8 @@ class UpdateEditableLineCommand:
             if self.original_color is not None:
                 self.canvas.shapes[self.shape_index][1] = self.original_color
             self.canvas.update()
+            if hasattr(self.canvas, 'invalidate_cache'):
+                self.canvas.invalidate_cache()
     
     def redo(self):
         """Komutu yeniden uygular: Düzenlenebilir çizginin kontrol noktalarını, kalınlığını ve rengini tekrar günceller."""
@@ -1245,6 +1281,8 @@ class DrawBsplineCommand(Command):
         self.canvas.update()
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
+        if hasattr(self.canvas, 'invalidate_cache'):
+            self.canvas.invalidate_cache()
 
     def undo(self):
         """Stroke'u self._added_index'ten kaldırır."""
@@ -1264,6 +1302,8 @@ class DrawBsplineCommand(Command):
                 self.canvas.update()
                 if hasattr(self.canvas, 'selection_changed'):
                     self.canvas.selection_changed.emit()
+                if hasattr(self.canvas, 'invalidate_cache'):
+                    self.canvas.invalidate_cache()
             else:
                 logging.warning(f"DrawBsplineCommand undo: Invalid _added_index {self._added_index} or stroke not found at index. len(strokes)={len(self.canvas.b_spline_strokes)}")
         except IndexError:
