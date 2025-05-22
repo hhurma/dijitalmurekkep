@@ -53,7 +53,7 @@
     0.43137254901960786
   ],
   "template_settings": {
-    "template_type_name": "LINED",
+    "template_type_name": "PLAIN",
     "line_spacing_pt": 30,
     "grid_spacing_pt": 20,
     "line_color": [

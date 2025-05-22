@@ -1921,6 +1921,7 @@ class MainWindow(QMainWindow):
     def _handle_snap_line_to_grid_changed(self, state):
         """Toolbar'daki grid'e snap checkbox'ı değiştiğinde DrawingCanvas'a ve ayarlara uygula."""
         self.settings['grid_snap_enabled'] = (state == Qt.CheckState.Checked.value)
+        self.settings['grid_visible_on_snap'] = (state == Qt.CheckState.Checked.value)
         current_page = self.page_manager.get_current_page()
         if current_page and hasattr(current_page, 'drawing_canvas'):
             # Tüm grid ayarlarını uygula
