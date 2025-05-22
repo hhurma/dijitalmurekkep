@@ -474,6 +474,8 @@ def handle_load_shape(page_manager, main_window):
             
             if added_count > 0:
                 canvas.update()
+                if hasattr(canvas, 'invalidate_cache'):
+                    canvas.invalidate_cache("Şekil havuzundan şekil eklendi")
                 if hasattr(canvas, 'b_spline_widget') and canvas.b_spline_widget: # Widget varsa onu da güncelle
                     logging.debug("Calling canvas.b_spline_widget.update() after loading shapes from pool.")
                     canvas.b_spline_widget.update()

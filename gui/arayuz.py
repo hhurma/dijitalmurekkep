@@ -1926,6 +1926,9 @@ class MainWindow(QMainWindow):
         if current_page and hasattr(current_page, 'drawing_canvas'):
             # Tüm grid ayarlarını uygula
             current_page.drawing_canvas.apply_grid_settings(self.settings)
+            # --- DÜZELTME: Cache'i de geçersiz kıl ki anında yansısın --- #
+            if hasattr(current_page.drawing_canvas, 'invalidate_cache'):
+                current_page.drawing_canvas.invalidate_cache("Grid snap checkbox değişti")
 
     def _handle_open_grid_settings(self):
         """Grid ayarları penceresini açar."""
