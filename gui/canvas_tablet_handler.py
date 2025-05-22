@@ -383,6 +383,7 @@ def handle_tablet_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEve
                     canvas.last_move_pos = pos
                     canvas.selection_changed.emit()
                     canvas.moving_selection = True
+                    canvas.move_original_states = canvas._get_current_selection_states(canvas._parent_page)
                     QApplication.setOverrideCursor(Qt.CursorShape.SizeAllCursor)
                     
                     action_performed = True
@@ -666,6 +667,24 @@ def handle_tablet_release(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
     if canvas.current_tool == ToolType.IMAGE_SELECTOR:
         # --- Taşıma, boyutlandırma veya döndürme logicini tamamla ---
         if canvas.moving_selection:
+            # --- YENİ: Undo/Redo için MoveItemsCommand ekle (sadece resim için) --- #
+            if canvas.selected_item_indices and len(canvas.selected_item_indices) == 1 and canvas.selected_item_indices[0][0] == 'images' and canvas._parent_page:
+                import copy
+                from utils.commands import MoveItemsCommand
+                indices_copy = copy.deepcopy(canvas.selected_item_indices)
+                original_states = getattr(canvas, 'move_original_states', [])
+                final_states = canvas._get_current_selection_states(canvas._parent_page)
+                logging.info(f"[DEBUG] MoveItemsCommand kontrol: original_states={original_states}, final_states={final_states}")
+                if original_states and final_states and original_states != final_states:
+                    command = MoveItemsCommand(canvas, indices_copy, original_states, final_states)
+                    canvas._parent_page.get_undo_manager().execute(command)
+                    # --- YENİ: scaled_pixmap cache'ini sıfırla --- #
+                    img_idx = indices_copy[0][1]
+                    if 0 <= img_idx < len(canvas._parent_page.images):
+                        canvas._parent_page.images[img_idx]['_scaled_pixmap'] = None
+                        canvas._parent_page.images[img_idx]['_scaled_pixmap_cache_key'] = None
+                    if hasattr(canvas, '_load_qgraphics_pixmap_items_from_page'):
+                        canvas._load_qgraphics_pixmap_items_from_page()
             # Seçim taşımasını bitir
             canvas.moving_selection = False
             QApplication.restoreOverrideCursor()
@@ -673,6 +692,24 @@ def handle_tablet_release(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
                 canvas._parent_page.mark_as_modified()
             action_performed = True
         elif canvas.resizing_selection:
+            # --- YENİ: Undo/Redo için ResizeItemsCommand ekle (sadece resim için) --- #
+            if canvas.selected_item_indices and len(canvas.selected_item_indices) == 1 and canvas.selected_item_indices[0][0] == 'images' and canvas._parent_page:
+                import copy
+                from utils.commands import ResizeItemsCommand
+                indices_copy = copy.deepcopy(canvas.selected_item_indices)
+                original_states = getattr(canvas, 'original_resize_states', [])
+                final_states = canvas._get_current_selection_states(canvas._parent_page)
+                logging.info(f"[DEBUG] ResizeItemsCommand kontrol: original_states={original_states}, final_states={final_states}")
+                if original_states and final_states and original_states != final_states:
+                    command = ResizeItemsCommand(canvas, indices_copy, original_states, final_states)
+                    canvas._parent_page.get_undo_manager().execute(command)
+                    # --- YENİ: scaled_pixmap cache'ini sıfırla --- #
+                    img_idx = indices_copy[0][1]
+                    if 0 <= img_idx < len(canvas._parent_page.images):
+                        canvas._parent_page.images[img_idx]['_scaled_pixmap'] = None
+                        canvas._parent_page.images[img_idx]['_scaled_pixmap_cache_key'] = None
+                    if hasattr(canvas, '_load_qgraphics_pixmap_items_from_page'):
+                        canvas._load_qgraphics_pixmap_items_from_page()
             # Boyutlandırmayı bitir
             canvas.resizing_selection = False
             canvas.grabbed_handle_type = None

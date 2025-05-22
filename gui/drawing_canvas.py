@@ -2394,6 +2394,34 @@ class DrawingCanvas(QWidget):
         if self.current_tool == ToolType.TEMPORARY_POINTER and event.button() == Qt.MouseButton.LeftButton:
             logging.info(f"Mouse RELEASE for TEMPORARY_POINTER at {event.position()}")
             pass  # Çizim bitince iz fade-out ile silinecek
+        # --- RESİM TAŞIMA --- #
+        if self.moving_selection and self.selected_item_indices:
+            # Sadece resim seçiliyse ve hareket olduysa komut oluştur
+            if len(self.selected_item_indices) == 1 and self.selected_item_indices[0][0] == 'images' and self._parent_page:
+                import copy
+                from utils.commands import MoveItemsCommand
+                indices_copy = copy.deepcopy(self.selected_item_indices)
+                original_states = getattr(self, 'move_original_states', [])
+                final_states = self._get_current_selection_states(self._parent_page)
+                if original_states and final_states and original_states != final_states:
+                    command = MoveItemsCommand(self, indices_copy, original_states, final_states)
+                    self._parent_page.get_undo_manager().execute(command)
+            self.moving_selection = False
+            self.move_original_states = []
+        # --- RESİM BOYUTLANDIRMA --- #
+        if self.resizing_selection and self.selected_item_indices:
+            if len(self.selected_item_indices) == 1 and self.selected_item_indices[0][0] == 'images' and self._parent_page:
+                import copy
+                from utils.commands import ResizeItemsCommand
+                indices_copy = copy.deepcopy(self.selected_item_indices)
+                original_states = getattr(self, 'original_resize_states', [])
+                final_states = self._get_current_selection_states(self._parent_page)
+                if original_states and final_states and original_states != final_states:
+                    command = ResizeItemsCommand(self, indices_copy, original_states, final_states)
+                    self._parent_page.get_undo_manager().execute(command)
+            self.resizing_selection = False
+            self.original_resize_states = []
+        # ... mevcut kod ...
         super().mouseReleaseEvent(event)
 
     def _calculate_final_states_for_move(self, original_states: List[Any], 

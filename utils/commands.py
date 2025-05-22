@@ -363,20 +363,73 @@ class MoveItemsCommand(Command):
         self.description = f"Move {len(item_indices)} items"
 
     def execute(self):
+        import logging
+        logging.info(f"[MoveItemsCommand] execute BAŞLANGIÇ: item_indices={self.item_indices}")
         self._apply_state(self.final_states)
+        # --- RESİM TAŞIMA HANDLER ENTEGRASYONU --- #
+        try:
+            from handlers import resim_islem_handler
+            for idx, (item_type, index) in enumerate(self.item_indices):
+                if item_type == 'images' and hasattr(self.canvas._parent_page, 'images') and 0 <= index < len(self.canvas._parent_page.images):
+                    img_data = self.canvas._parent_page.images[index]
+                    dosya_yolu = img_data.get('path', None)
+                    if dosya_yolu:
+                        yeni_x = int(img_data['rect'].x())
+                        yeni_y = int(img_data['rect'].y())
+                        resim_islem_handler.handle_move_image(dosya_yolu, yeni_x, yeni_y)
+                    # Açı değişikliği varsa onu da güncelle
+                    yeni_aci = float(img_data.get('angle', 0.0))
+                    resim_islem_handler.handle_rotate_image(dosya_yolu, yeni_aci)
+        except Exception as e:
+            import logging
+            logging.error(f"MoveItemsCommand: Resim handler çağrısı sırasında hata: {e}")
         self.canvas.update()
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
         if hasattr(self.canvas, 'invalidate_cache'):
             self.canvas.invalidate_cache()
+        logging.info(f"[MoveItemsCommand] execute BİTİŞ: item_indices={self.item_indices}")
+        # --- YENİ: Pixmap cache sıfırlama ve yeniden yükleme (undo/redo sonrası kaybolma çözümü) --- #
+        for item_type, idx in self.item_indices:
+            if item_type == 'images' and self.canvas._parent_page and 0 <= idx < len(self.canvas._parent_page.images):
+                self.canvas._parent_page.images[idx]['_scaled_pixmap'] = None
+                self.canvas._parent_page.images[idx]['_scaled_pixmap_cache_key'] = None
+        if hasattr(self.canvas, '_load_qgraphics_pixmap_items_from_page'):
+            self.canvas._load_qgraphics_pixmap_items_from_page()
 
     def undo(self):
+        import logging
+        logging.info(f"[MoveItemsCommand] undo BAŞLANGIÇ: item_indices={self.item_indices}")
         self._apply_state(self.original_states)
+        # --- RESİM TAŞIMA HANDLER ENTEGRASYONU (UNDO) --- #
+        try:
+            from handlers import resim_islem_handler
+            for idx, (item_type, index) in enumerate(self.item_indices):
+                if item_type == 'images' and hasattr(self.canvas._parent_page, 'images') and 0 <= index < len(self.canvas._parent_page.images):
+                    img_data = self.canvas._parent_page.images[index]
+                    dosya_yolu = img_data.get('path', None)
+                    if dosya_yolu:
+                        yeni_x = int(img_data['rect'].x())
+                        yeni_y = int(img_data['rect'].y())
+                        resim_islem_handler.handle_move_image(dosya_yolu, yeni_x, yeni_y)
+                    yeni_aci = float(img_data.get('angle', 0.0))
+                    resim_islem_handler.handle_rotate_image(dosya_yolu, yeni_aci)
+        except Exception as e:
+            import logging
+            logging.error(f"MoveItemsCommand UNDO: Resim handler çağrısı sırasında hata: {e}")
         self.canvas.update()
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
         if hasattr(self.canvas, 'invalidate_cache'):
             self.canvas.invalidate_cache()
+        logging.info(f"[MoveItemsCommand] undo BİTİŞ: item_indices={self.item_indices}")
+        # --- YENİ: Pixmap cache sıfırlama ve yeniden yükleme (undo/redo sonrası kaybolma çözümü) --- #
+        for item_type, idx in self.item_indices:
+            if item_type == 'images' and self.canvas._parent_page and 0 <= idx < len(self.canvas._parent_page.images):
+                self.canvas._parent_page.images[idx]['_scaled_pixmap'] = None
+                self.canvas._parent_page.images[idx]['_scaled_pixmap_cache_key'] = None
+        if hasattr(self.canvas, '_load_qgraphics_pixmap_items_from_page'):
+            self.canvas._load_qgraphics_pixmap_items_from_page()
 
     def _apply_state(self, states: List[Any]):
         """Verilen state listesini (tam öğe verileri içeren) canvas'a uygular."""
@@ -452,23 +505,75 @@ class ResizeItemsCommand(Command):
         self.description = f"Resize {len(item_indices)} items"
 
     def execute(self):
+        import logging
+        logging.info(f"[ResizeItemsCommand] execute BAŞLANGIÇ: item_indices={self.item_indices}")
         if self._is_first_execution:
             self._is_first_execution = False
         else:
             self._apply_state(self.final_states)
+        # --- RESİM BOYUTLANDIRMA HANDLER ENTEGRASYONU --- #
+        try:
+            from handlers import resim_islem_handler
+            for idx, (item_type, index) in enumerate(self.item_indices):
+                if item_type == 'images' and hasattr(self.canvas._parent_page, 'images') and 0 <= index < len(self.canvas._parent_page.images):
+                    img_data = self.canvas._parent_page.images[index]
+                    dosya_yolu = img_data.get('path', None)
+                    if dosya_yolu:
+                        yeni_genislik = int(img_data['rect'].width())
+                        yeni_yukseklik = int(img_data['rect'].height())
+                        resim_islem_handler.handle_resize_image(dosya_yolu, yeni_genislik, yeni_yukseklik)
+                    yeni_aci = float(img_data.get('angle', 0.0))
+                    resim_islem_handler.handle_rotate_image(dosya_yolu, yeni_aci)
+        except Exception as e:
+            import logging
+            logging.error(f"ResizeItemsCommand: Resim handler çağrısı sırasında hata: {e}")
         self.canvas.update()
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
         if hasattr(self.canvas, 'invalidate_cache'):
             self.canvas.invalidate_cache()
+        logging.info(f"[ResizeItemsCommand] execute BİTİŞ: item_indices={self.item_indices}")
+        # --- YENİ: Pixmap cache sıfırlama ve yeniden yükleme (undo/redo sonrası kaybolma çözümü) --- #
+        for item_type, idx in self.item_indices:
+            if item_type == 'images' and self.canvas._parent_page and 0 <= idx < len(self.canvas._parent_page.images):
+                self.canvas._parent_page.images[idx]['_scaled_pixmap'] = None
+                self.canvas._parent_page.images[idx]['_scaled_pixmap_cache_key'] = None
+        if hasattr(self.canvas, '_load_qgraphics_pixmap_items_from_page'):
+            self.canvas._load_qgraphics_pixmap_items_from_page()
 
     def undo(self):
+        import logging
+        logging.info(f"[ResizeItemsCommand] undo BAŞLANGIÇ: item_indices={self.item_indices}")
         self._apply_state(self.original_states)
+        # --- RESİM BOYUTLANDIRMA HANDLER ENTEGRASYONU (UNDO) --- #
+        try:
+            from handlers import resim_islem_handler
+            for idx, (item_type, index) in enumerate(self.item_indices):
+                if item_type == 'images' and hasattr(self.canvas._parent_page, 'images') and 0 <= index < len(self.canvas._parent_page.images):
+                    img_data = self.canvas._parent_page.images[index]
+                    dosya_yolu = img_data.get('path', None)
+                    if dosya_yolu:
+                        yeni_genislik = int(img_data['rect'].width())
+                        yeni_yukseklik = int(img_data['rect'].height())
+                        resim_islem_handler.handle_resize_image(dosya_yolu, yeni_genislik, yeni_yukseklik)
+                    yeni_aci = float(img_data.get('angle', 0.0))
+                    resim_islem_handler.handle_rotate_image(dosya_yolu, yeni_aci)
+        except Exception as e:
+            import logging
+            logging.error(f"ResizeItemsCommand UNDO: Resim handler çağrısı sırasında hata: {e}")
         self.canvas.update()
         if hasattr(self.canvas, 'selection_changed'):
             self.canvas.selection_changed.emit()
         if hasattr(self.canvas, 'invalidate_cache'):
             self.canvas.invalidate_cache()
+        logging.info(f"[ResizeItemsCommand] undo BİTİŞ: item_indices={self.item_indices}")
+        # --- YENİ: Pixmap cache sıfırlama ve yeniden yükleme (undo/redo sonrası kaybolma çözümü) --- #
+        for item_type, idx in self.item_indices:
+            if item_type == 'images' and self.canvas._parent_page and 0 <= idx < len(self.canvas._parent_page.images):
+                self.canvas._parent_page.images[idx]['_scaled_pixmap'] = None
+                self.canvas._parent_page.images[idx]['_scaled_pixmap_cache_key'] = None
+        if hasattr(self.canvas, '_load_qgraphics_pixmap_items_from_page'):
+            self.canvas._load_qgraphics_pixmap_items_from_page()
 
     def _apply_state(self, states: List[Any]):
         """Verilen state listesini (tam öğe verileri içeren) canvas'a uygular."""

@@ -1791,14 +1791,18 @@ class MainWindow(QMainWindow):
                                 'filepath': target_path  # YENİ: resim_islem_handler için dosya yolu
                             }
                             
-                            # Resmi sayfanın images listesine ekle
-                            page.images.append(image_data)
+                            # --- DEĞİŞİKLİK: Doğrudan ekleme yerine komut ile ekle --- #
+                            from utils.commands import AddImageCommand
+                            command = AddImageCommand(page, image_data)
+                            page.get_undo_manager().execute(command)
+                            # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- #
+
                             # YENİ: resim_islem_handler kullan
                             resim_islem_handler.handle_select_image(target_path)
-                            
-                            # Sayfayı değişti olarak işaretle ve güncelle
+
+                            # Sayfayı değişti olarak işaretle ve güncelle (komut zaten yapıyor ama güvenli olsun)
                             page.mark_as_modified()
-                            self.invalidate_cache(reason="Resim eklendi (doğrudan)")
+                            self.invalidate_cache(reason="Resim eklendi (undo/redo ile)")
                             self.update()
                         except Exception as e:
                             logging.error(f"Resim eklenirken hata: {e}", exc_info=True)
