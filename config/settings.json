@@ -1,0 +1,75 @@
+{
+  "quick_access_colors": [
+    [
+      0.6666666865348816,
+      0.0,
+      0.0,
+      1.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.49803921580314636,
+      1.0
+    ],
+    [
+      0.0,
+      0.49803921580314636,
+      0.0,
+      1.0
+    ]
+  ],
+  "grid_snap_enabled": true,
+  "grid_visible_on_snap": true,
+  "grid_show_for_line_tool_only": false,
+  "grid_apply_to_all_pages": true,
+  "grid_thick_line_interval": 4,
+  "grid_thin_color": [
+    0.0,
+    0.0,
+    0.49803921580314636,
+    0.0784313725490196
+  ],
+  "grid_thick_color": [
+    0.6666666865348816,
+    0.0,
+    0.0,
+    0.1568627450980392
+  ],
+  "grid_thin_width": 0.9999999999999992,
+  "grid_thick_width": 1.0,
+  "recent_files": [
+    "C:/Users/gilan/Desktop/Dijital M\u00fcrekkep/\u00e7evre_ekonomisi_notlar\u0131.dnd",
+    "C:/Users/gilan/Desktop/Dijital M\u00fcrekkep/test.dnd"
+  ],
+  "window_width": 1280,
+  "window_height": 729,
+  "pen_width": 2,
+  "eraser_width": 10,
+  "fill_color": [
+    1.0,
+    1.0,
+    1.0,
+    0.0
+  ],
+  "template_settings": {
+    "template_type_name": "PLAIN",
+    "line_spacing_pt": 30,
+    "grid_spacing_pt": 14,
+    "line_color": [
+      0.0,
+      0.3333333432674408,
+      1.0,
+      0.6980392336845398
+    ],
+    "grid_color": [
+      0.8980392217636108,
+      0.8980392217636108,
+      0.8980392217636108,
+      0.800000011920929
+    ],
+    "pdf_export_image_dpi": 150,
+    "default_page_orientation": "landscape"
+  },
+  "shape_pool_path": "C:/Users/gilan/Drive'\u0131m/_dijital_m\u00fcrekkep/shape_pool.json"
+}

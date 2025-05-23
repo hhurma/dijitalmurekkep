@@ -160,6 +160,7 @@ class DrawingCanvas(QWidget):
         # YENİ: B-Spline Widget örneği ve veri saklama
         self.b_spline_widget = DrawingWidget() # Örnek oluştur
         self.b_spline_strokes = self.b_spline_widget.strokes # YENİ: Referans olarak ata!
+        self.b_spline_widget.set_world_to_screen_func(self.world_to_screen)  # Pan/zoom için dönüşüm aktarımı
 
         # Renkler ve Kalem Ayarları
         self.current_color = (0.0, 0.0, 0.0, 1.0)
@@ -1605,6 +1606,9 @@ class DrawingCanvas(QWidget):
         self.update()
         # logging.debug(f"DrawingCanvas parent_page set to: {page.page_number if page else 'None'}") # Yorum satırı yapıldı
 
+        # Her zaman tool'u PEN olarak başlat
+        self.set_tool(ToolType.PEN)
+
     @pyqtSlot(int)
     def update_line_spacing(self, spacing_pt: int):
         """Dialogdan gelen sinyal üzerine çizgi aralığını günceller (anlık)."""
@@ -2036,6 +2040,14 @@ class DrawingCanvas(QWidget):
 
     # Mevcut Dokunma Olayı İşleyicisi (eventFilter tarafından çağrılacak)
     def touchEvent(self, event: QTouchEvent):
+        # Eğer aktif araç B-spline ise iki parmak hareketlerini engelle
+        if self.current_tool in [ToolType.EDITABLE_LINE, ToolType.EDITABLE_LINE_NODE_SELECTOR]:
+            event.ignore()
+            return
+        # Eğer b-spline çizgi varsa ve tool b-spline değilse, iki parmak hareketlerini yine engelle
+        if hasattr(self, 'b_spline_widget') and self.b_spline_widget and self.b_spline_widget.strokes:
+            event.ignore()
+            return
         touch_points = event.points()
         if not touch_points:
             event.ignore()
@@ -2096,6 +2108,10 @@ class DrawingCanvas(QWidget):
                     self._parent_page.zoom_level = new_zoom
                     self._parent_page.pan_offset -= delta
                     
+                    # YENİ: B-Spline widget dönüşümünü güncelle
+                    if hasattr(self, 'b_spline_widget') and self.b_spline_widget:
+                        self.b_spline_widget.set_world_to_screen_func(self.world_to_screen)
+
                     # Yeni değerleri kaydet
                     self._last_pinch_dist = dist_screen
                     self._last_pinch_center = center_world
@@ -2589,3 +2605,9 @@ class DrawingCanvas(QWidget):
         self._static_content_cache = pixmap
         self._cache_dirty = False
         #logging.info(f"[CACHE] _update_static_content_cache: Cache güncellendi. DPI: {dpr}, Boyut: {self.size().width()}x{self.size().height()}, Format: {format_name}")
+
+    def wheelEvent(self, event):
+        # YENİ: Scroll ile zoom/pan yapılırken b_spline_widget dönüşümünü güncelle
+        super().wheelEvent(event)
+        if hasattr(self, 'b_spline_widget') and self.b_spline_widget:
+            self.b_spline_widget.set_world_to_screen_func(self.world_to_screen)

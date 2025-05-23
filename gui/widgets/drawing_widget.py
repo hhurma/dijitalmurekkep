@@ -206,9 +206,13 @@ class DrawingWidget(QWidget):
         self.update()
         return created_stroke_data
 
+    def set_world_to_screen_func(self, func):
+        self._world_to_screen = func
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        world_to_screen = getattr(self, '_world_to_screen', lambda p: p)
         for i, stroke_data in enumerate(self.strokes):
             control_points = stroke_data.get('control_points')
             knots = stroke_data.get('knots')
@@ -221,16 +225,16 @@ class DrawingWidget(QWidget):
                 if 'curve_points' in stroke_data and stroke_data['curve_points'] is not None:
                     curve_points = stroke_data['curve_points']
                     path = QPainterPath()
-                    path.moveTo(QPointF(curve_points[0][0], curve_points[0][1]))
+                    path.moveTo(world_to_screen(QPointF(curve_points[0][0], curve_points[0][1])))
                     for j in range(1, len(curve_points)):
-                        path.lineTo(QPointF(curve_points[j][0], curve_points[j][1]))
+                        path.lineTo(world_to_screen(QPointF(curve_points[j][0], curve_points[j][1])))
                 else:
                     tck = (knots, np.array(control_points).T, degree)
                     x_fine, y_fine = splev(np.linspace(0, u[-1], 2000), tck)
                     path = QPainterPath()
-                    path.moveTo(QPointF(x_fine[0], y_fine[0]))
+                    path.moveTo(world_to_screen(QPointF(x_fine[0], y_fine[0])))
                     for j in range(1, len(x_fine)):
-                        path.lineTo(QPointF(x_fine[j], y_fine[j]))
+                        path.lineTo(world_to_screen(QPointF(x_fine[j], y_fine[j])))
                 stroke_pen = QPen(Qt.GlobalColor.black, stroke_thickness, Qt.PenStyle.SolidLine, 
                                  Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
                 stroke_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
@@ -245,14 +249,17 @@ class DrawingWidget(QWidget):
                     if cp_idx == selected_idx:
                         painter.setPen(QPen(Qt.GlobalColor.cyan, 2, Qt.PenStyle.SolidLine))
                         painter.setBrush(Qt.GlobalColor.red)
-                        painter.drawRect(QPointF(cp[0], cp[1]).x() - 5, QPointF(cp[0], cp[1]).y() - 5, 10, 10)
+                        screen_cp = world_to_screen(QPointF(cp[0], cp[1]))
+                        painter.drawRect(screen_cp.x() - 5, screen_cp.y() - 5, 10, 10)
                     else:
                         painter.setPen(QPen(Qt.GlobalColor.red, 5, Qt.PenStyle.SolidLine))
-                        painter.drawPoint(QPointF(cp[0], cp[1]))
+                        screen_cp = world_to_screen(QPointF(cp[0], cp[1]))
+                        painter.drawPoint(screen_cp)
             else:
                 painter.setPen(QPen(Qt.GlobalColor.red, 5, Qt.PenStyle.SolidLine))
                 for cp in control_points:
-                    painter.drawPoint(QPointF(cp[0], cp[1]))
+                    screen_cp = world_to_screen(QPointF(cp[0], cp[1]))
+                    painter.drawPoint(screen_cp)
             painter.restore()
         if len(self.current_stroke) > 1:
             painter.save()
@@ -262,5 +269,14 @@ class DrawingWidget(QWidget):
                 pen_width = 1 + pressure1 * 9
                 pen = QPen(Qt.GlobalColor.blue, pen_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
                 painter.setPen(pen)
-                painter.drawLine(point1, point2)
-            painter.restore() 
+                painter.drawLine(world_to_screen(point1), world_to_screen(point2))
+            painter.restore()
+
+    def mousePressEvent(self, event: QMouseEvent):
+        pass
+
+    def mouseMoveEvent(self, event: QMouseEvent):
+        pass
+
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        pass 

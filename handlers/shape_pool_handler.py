@@ -276,7 +276,7 @@ def handle_store_shape(page_manager, main_window):
         item_idx = bspline_idx[1]
         if 0 <= item_idx < len(canvas.b_spline_strokes):
             bspline_data = copy.deepcopy(canvas.b_spline_strokes[item_idx])
-            serialized_bspline = file_io_helpers._serialize_item(bspline_data)
+            serialized_bspline = file_io_helpers._serialize_bspline(bspline_data)
             if serialized_bspline:
                 serialized_group.append(serialized_bspline)
     pool[category][shape_name] = serialized_group
@@ -888,7 +888,7 @@ def handle_store_shape(page_manager, main_window):
         item_idx = bspline_idx[1]
         if 0 <= item_idx < len(canvas.b_spline_strokes):
             bspline_data = copy.deepcopy(canvas.b_spline_strokes[item_idx])
-            serialized_bspline = file_io_helpers._serialize_item(bspline_data)
+            serialized_bspline = file_io_helpers._serialize_bspline(bspline_data)
             if serialized_bspline:
                 serialized_group.append(serialized_bspline)
     pool[category][shape_name] = serialized_group
