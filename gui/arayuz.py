@@ -289,10 +289,10 @@ class MainWindow(QMainWindow):
         self.redo_action.setEnabled(False)
 
         self.clear_action = QAction(self)
-        self.clear_action.setIcon(qta.icon('fa5s.eraser'))
+        self.clear_action.setIcon(qta.icon('fa5s.broom', color='red'))  # Yeni ikon: broom
         self.clear_action.setText("Sayfayı Temizle")
         self.clear_action.setToolTip("Sayfayı Temizle (Shift+Delete)")
-        self.clear_action.setShortcut(QKeySequence(Qt.Key.Key_Delete | Qt.KeyboardModifier.ShiftModifier))
+        self.clear_action.setShortcut(QKeySequence("Shift+Delete"))
         # Bağlantı _update_active_page_connections içinde yapılacak (aktif page_manager'a göre)
         self.clear_action.setEnabled(False) # Başlangıçta aktif sayfa yüklenene kadar pasif
 
@@ -542,7 +542,7 @@ class MainWindow(QMainWindow):
         """Toolbar'ı oluşturur ve actionları ekler."""
         toolbar = self.addToolBar("Ana Araçlar")
         toolbar.setObjectName("AnaAraçlar") # Nesne adı ekleyelim
-        toolbar.setIconSize(QSize(24, 24))
+        toolbar.setIconSize(QSize(20, 20))  # İkon boyutunu küçült
 
         # Sayfa Yönetimi
         toolbar.addAction(self.new_page_action)
@@ -550,20 +550,23 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.prev_page_action)
         toolbar.addAction(self.next_page_action)
         toolbar.addSeparator()
-
+        toolbar.addAction(self.undo_action)
+        toolbar.addAction(self.redo_action)
+        
+        toolbar.addSeparator()
+        
         # Araç Seçimi (Selector eklendi)
         toolbar.addAction(self.select_tool_action)  # Seçim aracını ekle
         toolbar.addAction(self.pen_tool_action)     # Kalem aracını ekle
         toolbar.addAction(self.line_tool_action)    # Çizgi aracını ekle
         toolbar.addAction(self.rect_tool_action)    # Dikdörtgen aracını ekle
         toolbar.addAction(self.circle_tool_action)  # Daire aracını ekle
-        toolbar.addAction(self.eraser_tool_action)  # Silgi aracını ekle
-        toolbar.addAction(self.laser_pointer_action)  # Lazer İşaretçi aracını ekle
-        toolbar.addAction(self.temporary_pointer_action)  # Geçici İşaretçi aracını ekle
         toolbar.addAction(self.editable_line_tool_action)  # Düzenlenebilir Çizgi aracını ekle
         toolbar.addAction(self.node_selector_tool_action)  # Kontrol Noktası Seçici aracını ekle
+        toolbar.addAction(self.eraser_tool_action)  # Silgi aracını ekle
+        toolbar.addAction(self.clear_action)
         toolbar.addSeparator()
-
+        
         # --- YENİ: Hızlı Renk Butonları ve Layout Widget --- #
         toolbar.addWidget(self.quick_color_widget) # Layout içeren widget'ı ekle
         self._update_quick_color_buttons() # Butonları layout'a ekleyecek yeni fonksiyon
@@ -574,38 +577,10 @@ class MainWindow(QMainWindow):
         self.width_spinbox.setSuffix(" px")
         self.width_spinbox.setValue(self.current_pen_width)
         self.width_spinbox.setToolTip("Kalem Kalınlığı")
+        self.width_spinbox.setFixedWidth(50)  # Biraz daha daralt
         self.width_spinbox.valueChanged.connect(self._handle_width_change)
         toolbar.addWidget(self.width_spinbox)
         # --- --- --- --- --- --- --- --- --- ---
-
-        # Düzenleme
-        toolbar.addAction(self.undo_action)
-        toolbar.addAction(self.redo_action)
-        toolbar.addAction(self.cut_action)
-        toolbar.addAction(self.copy_action)
-        toolbar.addAction(self.paste_action)
-        toolbar.addAction(self.clear_action)
-        toolbar.addSeparator()
-
-        # --- YENİ: PDF İçe Aktarma Butonu ---
-        toolbar.addAction(self.import_pdf_action)
-        # --- --- --- --- --- --- --- --- --
-
-        # --- YENİ: Resim Ekle Butonu --- #
-        toolbar.addAction(self.add_image_action)
-        # --- YENİ: Resmi Sil Butonu --- #
-        toolbar.addAction(self.delete_image_action)
-        toolbar.addSeparator()
-        # --- YENİ: Resim Seçim Aracı Butonu --- #
-        toolbar.addAction(self.image_select_action) # Action'ı toolbar'a ekle
-        # --- --- --- --- --- --- --- --- --- --- #
-
-        # --- YENİ: Görünüm/Zoom Butonları --- #
-        toolbar.addAction(self.zoom_in_action)
-        toolbar.addAction(self.zoom_out_action)
-        toolbar.addAction(self.reset_zoom_action)
-        toolbar.addSeparator()
-        # --- --- --- --- --- --- --- --- --- #
 
         # --- YENİ: Çizgi Tipi Toggle Butonu --- #
         self.line_styles = ['solid', 'dashed', 'dotted', 'dashdot', 'double', 'zigzag']
@@ -619,14 +594,12 @@ class MainWindow(QMainWindow):
         self.line_style_action.triggered.connect(self._toggle_line_style)
         toolbar.addAction(self.line_style_action)
         # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-
-        # Renk butonları eklenecek
-        #logging.debug("Toolbar oluşturuldu.")
-
+        toolbar.addSeparator()
+        
         # --- Doldurma Rengi ve Şeffaflık --- #
         self.fill_color_button = QPushButton()
-        self.fill_color_button.setFixedSize(QSize(24, 24))
-        self.fill_color_button.setStyleSheet(f"background-color: {self.current_fill_color.name()}; border: 1px solid gray;")
+        self.fill_color_button.setFixedSize(QSize(18, 18))  # Biraz daha küçült
+        self.fill_color_button.setStyleSheet(f"background-color: {self.current_fill_color.name()}; border: 1px solid gray; border-radius: 9px; padding: 0px; background-clip: padding-box; overflow: hidden;")
         self.fill_color_button.setToolTip("Doldurma Rengi Seç")
         self.fill_color_button.clicked.connect(self._handle_fill_color_click)
         toolbar.addWidget(self.fill_color_button)
@@ -634,7 +607,7 @@ class MainWindow(QMainWindow):
         self.fill_alpha_slider = QSlider(Qt.Orientation.Horizontal)
         self.fill_alpha_slider.setRange(0, 255)
         self.fill_alpha_slider.setValue(self.current_fill_alpha)
-        self.fill_alpha_slider.setFixedWidth(60)
+        self.fill_alpha_slider.setFixedWidth(50)  # Biraz daha daralt
         self.fill_alpha_slider.setToolTip("Doldurma Şeffaflığı (0: Şeffaf, 255: Opak)")
         self.fill_alpha_slider.valueChanged.connect(self._handle_fill_alpha_change)
         toolbar.addWidget(self.fill_alpha_slider)
@@ -642,27 +615,65 @@ class MainWindow(QMainWindow):
 
         # --- Doldurma Aktif/Pasif Checkbox ve Etiket --- #
         self.fill_enable_checkbox = QCheckBox()
-        self.fill_enable_checkbox.setChecked(False)  # Varsayılan: işaretsiz (içi boş)
+        self.fill_enable_checkbox.setChecked(False)
+        self.fill_enable_checkbox.setFixedSize(QSize(20, 20))  # Checkbox boyutunu küçült
         self.fill_enable_checkbox.setToolTip("Doldurma Aktif/Pasif")
         self.fill_enable_checkbox.stateChanged.connect(self._handle_fill_enable_changed)
         toolbar.addWidget(self.fill_enable_checkbox)
         # Eski: toolbar.addWidget(QLabel("Doldur"))
         self.fill_icon_label = QLabel()
-        self.fill_icon_label.setPixmap(qta.icon('fa5s.fill-drip').pixmap(20, 20))
+        self.fill_icon_label.setPixmap(qta.icon('fa5s.fill-drip').pixmap(16, 16))  # İkonu küçült
         self.fill_icon_label.setToolTip("Doldur")
         toolbar.addWidget(self.fill_icon_label)
         toolbar.addSeparator()
         # --- --- --- --- --- --- --- --- --- ---
+        
+        # Düzenleme
+        toolbar.addAction(self.cut_action)
+        toolbar.addAction(self.copy_action)
+        toolbar.addAction(self.paste_action)
+        toolbar.addSeparator()
+
+        toolbar.addAction(self.laser_pointer_action)  # Lazer İşaretçi aracını ekle
+        toolbar.addAction(self.temporary_pointer_action)  # Geçici İşaretçi aracını ekle
+        toolbar.addSeparator()
+        
+        # --- YENİ: PDF İçe Aktarma Butonu ---
+        toolbar.addAction(self.import_pdf_action)
+        # --- --- --- --- --- --- --- --- --
+
+        # --- YENİ: Resim Ekle Butonu --- #
+        toolbar.addAction(self.add_image_action)
+        # --- YENİ: Resmi Sil Butonu --- #
+        toolbar.addAction(self.delete_image_action)
+        
+        # --- YENİ: Resim Seçim Aracı Butonu --- #
+        toolbar.addAction(self.image_select_action) # Action'ı toolbar'a ekle
+        # --- --- --- --- --- --- --- --- --- --- #
+        toolbar.addSeparator()
+        # --- YENİ: Görünüm/Zoom Butonları --- #
+        toolbar.addAction(self.zoom_in_action)
+        toolbar.addAction(self.zoom_out_action)
+        toolbar.addAction(self.reset_zoom_action)
+        toolbar.addSeparator()
+        # --- --- --- --- --- --- --- --- --- #
+
+        
+        # Renk butonları eklenecek
+        #logging.debug("Toolbar oluşturuldu.")
+
+        
 
         # --- YENİ: Çizgiler grid'e uysun Checkbox --- #
         self.snap_line_to_grid_checkbox = QCheckBox()
         self.snap_line_to_grid_checkbox.setChecked(False)
+        self.snap_line_to_grid_checkbox.setFixedSize(QSize(20, 20))  # Checkbox boyutunu küçült
         self.snap_line_to_grid_checkbox.setToolTip("Çizgileri grid'e uydur")
         self.snap_line_to_grid_checkbox.stateChanged.connect(self._handle_snap_line_to_grid_changed)
         toolbar.addWidget(self.snap_line_to_grid_checkbox)
         # Eski: toolbar.addWidget(QLabel("Çizgileri grid'e uydur"))
         self.grid_snap_icon_label = QLabel()
-        self.grid_snap_icon_label.setPixmap(qta.icon('fa5s.th-large').pixmap(20, 20))
+        self.grid_snap_icon_label.setPixmap(qta.icon('fa5s.th-large').pixmap(16, 16))  # İkonu küçült
         self.grid_snap_icon_label.setToolTip("Çizgileri grid'e uydur")
         toolbar.addWidget(self.grid_snap_icon_label)
         toolbar.addSeparator()
@@ -1309,7 +1320,7 @@ class MainWindow(QMainWindow):
 
         quick_colors = self.settings.get('quick_access_colors', [])
         max_colors = self.settings.get('max_quick_access_colors', 5)
-        button_size = QSize(24, 24) # Daha küçük boyut
+        button_size = QSize(20, 20) # Quick color butonlarını biraz daha küçült
 
         for index, color_list in enumerate(quick_colors):
             if len(self.quick_color_buttons) >= max_colors:
@@ -1525,8 +1536,21 @@ class MainWindow(QMainWindow):
             self.width_spinbox.setEnabled(False)
             self.width_spinbox.setToolTip("")
             return
-        self.width_spinbox.setEnabled(False) # Varsayılan olarak pasif
-        self.width_spinbox.setToolTip("")
+        # --- Tüm çizgi ve şekil araçları için aktif et ---
+        aktif_araçlar = [
+            self.pen_tool_action,
+            self.line_tool_action,
+            self.rect_tool_action,
+            self.circle_tool_action,
+            self.eraser_tool_action,
+            self.editable_line_tool_action
+        ]
+        if action in aktif_araçlar:
+            self.width_spinbox.setEnabled(True)
+            self.width_spinbox.setToolTip("Çizgi/Şekil Kalınlığı")
+        else:
+            self.width_spinbox.setEnabled(False)
+            self.width_spinbox.setToolTip("")
         # --- Doldurma rengi ve şeffaflık kontrollerinin aktifliği ---
         if hasattr(self, 'fill_color_button') and hasattr(self, 'fill_alpha_slider') and hasattr(self, 'fill_enable_checkbox'):
             fill_active = self.fill_enable_checkbox.isChecked()
@@ -1534,7 +1558,6 @@ class MainWindow(QMainWindow):
             logging.debug(f"[fill_enable_checkbox] can_fill={can_fill}, fill_active={fill_active}, action={action}, last_tool_action={getattr(self, 'last_tool_action', None)}")
             self.fill_color_button.setEnabled(fill_active and can_fill)
             self.fill_alpha_slider.setEnabled(fill_active and can_fill)
-            # Checkbox'ın aktifliği sadece araç değişiminde güncellensin
             if getattr(self, 'last_tool_action', None) != action:
                 logging.debug(f"[fill_enable_checkbox] setEnabled({can_fill}) çağrılıyor. Önceki last_tool_action={getattr(self, 'last_tool_action', None)}, yeni action={action}")
                 self.fill_enable_checkbox.setEnabled(can_fill)
