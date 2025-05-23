@@ -881,6 +881,7 @@ class DrawingCanvas(QWidget):
                 painter.drawEllipse(last_pos_screen_qpointf, eraser_radius, eraser_radius)
                 painter.restore()
         # --- --- --- --- --- -- #
+        painter.end()
 
     def screen_to_world(self, screen_pos: QPointF) -> QPointF:
         if self._parent_page:

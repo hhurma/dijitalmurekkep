@@ -39,7 +39,7 @@ def get_config_file_path():
         base_dir = os.path.dirname(sys.executable)
     else:
         # Normal Python çalıştırması
-        base_dir = os.path.dirname(os.path.abspath(__file__))
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     config_dir = os.path.join(base_dir, 'config')
     os.makedirs(config_dir, exist_ok=True)
     config_filename = 'settings.json'
@@ -538,6 +538,28 @@ class MainWindow(QMainWindow):
         self.node_selector_tool_action.triggered.connect(lambda: tool_handler.handle_set_active_tool(self.page_manager, ToolType.EDITABLE_LINE_NODE_SELECTOR))
         self.tool_actions.addAction(self.node_selector_tool_action)
 
+        # --- Şekil Deposu Ekle Action ---
+        self.add_shape_pool_action = QAction(qta.icon('fa5s.folder-plus', color='blue'), "Şekil Deposu Ekle...", self)
+        self.add_shape_pool_action.setStatusTip("Bir adet şekil havuzu dosyası ekle")
+        self.add_shape_pool_action.triggered.connect(self._handle_add_shape_pool)
+
+    def _handle_add_shape_pool(self):
+        # Sadece bir kere depo eklenebilir
+        if self.settings.get('shape_pool_path'):
+            QMessageBox.information(self, "Şekil Deposu", "Zaten bir şekil havuzu eklediniz. Değiştirmek için ayarlardan güncelleyin.")
+            return
+        file_dialog = QFileDialog(self)
+        file_dialog.setWindowTitle("Şekil Havuzu Dosyası Seç")
+        file_dialog.setFileMode(QFileDialog.FileMode.AnyFile)
+        file_dialog.setNameFilter("JSON Dosyası (*.json)")
+        if file_dialog.exec():
+            selected_files = file_dialog.selectedFiles()
+            if selected_files:
+                selected_path = selected_files[0]
+                self.settings['shape_pool_path'] = selected_path
+                self._save_settings(self.settings)
+                QMessageBox.information(self, "Şekil Deposu", f"Şekil havuzu kaydedildi:\n{selected_path}")
+
     def _create_toolbar(self):
         """Toolbar'ı oluşturur ve actionları ekler."""
         toolbar = self.addToolBar("Ana Araçlar")
@@ -773,6 +795,7 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self.paste_action)
         edit_menu.addSeparator()
         # --- Şekil Havuzu Actionları ---
+        edit_menu.addAction(self.add_shape_pool_action)  # <-- yeni eklenen action
         edit_menu.addAction(self.store_shape_action)
         edit_menu.addAction(self.add_shape_from_pool_action)
         edit_menu.addAction(self.delete_shape_from_pool_action)
@@ -1521,7 +1544,7 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(QAction)
     def _update_width_spinbox_for_tool(self, action: QAction):
-        logging.debug(f"[_update_width_spinbox_for_tool] Çağrıldı. action={action}, text={getattr(action, 'text', lambda: None)() if action else None}")
+        #logging.debug(f"[_update_width_spinbox_for_tool] Çağrıldı. action={action}, text={getattr(action, 'text', lambda: None)() if action else None}")
         if not action:
             self.width_spinbox.setEnabled(False)
             self.width_spinbox.setToolTip("")
@@ -1555,11 +1578,11 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'fill_color_button') and hasattr(self, 'fill_alpha_slider') and hasattr(self, 'fill_enable_checkbox'):
             fill_active = self.fill_enable_checkbox.isChecked()
             can_fill = action in [self.rect_tool_action, self.circle_tool_action] # Sadece bu araçlar için dolgu aktif
-            logging.debug(f"[fill_enable_checkbox] can_fill={can_fill}, fill_active={fill_active}, action={action}, last_tool_action={getattr(self, 'last_tool_action', None)}")
+            #logging.debug(f"[fill_enable_checkbox] can_fill={can_fill}, fill_active={fill_active}, action={action}, last_tool_action={getattr(self, 'last_tool_action', None)}")
             self.fill_color_button.setEnabled(fill_active and can_fill)
             self.fill_alpha_slider.setEnabled(fill_active and can_fill)
             if getattr(self, 'last_tool_action', None) != action:
-                logging.debug(f"[fill_enable_checkbox] setEnabled({can_fill}) çağrılıyor. Önceki last_tool_action={getattr(self, 'last_tool_action', None)}, yeni action={action}")
+                #logging.debug(f"[fill_enable_checkbox] setEnabled({can_fill}) çağrılıyor. Önceki last_tool_action={getattr(self, 'last_tool_action', None)}, yeni action={action}")
                 self.fill_enable_checkbox.setEnabled(can_fill)
                 self.last_tool_action = action
     # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- #

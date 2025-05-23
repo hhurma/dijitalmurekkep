@@ -17,7 +17,12 @@ def main():
     app = QApplication(sys.argv)
 
     # Splash ekranı başlat
-    splash = SplashScreen("splash.png")
+    if getattr(sys, 'frozen', False):
+        import os
+        splash_path = os.path.join(sys._MEIPASS, '_internal', 'splash.png')
+    else:
+        splash_path = 'splash.png'
+    splash = SplashScreen(splash_path)
     splash.show()
     app.processEvents()  # Splash'ın hemen görünmesi için
 

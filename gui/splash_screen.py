@@ -10,6 +10,8 @@ class SplashScreen(QWidget):
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.SplashScreen)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.pixmap = QPixmap(image_path)
+        if self.pixmap.isNull():
+            print(f"Splash görseli yüklenemedi: {image_path}")
         self.setFixedSize(420, 420)
         self.text = "Yükleniyor..."
         self.font = QFont("Arial", 18, QFont.Weight.Bold)

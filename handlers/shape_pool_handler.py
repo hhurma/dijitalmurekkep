@@ -1,8 +1,9 @@
 import os
+import sys
 import json
 from PyQt6.QtWidgets import (QInputDialog, QMessageBox, QDialog, QVBoxLayout, QListWidget, 
                            QListWidgetItem, QDialogButtonBox, QHBoxLayout, QPushButton, 
-                           QLabel, QComboBox, QFormLayout, QGroupBox, QLineEdit)
+                           QLabel, QComboBox, QFormLayout, QGroupBox, QLineEdit, QFileDialog)
 from PyQt6.QtCore import QDir, Qt, QPointF
 from utils.file_io_helpers import _serialize_item, _deserialize_item, _deserialize_bspline
 import copy
@@ -14,19 +15,76 @@ import numpy as np
 from gui.enums import ToolType
 from utils import file_io_helpers
 
-SHAPE_POOL_PATH = os.path.join(os.path.dirname(__file__), '../gui/config/shape_pool.json')
+# Kök dizindeki config klasörünü kullan
+def get_config_dir():
+    if getattr(sys, 'frozen', False):
+        # PyInstaller ile exe çalışıyorsa
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    config_dir = os.path.join(base_dir, 'config')
+    os.makedirs(config_dir, exist_ok=True)
+    return config_dir
+
+def get_settings_path():
+    return os.path.join(get_config_dir(), 'settings.json')
+
+def get_shape_pool_path():
+    settings_path = get_settings_path()
+    shape_pool_path = None
+    try:
+        with open(settings_path, 'r', encoding='utf-8') as f:
+            settings = json.load(f)
+            shape_pool_path = settings.get('shape_pool_path', None)
+    except Exception:
+        pass
+    if shape_pool_path and isinstance(shape_pool_path, str) and shape_pool_path.strip():
+        return shape_pool_path
+    # Yoksa varsayılan
+    return os.path.join(get_config_dir(), 'shape_pool.json')
+
+SHAPE_POOL_PATH = get_shape_pool_path()
 
 # Havuz dosyasını oku (yoksa boş sözlük döndür)
-def _load_shape_pool():
-    if not os.path.exists(SHAPE_POOL_PATH):
+def _load_shape_pool(main_window=None):
+    shape_pool_path = get_shape_pool_path()  # Her zaman güncel yolu al
+    if not os.path.exists(shape_pool_path):
+        # Eğer main_window parametresi verilmişse kullanıcıya yol sor
+        if main_window is not None:
+            file_dialog = QFileDialog(main_window)
+            file_dialog.setWindowTitle("Şekil Havuzu Dosyasını Seç")
+            file_dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
+            file_dialog.setNameFilter("JSON Dosyası (*.json)")
+            if file_dialog.exec():
+                selected_files = file_dialog.selectedFiles()
+                if selected_files:
+                    selected_path = selected_files[0]
+                    # settings.json'a kaydet
+                    settings_path = get_settings_path()
+                    try:
+                        try:
+                            with open(settings_path, 'r', encoding='utf-8') as f:
+                                settings = json.load(f)
+                        except Exception:
+                            settings = {}
+                        settings['shape_pool_path'] = selected_path
+                        with open(settings_path, 'w', encoding='utf-8') as f:
+                            json.dump(settings, f, ensure_ascii=False, indent=2)
+                    except Exception as e:
+                        if main_window:
+                            QMessageBox.warning(main_window, "Uyarı", f"Seçilen dosya yolu ayarlara kaydedilemedi: {e}\nYol: {settings_path}")
+                        return {"Genel": {}}
+                    # Dosya bulundu, tekrar dene
+                    if os.path.exists(selected_path):
+                        return _load_shape_pool(main_window)
+        # Dosya yine yoksa boş havuz döndür
         return {"Genel": {}}  # Boş bir sözlük döndür, "Genel" kategorisi ile
     try:
-        with open(SHAPE_POOL_PATH, 'r', encoding='utf-8') as f:
+        with open(shape_pool_path, 'r', encoding='utf-8') as f:
             pool = json.load(f)
             # Eğer eski format bir liste veya kategori içinde liste ise, yeni formata dönüştür
             if isinstance(pool, list):
                 return {"Genel": {"Eski Şekiller": pool}}  # Tüm eski şekilleri "Genel" kategorisine koy
-            
             # Her kategori için liste formatını sözlük formatına dönüştür
             for category, items in pool.items():
                 if isinstance(items, list):
@@ -35,15 +93,16 @@ def _load_shape_pool():
                         item_name = f"Şekil {i+1}"
                         new_items[item_name] = [item]  # Her şekil bir liste olarak saklanır (grup olarak)
                     pool[category] = new_items
-            
             return pool
     except Exception as e:
         logging.error(f"Şekil havuzu yüklenirken hata: {e}")
         return {"Genel": {}}
 
-def _save_shape_pool(pool):
-    os.makedirs(os.path.dirname(SHAPE_POOL_PATH), exist_ok=True)
-    with open(SHAPE_POOL_PATH, 'w', encoding='utf-8') as f:
+def _save_shape_pool(pool, shape_pool_path=None):
+    if shape_pool_path is None:
+        shape_pool_path = get_shape_pool_path()
+    os.makedirs(os.path.dirname(shape_pool_path), exist_ok=True)
+    with open(shape_pool_path, 'w', encoding='utf-8') as f:
         json.dump(pool, f, ensure_ascii=False, indent=2)
 
 # Seçili şekilleri havuza ekle (grup desteği)
@@ -53,120 +112,131 @@ def handle_store_shape(page_manager, main_window):
         QMessageBox.warning(main_window, "Uyarı", "Aktif bir sayfa yok.")
         return
     canvas = current_page.drawing_canvas
-    
+
+    # --- Şekil havuzu dosya yolunu ayarlardan dinamik al ---
+    shape_pool_path = get_shape_pool_path()
+    if not os.path.exists(shape_pool_path):
+        # Sadece dosya yoksa kullanıcıya sor
+        file_dialog = QFileDialog(main_window)
+        file_dialog.setWindowTitle("Şekil Havuzu Dosya Konumu Seç")
+        file_dialog.setFileMode(QFileDialog.FileMode.AnyFile)
+        file_dialog.setNameFilter("JSON Dosyası (*.json)")
+        file_dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        file_dialog.selectFile(shape_pool_path)
+        if file_dialog.exec():
+            selected_files = file_dialog.selectedFiles()
+            if selected_files:
+                selected_path = selected_files[0]
+                os.makedirs(os.path.dirname(selected_path), exist_ok=True)
+                # settings.json'a kaydet
+                try:
+                    settings_path = get_settings_path()
+                    try:
+                        with open(settings_path, 'r', encoding='utf-8') as f:
+                            settings = json.load(f)
+                    except Exception:
+                        settings = {}
+                    settings['shape_pool_path'] = selected_path
+                    with open(settings_path, 'w', encoding='utf-8') as f:
+                        json.dump(settings, f, ensure_ascii=False, indent=2)
+                    shape_pool_path = selected_path
+                except Exception as e:
+                    QMessageBox.warning(main_window, "Uyarı", f"Seçilen dosya yolu ayarlara kaydedilemedi: {e}\nYol: {settings_path}")
+                    return
+        else:
+            return  # Kullanıcı iptal ettiyse işlemi durdur
+
     # Seçili öğeleri topla
     selected_shapes = [i for i in canvas._selected_item_indices if i[0] == 'shapes']
     selected_lines = [i for i in canvas._selected_item_indices if i[0] == 'lines']
     selected_bspline_strokes = [i for i in getattr(canvas, '_selected_item_indices', []) if i[0] == 'bspline_strokes']
-    
-    # Düzenlenebilir çizgiler artık 'shapes' içinde EDITABLE_LINE tipi ile saklanıyor
-    # Özel bir filtreleme yapmak yerine, shapes içinden EDITABLE_LINE tipindekileri bulalım
     editable_lines_in_shapes = []
     for shape_idx in selected_shapes:
         item_idx = shape_idx[1]
         if 0 <= item_idx < len(canvas.shapes):
             shape_data = canvas.shapes[item_idx]
-            # Eğer bu bir düzenlenebilir çizgi ise
             if len(shape_data) > 0 and shape_data[0] == ToolType.EDITABLE_LINE:
                 editable_lines_in_shapes.append(shape_idx)
-    
-    # Burada selected_editable_lines kontrolünü kaldırıyoruz çünkü onlar zaten selected_shapes içinde
     if not (selected_shapes or selected_lines or selected_bspline_strokes):
         QMessageBox.warning(main_window, "Uyarı", "Lütfen önce bir şekil seçin.")
         return
-    
-    # Yeni diyalog oluştur - Kategori ve şekil adı sor
+
+    # Havuzu yükle ve mevcut kategorileri al
+    pool = _load_shape_pool()
+    categories = sorted(list(pool.keys()))
+
+    # Kategori ve şekil adı diyalogu
     dialog = QDialog(main_window)
     dialog.setWindowTitle("Şekil Havuzuna Ekle")
     dialog.setMinimumWidth(400)
     dialog.setMinimumHeight(250)
-    
     layout = QVBoxLayout()
     form_layout = QFormLayout()
-    
-    # Havuzu yükle ve mevcut kategorileri al
-    pool = _load_shape_pool()
-    categories = sorted(list(pool.keys()))
-    
-    # Kategori Grup Kutusu
     category_group = QGroupBox("Kategori Seçimi")
     category_layout = QVBoxLayout()
-    
-    # Kategori seçici ComboBox
     category_combo = QComboBox()
     category_combo.setEditable(True)
     category_combo.addItems(categories)
     category_combo.setCurrentText("Genel")
-    
-    # Kategori hakkında açıklama etiketi
     category_hint = QLabel("Mevcut bir kategori seçin veya yeni bir kategori adı yazın")
     category_hint.setStyleSheet("color: #666; font-size: 10px;")
-    
     category_layout.addWidget(category_combo)
     category_layout.addWidget(category_hint)
     category_group.setLayout(category_layout)
-    
-    # Şekil adı giriş alanı
+
+    # --- Şekil adı combobox ---
     shape_name_group = QGroupBox("Şekil Adı")
     shape_name_layout = QVBoxLayout()
-    
-    shape_name_edit = QLineEdit()
-    shape_name_edit.setText(f"Şekil {len(pool.get('Genel', {}))+1}")
-    
-    shape_name_hint = QLabel("Şekil için benzersiz bir isim girin")
+    shape_name_combo = QComboBox()
+    shape_name_combo.setEditable(True)
+    shape_name_combo.addItem("Şekil adı girin...")
+    # Kategori değişince şekil adlarını güncelle
+    def update_shape_names():
+        shape_name_combo.clear()
+        shape_name_combo.addItem("Şekil adı girin...")
+        selected_category = category_combo.currentText()
+        if selected_category in pool and isinstance(pool[selected_category], dict):
+            for name in sorted(pool[selected_category].keys()):
+                shape_name_combo.addItem(name)
+    category_combo.currentIndexChanged.connect(update_shape_names)
+    category_combo.editTextChanged.connect(update_shape_names)
+    update_shape_names()
+    shape_name_hint = QLabel("Var olan bir şekil adını seçerseniz üzerine kaydedilir. Yeni isim yazarsanız yeni şekil eklenir.")
     shape_name_hint.setStyleSheet("color: #666; font-size: 10px;")
-    
-    shape_name_layout.addWidget(shape_name_edit)
+    shape_name_layout.addWidget(shape_name_combo)
     shape_name_layout.addWidget(shape_name_hint)
     shape_name_group.setLayout(shape_name_layout)
-    
-    # İçerik özeti (kaç öğe seçildi)
+
     info_group = QGroupBox("Seçili Öğeler")
     info_layout = QVBoxLayout()
-    
-    # Seçili öğelerin bir özetini hazırla
     normal_shapes_count = sum(1 for idx in selected_shapes if idx not in editable_lines_in_shapes)
     editable_lines_count = len(editable_lines_in_shapes)
     lines_count = len(selected_lines)
-    
     info_text = f"Normal Şekiller: {normal_shapes_count} adet\n"
     info_text += f"Düzenlenebilir Çizgiler: {editable_lines_count} adet\n"
     info_text += f"Çizgiler: {lines_count} adet\n"
     info_text += f"Toplam: {normal_shapes_count + editable_lines_count + lines_count} öğe"
-    
     info_label = QLabel(info_text)
     info_layout.addWidget(info_label)
     info_group.setLayout(info_layout)
-    
     layout.addWidget(category_group)
     layout.addWidget(shape_name_group)
     layout.addWidget(info_group)
-    
-    # Butonlar
     buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
     buttons.accepted.connect(dialog.accept)
     buttons.rejected.connect(dialog.reject)
     layout.addWidget(buttons)
-    
     dialog.setLayout(layout)
-    
-    # Diyaloğu göster
     if dialog.exec() != QDialog.DialogCode.Accepted:
         return
-    
-    # Diyalogdan kategori ve şekil adını al
     category = category_combo.currentText().strip()
-    shape_name = shape_name_edit.text().strip()
-    
-    if not category or not shape_name:
+    shape_name = shape_name_combo.currentText().strip()
+    if not category or not shape_name or shape_name == "Şekil adı girin...":
         QMessageBox.warning(main_window, "Uyarı", "Kategori ve şekil adı boş olamaz.")
         return
-    
-    # Havuz yapısını oluştur/güncelle
     if category not in pool:
         pool[category] = {}
         logging.info(f"Yeni kategori oluşturuldu: {category}")
-    
     if shape_name in pool[category]:
         confirm = QMessageBox.question(
             main_window, 
@@ -177,34 +247,24 @@ def handle_store_shape(page_manager, main_window):
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
-    
-    # Seçili şekilleri bir grup olarak havuza ekle
     serialized_group = []
-    
-    # Seçili normal şekilleri ekle (düzenlenebilir çizgiler HARİÇ)
     for shape_idx in selected_shapes:
         item_idx = shape_idx[1]
         if 0 <= item_idx < len(canvas.shapes):
             shape_data = copy.deepcopy(canvas.shapes[item_idx])
-            # Düzenlenebilir çizgileri burada atlıyoruz çünkü aşağıda ayrıca işleyeceğiz
             if not (len(shape_data) > 0 and shape_data[0] == ToolType.EDITABLE_LINE):
                 serialized_shape = file_io_helpers._serialize_item(shape_data)
                 if serialized_shape:
                     serialized_group.append(serialized_shape)
-    
-    # Seçili düzenlenebilir çizgileri ekle (shapes içinden)
     for shape_idx in editable_lines_in_shapes:
         item_idx = shape_idx[1]
         if 0 <= item_idx < len(canvas.shapes):
             shape_data = copy.deepcopy(canvas.shapes[item_idx])
-            # Bu bir düzenlenebilir çizgi ise
             if len(shape_data) > 0 and shape_data[0] == ToolType.EDITABLE_LINE:
                 serialized_shape = file_io_helpers._serialize_item(shape_data)
                 if serialized_shape:
                     logging.debug(f"Düzenlenebilir çizgi kaydediliyor: {serialized_shape}")
                     serialized_group.append(serialized_shape)
-    
-    # Seçili çizgileri ekle
     for line_idx in selected_lines:
         item_idx = line_idx[1]
         if 0 <= item_idx < len(canvas.lines):
@@ -212,37 +272,16 @@ def handle_store_shape(page_manager, main_window):
             serialized_line = file_io_helpers._serialize_item(line_data)
             if serialized_line:
                 serialized_group.append(serialized_line)
-    
-    # Seçili B-spline çizgilerini ekle (bspline_strokes)
     for bspline_idx in selected_bspline_strokes:
         item_idx = bspline_idx[1]
-        if hasattr(canvas, 'b_spline_strokes') and 0 <= item_idx < len(canvas.b_spline_strokes):
-            stroke_data = copy.deepcopy(canvas.b_spline_strokes[item_idx])
-            # JSON'a uygun hale getir (numpy array'leri listeye çevir)
-            serializable_stroke = {
-                'type': 'bspline',
-                'control_points': [list(map(float, p)) for p in stroke_data.get('control_points', [])],
-                'knots': list(map(float, stroke_data.get('knots', []))) if 'knots' in stroke_data else [],
-                'degree': int(stroke_data.get('degree', 3)),
-                'u': list(map(float, stroke_data.get('u', []))) if 'u' in stroke_data else [],
-                'color': list(map(float, stroke_data.get('color', [0.0, 0.0, 0.0, 1.0]))),
-                'width': float(stroke_data.get('width', 2.0)),
-                'line_style': stroke_data.get('line_style', 'solid')
-            }
-            # Varsa orijinal_points_with_pressure gibi ek alanları da ekle
-            if 'original_points_with_pressure' in stroke_data:
-                serializable_stroke['original_points_with_pressure'] = [
-                    [[float(p.x()), float(p.y())], float(pressure)] if hasattr(p, 'x') and hasattr(p, 'y') else [list(map(float, p)), float(pressure)]
-                    for p, pressure in stroke_data['original_points_with_pressure']
-                ]
-            serialized_group.append(serializable_stroke)
-    
-    # Grup olarak kaydet
+        if 0 <= item_idx < len(canvas.b_spline_strokes):
+            bspline_data = copy.deepcopy(canvas.b_spline_strokes[item_idx])
+            serialized_bspline = file_io_helpers._serialize_item(bspline_data)
+            if serialized_bspline:
+                serialized_group.append(serialized_bspline)
     pool[category][shape_name] = serialized_group
-    
-    # Şekil havuzunu kaydet
-    _save_shape_pool(pool)
-    QMessageBox.information(main_window, "Şekil Havuzu", f"Seçili şekiller '{category}/{shape_name}' olarak eklendi.")
+    _save_shape_pool(pool, shape_pool_path)
+    QMessageBox.information(main_window, "Başarılı", f"Şekil başarıyla kaydedildi: {category}/{shape_name}")
 
 # Havuzdan şekil yükle (seç ve uygula)
 def handle_load_shape(page_manager, main_window):
@@ -253,7 +292,7 @@ def handle_load_shape(page_manager, main_window):
     canvas = current_page.drawing_canvas
     
     # Havuzu yükle
-    pool = _load_shape_pool()
+    pool = _load_shape_pool(main_window)
     if not pool:
         QMessageBox.warning(main_window, "Uyarı", "Şekil havuzu boş veya yüklenemedi.")
         return
@@ -315,6 +354,9 @@ def handle_load_shape(page_manager, main_window):
         shape_combo.clear()
         selected_category = category_combo.currentText()
         if selected_category in pool:
+            # Hatalı veri varsa atla
+            if not isinstance(pool[selected_category], dict):
+                return
             shapes_in_category = sorted(list(pool[selected_category].keys()))
             shape_combo.addItems(shapes_in_category)
     
@@ -488,6 +530,7 @@ def handle_load_shape(page_manager, main_window):
 def handle_delete_shape_from_pool(page_manager, main_window):
     # Havuzu yükle
     pool = _load_shape_pool()
+    shape_pool_path = get_shape_pool_path()
     if not pool:
         QMessageBox.information(main_window, "Şekil Havuzu", "Havuzda hiç şekil yok.")
         return
@@ -656,7 +699,7 @@ def handle_delete_shape_from_pool(page_manager, main_window):
             if not pool[selected_category]:
                 del pool[selected_category]
             
-            _save_shape_pool(pool)
+            _save_shape_pool(pool, shape_pool_path)
             dialog.accept()
             
             QMessageBox.information(main_window, "Başarılı", f"'{selected_category}/{selected_shape}' şekli başarıyla silindi.")
@@ -672,4 +715,182 @@ def handle_delete_shape_from_pool(page_manager, main_window):
 # Havuzdan şekil ekleme (diğer fonksiyonun takma adı)
 def handle_add_shape_from_pool(page_manager, main_window):
     """Şekil havuzundan seçilen şekli sayfaya ekler (handle_load_shape'in takma adı)"""
-    handle_load_shape(page_manager, main_window) 
+    handle_load_shape(page_manager, main_window)
+
+# Yeni eklenen kod
+def handle_store_shape(page_manager, main_window):
+    current_page = page_manager.get_current_page()
+    if not current_page or not current_page.drawing_canvas:
+        QMessageBox.warning(main_window, "Uyarı", "Aktif bir sayfa yok.")
+        return
+    canvas = current_page.drawing_canvas
+
+    # --- Şekil havuzu dosya yolunu ayarlardan dinamik al ---
+    shape_pool_path = get_shape_pool_path()
+    if not os.path.exists(shape_pool_path):
+        # Sadece dosya yoksa kullanıcıya sor
+        file_dialog = QFileDialog(main_window)
+        file_dialog.setWindowTitle("Şekil Havuzu Dosya Konumu Seç")
+        file_dialog.setFileMode(QFileDialog.FileMode.AnyFile)
+        file_dialog.setNameFilter("JSON Dosyası (*.json)")
+        file_dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        file_dialog.selectFile(shape_pool_path)
+        if file_dialog.exec():
+            selected_files = file_dialog.selectedFiles()
+            if selected_files:
+                selected_path = selected_files[0]
+                os.makedirs(os.path.dirname(selected_path), exist_ok=True)
+                # settings.json'a kaydet
+                try:
+                    settings_path = get_settings_path()
+                    try:
+                        with open(settings_path, 'r', encoding='utf-8') as f:
+                            settings = json.load(f)
+                    except Exception:
+                        settings = {}
+                    settings['shape_pool_path'] = selected_path
+                    with open(settings_path, 'w', encoding='utf-8') as f:
+                        json.dump(settings, f, ensure_ascii=False, indent=2)
+                    shape_pool_path = selected_path
+                except Exception as e:
+                    QMessageBox.warning(main_window, "Uyarı", f"Seçilen dosya yolu ayarlara kaydedilemedi: {e}\nYol: {settings_path}")
+                    return
+        else:
+            return  # Kullanıcı iptal ettiyse işlemi durdur
+
+    # Seçili öğeleri topla
+    selected_shapes = [i for i in canvas._selected_item_indices if i[0] == 'shapes']
+    selected_lines = [i for i in canvas._selected_item_indices if i[0] == 'lines']
+    selected_bspline_strokes = [i for i in getattr(canvas, '_selected_item_indices', []) if i[0] == 'bspline_strokes']
+    editable_lines_in_shapes = []
+    for shape_idx in selected_shapes:
+        item_idx = shape_idx[1]
+        if 0 <= item_idx < len(canvas.shapes):
+            shape_data = canvas.shapes[item_idx]
+            if len(shape_data) > 0 and shape_data[0] == ToolType.EDITABLE_LINE:
+                editable_lines_in_shapes.append(shape_idx)
+    if not (selected_shapes or selected_lines or selected_bspline_strokes):
+        QMessageBox.warning(main_window, "Uyarı", "Lütfen önce bir şekil seçin.")
+        return
+
+    # Havuzu yükle ve mevcut kategorileri al
+    pool = _load_shape_pool()
+    categories = sorted(list(pool.keys()))
+
+    # Kategori ve şekil adı diyalogu
+    dialog = QDialog(main_window)
+    dialog.setWindowTitle("Şekil Havuzuna Ekle")
+    dialog.setMinimumWidth(400)
+    dialog.setMinimumHeight(250)
+    layout = QVBoxLayout()
+    form_layout = QFormLayout()
+    category_group = QGroupBox("Kategori Seçimi")
+    category_layout = QVBoxLayout()
+    category_combo = QComboBox()
+    category_combo.setEditable(True)
+    category_combo.addItems(categories)
+    category_combo.setCurrentText("Genel")
+    category_hint = QLabel("Mevcut bir kategori seçin veya yeni bir kategori adı yazın")
+    category_hint.setStyleSheet("color: #666; font-size: 10px;")
+    category_layout.addWidget(category_combo)
+    category_layout.addWidget(category_hint)
+    category_group.setLayout(category_layout)
+
+    # --- Şekil adı combobox ---
+    shape_name_group = QGroupBox("Şekil Adı")
+    shape_name_layout = QVBoxLayout()
+    shape_name_combo = QComboBox()
+    shape_name_combo.setEditable(True)
+    shape_name_combo.addItem("Şekil adı girin...")
+    # Kategori değişince şekil adlarını güncelle
+    def update_shape_names():
+        shape_name_combo.clear()
+        shape_name_combo.addItem("Şekil adı girin...")
+        selected_category = category_combo.currentText()
+        if selected_category in pool and isinstance(pool[selected_category], dict):
+            for name in sorted(pool[selected_category].keys()):
+                shape_name_combo.addItem(name)
+    category_combo.currentIndexChanged.connect(update_shape_names)
+    category_combo.editTextChanged.connect(update_shape_names)
+    update_shape_names()
+    shape_name_hint = QLabel("Var olan bir şekil adını seçerseniz üzerine kaydedilir. Yeni isim yazarsanız yeni şekil eklenir.")
+    shape_name_hint.setStyleSheet("color: #666; font-size: 10px;")
+    shape_name_layout.addWidget(shape_name_combo)
+    shape_name_layout.addWidget(shape_name_hint)
+    shape_name_group.setLayout(shape_name_layout)
+
+    info_group = QGroupBox("Seçili Öğeler")
+    info_layout = QVBoxLayout()
+    normal_shapes_count = sum(1 for idx in selected_shapes if idx not in editable_lines_in_shapes)
+    editable_lines_count = len(editable_lines_in_shapes)
+    lines_count = len(selected_lines)
+    info_text = f"Normal Şekiller: {normal_shapes_count} adet\n"
+    info_text += f"Düzenlenebilir Çizgiler: {editable_lines_count} adet\n"
+    info_text += f"Çizgiler: {lines_count} adet\n"
+    info_text += f"Toplam: {normal_shapes_count + editable_lines_count + lines_count} öğe"
+    info_label = QLabel(info_text)
+    info_layout.addWidget(info_label)
+    info_group.setLayout(info_layout)
+    layout.addWidget(category_group)
+    layout.addWidget(shape_name_group)
+    layout.addWidget(info_group)
+    buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    layout.addWidget(buttons)
+    dialog.setLayout(layout)
+    if dialog.exec() != QDialog.DialogCode.Accepted:
+        return
+    category = category_combo.currentText().strip()
+    shape_name = shape_name_combo.currentText().strip()
+    if not category or not shape_name or shape_name == "Şekil adı girin...":
+        QMessageBox.warning(main_window, "Uyarı", "Kategori ve şekil adı boş olamaz.")
+        return
+    if category not in pool:
+        pool[category] = {}
+        logging.info(f"Yeni kategori oluşturuldu: {category}")
+    if shape_name in pool[category]:
+        confirm = QMessageBox.question(
+            main_window, 
+            "Onay", 
+            f"'{shape_name}' adlı şekil zaten '{category}' kategorisinde var. Üzerine yazmak istiyor musunuz?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+    serialized_group = []
+    for shape_idx in selected_shapes:
+        item_idx = shape_idx[1]
+        if 0 <= item_idx < len(canvas.shapes):
+            shape_data = copy.deepcopy(canvas.shapes[item_idx])
+            if not (len(shape_data) > 0 and shape_data[0] == ToolType.EDITABLE_LINE):
+                serialized_shape = file_io_helpers._serialize_item(shape_data)
+                if serialized_shape:
+                    serialized_group.append(serialized_shape)
+    for shape_idx in editable_lines_in_shapes:
+        item_idx = shape_idx[1]
+        if 0 <= item_idx < len(canvas.shapes):
+            shape_data = copy.deepcopy(canvas.shapes[item_idx])
+            if len(shape_data) > 0 and shape_data[0] == ToolType.EDITABLE_LINE:
+                serialized_shape = file_io_helpers._serialize_item(shape_data)
+                if serialized_shape:
+                    logging.debug(f"Düzenlenebilir çizgi kaydediliyor: {serialized_shape}")
+                    serialized_group.append(serialized_shape)
+    for line_idx in selected_lines:
+        item_idx = line_idx[1]
+        if 0 <= item_idx < len(canvas.lines):
+            line_data = copy.deepcopy(canvas.lines[item_idx])
+            serialized_line = file_io_helpers._serialize_item(line_data)
+            if serialized_line:
+                serialized_group.append(serialized_line)
+    for bspline_idx in selected_bspline_strokes:
+        item_idx = bspline_idx[1]
+        if 0 <= item_idx < len(canvas.b_spline_strokes):
+            bspline_data = copy.deepcopy(canvas.b_spline_strokes[item_idx])
+            serialized_bspline = file_io_helpers._serialize_item(bspline_data)
+            if serialized_bspline:
+                serialized_group.append(serialized_bspline)
+    pool[category][shape_name] = serialized_group
+    _save_shape_pool(pool, shape_pool_path)
+    QMessageBox.information(main_window, "Başarılı", f"Şekil başarıyla kaydedildi: {category}/{shape_name}") 
