@@ -145,9 +145,19 @@ def handle_selector_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
         canvas.moving_selection = False
         canvas.selecting = False
         canvas.resize_start_pos = pos 
-        
+        # --- DÖNDÜRME BAŞLANGICI: Orijinal açıyı sakla --- #
+        if canvas.grabbed_handle_type == 'rotate' and len(canvas.selected_item_indices) == 1:
+            item_type, index = canvas.selected_item_indices[0]
+            if item_type == 'shapes' and 0 <= index < len(canvas.shapes):
+                shape_data = canvas.shapes[index]
+                if len(shape_data) > 5 and isinstance(shape_data[-1], (float, int)):
+                    canvas._rotate_start_angle = float(shape_data[-1])
+                else:
+                    canvas._rotate_start_angle = 0.0
+            elif item_type == 'bspline_strokes' and 0 <= index < len(canvas.b_spline_strokes):
+                stroke = canvas.b_spline_strokes[index]
+                canvas._rotate_start_angle = float(stroke.get('angle', 0.0))
         # Orijinal durumları ve bbox'u al
-        # _get_current_selection_states, canvas.selected_item_indices'i kullanır
         canvas.original_resize_states = canvas._get_current_selection_states(canvas._parent_page)
         canvas.resize_original_bbox = canvas._get_combined_bbox([]) 
         
@@ -263,6 +273,7 @@ def handle_selector_resize_move(canvas: 'DrawingCanvas', pos: QPointF, event: QT
                 
                 # Değişiklikleri canvas'a uygula
                 canvas.update()
+                canvas.repaint()
                 return
 
     # --- DÜZ ÇİZGİ (LINE) için özel uç tutamaç işlemi --- #
@@ -292,6 +303,7 @@ def handle_selector_resize_move(canvas: 'DrawingCanvas', pos: QPointF, event: QT
                             new_pos = snap_pos
                     canvas.shapes[shape_index][4] = new_pos
                 canvas.update()
+                canvas.repaint()
                 return
                 
     # --- KLASİK DAVRANIŞ (diğer şekiller ve klasik tutamaçlar) --- #
@@ -369,6 +381,7 @@ def handle_selector_resize_move(canvas: 'DrawingCanvas', pos: QPointF, event: QT
                 except Exception as e:
                      logging.error(f"Resize Move sırasında öğe ({item_type}[{index}]) güncellenirken hata: {e}", exc_info=True)
             canvas.update()
+            canvas.repaint()
 
     # --- B-Spline için özel ölçekleme ---
     # Eğer seçili öğeler arasında bspline_strokes varsa, kontrol noktalarını yeni bbox'a göre ölçekle
@@ -409,6 +422,42 @@ def handle_selector_resize_move(canvas: 'DrawingCanvas', pos: QPointF, event: QT
                     canvas.b_spline_strokes[index]['control_points'] = scaled_cps
                     if hasattr(canvas, 'b_spline_widget') and canvas.b_spline_widget and index < len(canvas.b_spline_widget.strokes):
                         canvas.b_spline_widget.strokes[index]['control_points'] = scaled_cps
+
+    # --- DÖNDÜRME TUTAMACI (rotate) --- #
+    if canvas.grabbed_handle_type == 'rotate' and len(canvas.selected_item_indices) == 1:
+        item_type, index = canvas.selected_item_indices[0]
+        if item_type == 'shapes' and 0 <= index < len(canvas.shapes):
+            shape_data = canvas.shapes[index]
+            tool_type = shape_data[0]
+            if tool_type in [ToolType.RECTANGLE, ToolType.CIRCLE, ToolType.PATH, ToolType.PEN, ToolType.EDITABLE_LINE]:
+                bbox = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
+                center = bbox.center()
+                start_angle = getattr(canvas, '_rotate_start_angle', 0.0)
+                start_vec = canvas.resize_start_pos - center
+                current_vec = pos - center
+                if start_vec.manhattanLength() > 1e-6 and current_vec.manhattanLength() > 1e-6:
+                    angle1 = math.atan2(start_vec.y(), start_vec.x())
+                    angle2 = math.atan2(current_vec.y(), current_vec.x())
+                    delta_angle = math.degrees(angle2 - angle1)
+                    new_angle = (start_angle + delta_angle) % 360
+                    shape_data[-1] = new_angle
+                canvas.update()
+                return
+        elif item_type == 'bspline_strokes' and 0 <= index < len(canvas.b_spline_strokes):
+            stroke = canvas.b_spline_strokes[index]
+            bbox = geometry_helpers.get_bspline_bounding_box(stroke)
+            center = bbox.center()
+            start_angle = getattr(canvas, '_rotate_start_angle', 0.0)
+            start_vec = canvas.resize_start_pos - center
+            current_vec = pos - center
+            if start_vec.manhattanLength() > 1e-6 and current_vec.manhattanLength() > 1e-6:
+                angle1 = math.atan2(start_vec.y(), start_vec.x())
+                angle2 = math.atan2(current_vec.y(), current_vec.x())
+                delta_angle = math.degrees(angle2 - angle1)
+                new_angle = (start_angle + delta_angle) % 360
+                stroke['angle'] = new_angle
+            canvas.update()
+            return
 
 def handle_selector_move_selection_release(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
     """Seçili öğelerin taşınmasının bırakılmasını yönetir."""
@@ -531,6 +580,8 @@ def handle_selector_move_selection_release(canvas: 'DrawingCanvas', pos: QPointF
     # canvas.last_move_pos = QPointF() # Kullanımdan kaldırıldı
 
     canvas.update()
+    if hasattr(canvas, 'content_changed'):
+        canvas.content_changed.emit()
 
 def handle_selector_resize_release(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
     """Seçili öğelerin yeniden boyutlandırılmasının bittiği olayı yönetir."""
@@ -649,7 +700,11 @@ def handle_selector_resize_release(canvas: 'DrawingCanvas', pos: QPointF, event:
     canvas.original_resize_states.clear()
     canvas.resize_original_bbox = QRectF() # Bu da temizlenmeli
     canvas.resize_start_pos = QPointF()
+    if hasattr(canvas, '_rotate_start_angle'):
+        canvas._rotate_start_angle = 0.0
     canvas.update()
+    if hasattr(canvas, 'content_changed'):
+        canvas.content_changed.emit()
 
 def handle_selector_select_release(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
     """Dikdörtgen ile seçim yapmanın bittiği olayı yönetir."""

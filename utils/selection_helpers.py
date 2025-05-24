@@ -339,20 +339,7 @@ def calculate_handle_positions_for_rotated_rect(rect: QRectF, angle: float) -> D
         'middle-bottom': (rotated_corners[2] + rotated_corners[3]) / 2.0,
         'middle-left': (rotated_corners[3] + rotated_corners[0]) / 2.0,
     }
-    
-    # Döndürme tutamacını ekle
-    bottom_mid_point = handle_positions['middle-bottom']
-    center = rect.center()
-    vec_center_to_bottom = bottom_mid_point - center
-    
-    # Güvenli bir şekilde vektörü normalleştirip uzat
-    rotation_handle_offset = ROTATION_HANDLE_OFFSET
-    if vec_center_to_bottom.manhattanLength() > 1e-6:  # Sıfır vektör değilse
-        vec_center_to_bottom = vec_center_to_bottom * (1 + rotation_handle_offset / vec_center_to_bottom.manhattanLength())
-    
-    rotation_handle_center = center + vec_center_to_bottom
-    handle_positions['rotate'] = rotation_handle_center
-    
+    # Döndürme tutamacı artık handle_positions'a eklenmiyor
     return handle_positions 
 # --- --- --- --- --- --- --- --- --- --- --- 
 

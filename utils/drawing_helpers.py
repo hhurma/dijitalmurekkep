@@ -372,16 +372,40 @@ def draw_shape(painter: QPainter, shape_data: List[Any], line_style: str = 'soli
         
     painter.setPen(pen)
 
+    # --- DÖNDÜRME DESTEĞİ: RECTANGLE, CIRCLE, PATH, PEN, EDITABLE_LINE --- #
+    angle = 0.0
+    if tool_type in [ToolType.RECTANGLE, ToolType.CIRCLE, ToolType.PATH, ToolType.PEN, ToolType.EDITABLE_LINE]:
+        if len(shape_data) > 5 and isinstance(shape_data[-1], (float, int)):
+            angle = float(shape_data[-1])
+    if angle != 0.0:
+        # Merkez hesapla
+        if tool_type == ToolType.PATH:
+            points = shape_data[3] if len(shape_data) > 3 else []
+            if points:
+                center = QPointF(
+                    sum([p.x() for p in points]) / len(points),
+                    sum([p.y() for p in points]) / len(points)
+                )
+            else:
+                center = QPointF(0, 0)
+        else:
+            if len(shape_data) > 4:
+                p1, p2 = shape_data[3], shape_data[4]
+                rect = QRectF(p1, p2).normalized()
+                center = rect.center()
+            else:
+                center = QPointF(0, 0)
+        painter.translate(center)
+        painter.rotate(angle)
+        painter.translate(-center)
+
     # --- YENİ: Dolgu (Fill) İşlemleri --- #
-    if tool_type in [ToolType.RECTANGLE, ToolType.CIRCLE] and fill_rgba and fill_rgba[3] > 0:
+    if tool_type in [ToolType.RECTANGLE, ToolType.CIRCLE] and isinstance(fill_rgba, (list, tuple)) and len(fill_rgba) > 3 and fill_rgba[3] > 0:
         fill_qcolor = rgba_to_qcolor(fill_rgba)
         brush = QBrush(fill_qcolor)
         painter.setBrush(brush)
-        # logging.debug(f"    draw_shape: Applying fill for {tool_type.name} with RGBA: {fill_rgba}") # KALDIRILDI
     else:
         painter.setBrush(Qt.BrushStyle.NoBrush) # Dolgu yok
-        # logging.debug(f"    draw_shape: NOT applying fill for {tool_type.name}. fill_rgba: {fill_rgba}") # KALDIRILDI
-    # --- --- --- --- --- --- --- --- --- -- #
 
     #logging.debug(f"  draw_shape (PRE-DRAW): Pen Color={painter.pen().color().name()}, Width={painter.pen().widthF()}, Style={painter.pen().style()}, Brush Style={painter.brush().style()}, Brush Color={painter.brush().color().name()}")
 
