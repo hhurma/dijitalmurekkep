@@ -441,7 +441,7 @@ def handle_selector_resize_move(canvas: 'DrawingCanvas', pos: QPointF, event: QT
                     delta_angle = math.degrees(angle2 - angle1)
                     new_angle = (start_angle + delta_angle) % 360
                     shape_data[-1] = new_angle
-                canvas.update()
+                canvas.invalidate_cache(reason="Shape rotated")
                 return
         elif item_type == 'bspline_strokes' and 0 <= index < len(canvas.b_spline_strokes):
             stroke = canvas.b_spline_strokes[index]
