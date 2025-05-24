@@ -1,6 +1,7 @@
 import math
 # from OpenGL import GL # OpenGL kaldırıldı
 from PyQt6.QtCore import QPointF, Qt, QRectF # QRectF eklendi
+from utils import geometry_helpers
 from PyQt6.QtGui import QPainter, QPen, QColor, QPainterPath, QBrush # QPainter ve ilgili sınıflar eklendi
 from gui.enums import ToolType, TemplateType
 from typing import List, Tuple, Any, TYPE_CHECKING
@@ -353,21 +354,26 @@ def draw_shape(painter: QPainter, shape_data: List[Any], line_style: str = 'soli
     if angle != 0.0:
         # Merkez hesapla
         if tool_type == ToolType.PATH:
-            points = shape_data[3] if len(shape_data) > 3 else []
-            if points:
-                center = QPointF(
-                    sum([p.x() for p in points]) / len(points),
-                    sum([p.y() for p in points]) / len(points)
-                )
+            # from utils import geometry_helpers # This should be at the top
+            bbox = geometry_helpers.get_item_bounding_box(shape_data, 'shapes') # 'shapes' is the correct type string
+            if not bbox.isNull():
+                center = bbox.center()
             else:
-                center = QPointF(0, 0)
-        else:
+                # Fallback for a null bbox, though this shouldn't happen for a valid path
+                points = shape_data[3] if len(shape_data) > 3 else []
+                if points: # Try centroid if bbox failed
+                    center = QPointF(sum(p.x() for p in points) / len(points), 
+                                     sum(p.y() for p in points) / len(points))
+                else: # Absolute fallback
+                    center = QPointF(0,0) 
+        else: # For RECTANGLE, CIRCLE etc.
             if len(shape_data) > 4:
-                p1, p2 = shape_data[3], shape_data[4]
-                rect = QRectF(p1, p2).normalized()
-                center = rect.center()
+                p1_val, p2_val = shape_data[3], shape_data[4] # Use different var names to avoid confusion
+                rect_val = QRectF(p1_val, p2_val).normalized()
+                center = rect_val.center()
             else:
-                center = QPointF(0, 0)
+                center = QPointF(0,0)
+        
         painter.translate(center)
         painter.rotate(angle)
         painter.translate(-center)
