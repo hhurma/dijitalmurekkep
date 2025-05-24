@@ -261,33 +261,6 @@ def draw_shape(painter: QPainter, shape_data: List[Any], line_style: str = 'soli
     #         painter.drawPath(path)
     #         painter.restore()
     #     return # Editable_line çizildiyse fonksiyondan çık
-
-    # PATH için özel çizim
-    if tool_type == ToolType.PATH:
-        points = shape_data[3] if len(shape_data) > 3 else []
-        if points and len(points) > 1:
-            painter.save()
-            qcolor = rgba_to_qcolor(color_tuple)
-            pen = QPen(qcolor, width)
-            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-            if line_style == 'dashed':
-                pen.setStyle(Qt.PenStyle.DashLine)
-            elif line_style == 'dotted':
-                pen.setStyle(Qt.PenStyle.DotLine)
-            elif line_style == 'dashdot':
-                pen.setStyle(Qt.PenStyle.DashDotLine)
-            else:
-                pen.setStyle(Qt.PenStyle.SolidLine)
-            painter.setPen(pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            path = QPainterPath()
-            path.moveTo(points[0])
-            for pt in points[1:]:
-                path.lineTo(pt)
-            painter.drawPath(path)
-            painter.restore()
-        return
     
     # Normal şekiller için mevcut kodun devamı
     p1, p2 = None, None
@@ -424,6 +397,17 @@ def draw_shape(painter: QPainter, shape_data: List[Any], line_style: str = 'soli
     elif tool_type == ToolType.CIRCLE:
         rect = QRectF(p1, p2).normalized()
         painter.drawEllipse(rect)
+    elif tool_type == ToolType.PATH:
+        points = shape_data[3] if len(shape_data) > 3 else []
+        if points and len(points) > 1:
+            # The pen (color, width, style) is already set.
+            # The painter is already transformed (rotated).
+            # Brush is set to NoBrush by default or after fill logic.
+            path = QPainterPath()
+            path.moveTo(points[0])
+            for pt in points[1:]:
+                path.lineTo(pt)
+            painter.drawPath(path)
 
     painter.restore()
 
