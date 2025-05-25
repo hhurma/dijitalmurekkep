@@ -353,7 +353,7 @@ def draw_shape(painter: QPainter, shape_data: List[Any], line_style: str = 'soli
             angle = float(shape_data[-1])
     if angle != 0.0:
         # Merkez hesapla
-        if tool_type == ToolType.PATH:
+        if tool_type == ToolType.PATH or tool_type == ToolType.PEN:
             # from utils import geometry_helpers # This should be at the top
             bbox = geometry_helpers.get_item_bounding_box(shape_data, 'shapes') # 'shapes' is the correct type string
             if not bbox.isNull():
@@ -414,6 +414,15 @@ def draw_shape(painter: QPainter, shape_data: List[Any], line_style: str = 'soli
             for pt in points[1:]:
                 path.lineTo(pt)
             painter.drawPath(path)
+        elif tool_type == ToolType.PEN:
+            points = shape_data[3] if len(shape_data) > 3 else []
+            if points and len(points) > 1:
+                # The painter is already rotated, and pen is set.
+                path = QPainterPath()
+                path.moveTo(points[0])
+                for pt in points[1:]:
+                    path.lineTo(pt)
+                painter.drawPath(path)
 
     painter.restore()
 
