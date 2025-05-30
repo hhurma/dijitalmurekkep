@@ -127,9 +127,7 @@ def handle_selector_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
             canvas.moving_selection = True
             canvas.drawing = False; canvas.resizing_selection = False; canvas.selecting = False
             canvas.move_start_point = QPointF(pos)
-            QApplication.setOverrideCursor(Qt.CursorShape.ClosedHandCursor)
-
-        # Boş bir alana tıklandıysa ve seçim temizlendiyse veya hiç seçim yoksa dikdörtgenle seçim başlat
+            QApplication.setOverrideCursor(Qt.CursorShape.ClosedHandCursor)        # Boş bir alana tıklandıysa ve seçim temizlendiyse veya hiç seçim yoksa dikdörtgenle seçim başlat
         # (Ctrl+Shift durumu hariç)
         if not canvas.grabbed_handle_type and not item_at_click and not canvas.selected_item_indices and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier and ctrl_pressed):
             #logging.debug(f"Selector Press: Selection rectangle started at world_pos: {pos}")
@@ -139,26 +137,40 @@ def handle_selector_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
             canvas.resizing_selection = False
 
     else: # Bir tutamaç yakalandı
-        logging.debug(f"Selector Press: Handle '{canvas.grabbed_handle_type}' grabbed. Starting resize. Seçili öğe sayısı: {len(canvas.selected_item_indices)}")
-        canvas.resizing_selection = True
-        canvas.drawing = False
-        canvas.moving_selection = False
-        canvas.selecting = False
-        canvas.resize_start_pos = pos 
-        
-        # Orijinal durumları ve bbox'u al
-        # _get_current_selection_states, canvas.selected_item_indices'i kullanır
-        canvas.original_resize_states = canvas._get_current_selection_states(canvas._parent_page)
-        canvas.resize_original_bbox = canvas._get_combined_bbox([]) 
-        
-        logging.debug(f"[RESIZE BAŞLANGICI] Tutamaç: {canvas.grabbed_handle_type}, Seçili öğe sayısı: {len(canvas.selected_item_indices)}, original_resize_states: {len(canvas.original_resize_states)}, resize_original_bbox: {canvas.resize_original_bbox}")
-        if not canvas.original_resize_states:
-            logging.error("Selector Press (Resize): original_resize_states alınamadı veya boş!")
-        elif len(canvas.original_resize_states) != len(canvas.selected_item_indices):
-             logging.error(f"Selector Press (Resize): original_resize_states ({len(canvas.original_resize_states)}) ve selected_item_indices ({len(canvas.selected_item_indices)}) uzunlukları farklı!")
-        
-        logging.debug(f"  Resize Details: Handle={canvas.grabbed_handle_type}, StartWorldPos={pos}, OriginalBBox={canvas.resize_original_bbox}")
-        QApplication.setOverrideCursor(geometry_helpers.get_resize_cursor(canvas.grabbed_handle_type))
+        if canvas.grabbed_handle_type == 'rotate':
+            logging.debug(f"Selector Press: Rotate handle grabbed. Starting rotation.")
+            canvas.resizing_selection = True  # Döndürme de teknik olarak resizing kategorisinde
+            canvas.drawing = False
+            canvas.moving_selection = False
+            canvas.selecting = False
+            canvas.resize_start_pos = pos 
+            
+            # Orijinal durumları ve bbox'u al
+            canvas.original_resize_states = canvas._get_current_selection_states(canvas._parent_page)
+            canvas.resize_original_bbox = canvas._get_combined_bbox([]) 
+            
+            QApplication.setOverrideCursor(Qt.CursorShape.PointingHandCursor)
+        else:
+            logging.debug(f"Selector Press: Handle '{canvas.grabbed_handle_type}' grabbed. Starting resize. Seçili öğe sayısı: {len(canvas.selected_item_indices)}")
+            canvas.resizing_selection = True
+            canvas.drawing = False
+            canvas.moving_selection = False
+            canvas.selecting = False
+            canvas.resize_start_pos = pos 
+            
+            # Orijinal durumları ve bbox'u al
+            # _get_current_selection_states, canvas.selected_item_indices'i kullanır
+            canvas.original_resize_states = canvas._get_current_selection_states(canvas._parent_page)
+            canvas.resize_original_bbox = canvas._get_combined_bbox([]) 
+            
+            logging.debug(f"[RESIZE BAŞLANGICI] Tutamaç: {canvas.grabbed_handle_type}, Seçili öğe sayısı: {len(canvas.selected_item_indices)}, original_resize_states: {len(canvas.original_resize_states)}, resize_original_bbox: {canvas.resize_original_bbox}")
+            if not canvas.original_resize_states:
+                logging.error("Selector Press (Resize): original_resize_states alınamadı veya boş!")
+            elif len(canvas.original_resize_states) != len(canvas.selected_item_indices):
+                 logging.error(f"Selector Press (Resize): original_resize_states ({len(canvas.original_resize_states)}) ve selected_item_indices ({len(canvas.selected_item_indices)}) uzunlukları farklı!")
+            
+            logging.debug(f"  Resize Details: Handle={canvas.grabbed_handle_type}, StartWorldPos={pos}, OriginalBBox={canvas.resize_original_bbox}")
+            QApplication.setOverrideCursor(geometry_helpers.get_resize_cursor(canvas.grabbed_handle_type))
         
     canvas.update()
 
@@ -200,6 +212,71 @@ def handle_selector_rect_select_move(canvas: 'DrawingCanvas', pos: QPointF, even
     canvas.update()
 
 def handle_selector_resize_move(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
+    # --- DÖNDÜRME TUTAMAÇ --- #
+    if canvas.grabbed_handle_type == 'rotate' and canvas.selected_item_indices:
+        from utils import rotation_helpers
+        import math
+        
+        bbox = canvas.resize_original_bbox
+        center = bbox.center()
+        
+        # İlk sürüklemede başlangıç açısını kaydet
+        if not hasattr(canvas, 'rotation_start_angle'):
+            start_vector = canvas.resize_start_pos - center
+            canvas.rotation_start_angle = math.atan2(start_vector.y(), start_vector.x())
+            canvas.rotation_start_pos = canvas.resize_start_pos  # Başlangıç pozisyonunu da kaydet
+            logging.debug(f"[ROTATION] Döndürme başladı - Merkez: {center}, Başlangıç açısı: {math.degrees(canvas.rotation_start_angle):.1f}°")
+          # Mevcut açıyı hesapla (başlangıç pozisyonundan değil mevcut pozisyondan)
+        current_vector = pos - center
+        angle_now = math.atan2(current_vector.y(), current_vector.x())
+        delta_angle = angle_now - canvas.rotation_start_angle
+        
+        # Seçim çerçevesinin döndürme açısını güncelle (derece cinsinden)
+        canvas.selection_rotation_angle = math.degrees(delta_angle)
+        
+        logging.debug(f"[ROTATION] Pos: {pos}, Mevcut açı: {math.degrees(angle_now):.1f}°, Delta: {math.degrees(delta_angle):.1f}°, Selection angle: {canvas.selection_rotation_angle:.1f}°")
+        
+        # Tüm seçili öğeleri döndür (orijinal durumlarından)
+        for i, (item_type, index) in enumerate(canvas.selected_item_indices):
+            if i >= len(canvas.original_resize_states):
+                continue
+                
+            if item_type == 'lines' and index < len(canvas.lines):
+                # Pen çizgisi döndürme
+                original_points = canvas.original_resize_states[i][2]
+                rotated_points = []
+                for point in original_points:
+                    rotated_point = rotation_helpers.rotate_point(
+                        (point.x(), point.y()), 
+                        (center.x(), center.y()), 
+                        delta_angle
+                    )
+                    rotated_points.append(QPointF(*rotated_point))
+                canvas.lines[index][2] = rotated_points
+                logging.debug(f"[ROTATION] Çizgi {index} döndürüldü, {len(rotated_points)} nokta, ilk nokta: {rotated_points[0] if rotated_points else 'YOK'}")
+                
+            elif item_type == 'shapes' and index < len(canvas.shapes):
+                # Şekil döndürme
+                shape = canvas.shapes[index]
+                if shape[0] == ToolType.LINE:
+                    original_shape = canvas.original_resize_states[i]
+                    p1_rot = rotation_helpers.rotate_point(
+                        (original_shape[3].x(), original_shape[3].y()),
+                        (center.x(), center.y()),
+                        delta_angle
+                    )
+                    p2_rot = rotation_helpers.rotate_point(
+                        (original_shape[4].x(), original_shape[4].y()),
+                        (center.x(), center.y()),
+                        delta_angle
+                    )
+                    canvas.shapes[index][3] = QPointF(*p1_rot)
+                    canvas.shapes[index][4] = QPointF(*p2_rot)
+                    logging.debug(f"[ROTATION] Şekil {index} döndürüldü, P1: {QPointF(*p1_rot)}, P2: {QPointF(*p2_rot)}")
+        
+        logging.debug(f"[ROTATION] Canvas güncelleme çağrılıyor...")
+        canvas.update()
+        return
     """Seçili öğelerin (çizim/şekil) yeniden boyutlandırılmasını yönetir."""
     #logging.debug(f"[handle_selector_resize_move] Çağrıldı. Seçili öğe sayısı: {len(canvas.selected_item_indices)}, Tutamaç: {canvas.grabbed_handle_type}, resizing_selection: {canvas.resizing_selection}")
     #logging.debug(f"[handle_selector_resize_move] original_resize_states: {len(canvas.original_resize_states)}, resize_original_bbox: {canvas.resize_original_bbox}")
@@ -533,6 +610,33 @@ def handle_selector_move_selection_release(canvas: 'DrawingCanvas', pos: QPointF
     canvas.update()
 
 def handle_selector_resize_release(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletEvent):
+    # --- DÖNDÜRME TUTAMAÇ --- #
+    if canvas.grabbed_handle_type == 'rotate' and canvas.selected_item_indices:
+        # Döndürme işlemi bittiğinde komut olarak kaydet (undo/redo için)
+        from utils.commands import MoveItemsCommand
+        
+        if canvas.original_resize_states:
+            final_states = canvas._get_current_selection_states(canvas._parent_page)
+            command = MoveItemsCommand(
+                canvas, 
+                canvas.selected_item_indices.copy(), 
+                canvas.original_resize_states.copy(), 
+                final_states
+            )
+            canvas.undo_manager.execute(command)
+        
+        # Temizlik
+        if hasattr(canvas, 'rotation_start_angle'):
+            del canvas.rotation_start_angle
+        
+        QApplication.restoreOverrideCursor()
+        canvas.resizing_selection = False
+        canvas.grabbed_handle_type = None
+        canvas.original_resize_states.clear()
+        canvas.resize_original_bbox = QRectF()
+        canvas.resize_start_pos = QPointF()
+        canvas.update()
+        return
     """Seçili öğelerin yeniden boyutlandırılmasının bittiği olayı yönetir."""
     #logging.debug(f"[selector_tool_handler] handle_selector_resize_release: shapes id={id(canvas.shapes)}, içerik={canvas.shapes}")
     #logging.debug(f"Resize selection finished. Handle: {canvas.grabbed_handle_type}, End World Pos: {pos}")

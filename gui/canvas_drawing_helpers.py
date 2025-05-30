@@ -6,6 +6,8 @@ import logging
 from typing import TYPE_CHECKING
 import math
 
+from utils import selection_helpers, geometry_helpers # selection_helpers ve geometry_helpers gerekebilir
+
 from PyQt6.QtGui import QPainter, QPen, QBrush, QColor, QCursor, QPainterPath, QPolygonF
 from PyQt6.QtCore import Qt, QPointF, QRectF
 from PyQt6.QtWidgets import QGraphicsPixmapItem
@@ -100,6 +102,9 @@ def draw_selection_overlay(canvas: 'DrawingCanvas', painter: QPainter):
     if not canvas.selected_item_indices:
         canvas.current_handles.clear()
         return
+    
+    # Debug log ekleyelim
+    logging.debug(f"draw_selection_overlay called with {len(canvas.selected_item_indices)} selected items")
         
     # canvas.current_handles.clear() # Her çizimden önce tutamaçları temizle (her blok kendi yönetecek)
 
@@ -213,60 +218,156 @@ def draw_selection_overlay(canvas: 'DrawingCanvas', painter: QPainter):
         return 
 
     # --- TEKİL SEÇİM: Çizgi (PEN ile çizilen) veya Şekil (PATH dahil) ---
-    # YENİ YAPI: Önce 'lines' mı 'shapes' mı diye ayır.
-    elif item_type == 'lines': # PEN ile çizilen serbest çizimler (Path'ler)
+    # TEKİL SEÇİM DURUMU (len(canvas.selected_item_indices) == 1)
+    item_type, item_index = canvas.selected_item_indices[0]
+    canvas.current_handles.clear() # Tekil seçim için de en başta temizle
+
+    if item_type == 'lines': # PEN ile çizilen serbest çizimler (Path'ler)
         painter.save()
         if 0 <= item_index < len(canvas.lines):
             line_data = canvas.lines[item_index]
-            # line_data yapısı: [color_tuple, width_float, List[QPointF], line_style_str]
             points_world = line_data[2] if len(line_data) > 2 else []
-
-            if not points_world or len(points_world) < 1: # En az 1 nokta olmalı (bbox için 2 daha iyi)
+            if not points_world or len(points_world) < 1:
                 painter.restore()
                 return
-
-            # 1. Sınırlayıcı kutuyu (bounding box) çiz
+            
             bbox_world = geometry_helpers.get_item_bounding_box(line_data, 'lines')
             if not bbox_world.isNull():
-                screen_top_left = canvas.world_to_screen(bbox_world.topLeft())
-                screen_bottom_right = canvas.world_to_screen(bbox_world.bottomRight())
-                selection_rect_screen = QRectF(screen_top_left, screen_bottom_right).normalized()
-                frame_pen = QPen(QColor(0, 100, 255, 200), 1, Qt.PenStyle.DashLine)
-                frame_pen.setCosmetic(True)
-                painter.setPen(frame_pen)
-                painter.setBrush(Qt.BrushStyle.NoBrush)
-                painter.drawRect(selection_rect_screen)
+                # Döndürme açısını al (döndürme sırasındaysa canvas.selection_rotation_angle kullan)
+                rotation_angle = getattr(canvas, 'selection_rotation_angle', 0.0)
+                
+                if abs(rotation_angle) < 0.1:  # Döndürme yoksa normal çizim
+                    screen_top_left = canvas.world_to_screen(bbox_world.topLeft())
+                    screen_bottom_right = canvas.world_to_screen(bbox_world.bottomRight())
+                    selection_rect_screen = QRectF(screen_top_left, screen_bottom_right).normalized()
+                    frame_pen = QPen(QColor(0, 100, 255, 200), 1, Qt.PenStyle.DashLine)
+                    frame_pen.setCosmetic(True)
+                    painter.setPen(frame_pen)
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.drawRect(selection_rect_screen)
 
-                # 2. Tutamaçları çiz (sadece bbox köşe ve kenar ortaları)
-                handle_size_screen = selection_helpers.HANDLE_SIZE
-                half_handle_screen = handle_size_screen / 2.0
-                handle_pen = QPen(Qt.GlobalColor.black); handle_pen.setCosmetic(True)
-                handle_brush = QBrush(QColor(0, 100, 255, 128)) # Mavi tutamaçlar
-                painter.setPen(handle_pen); painter.setBrush(handle_brush)
-
-                handle_positions_world = geometry_helpers.get_standard_handle_positions(bbox_world)
-                # canvas.current_handles.clear() # Zaten en başta temizlenmişti.
-                for handle_name, pos_world in handle_positions_world.items():
-                    pos_screen = canvas.world_to_screen(pos_world)
-                    handle_rect_screen = QRectF(
-                        pos_screen.x() - half_handle_screen,
-                        pos_screen.y() - half_handle_screen,
-                        handle_size_screen, handle_size_screen
-                    )
-                    painter.drawRect(handle_rect_screen)
-                    canvas.current_handles[handle_name] = handle_rect_screen # Anahtarlar standart olacak (top_left, bottom_right vb.)
+                    handle_size_screen = selection_helpers.HANDLE_SIZE
+                    half_handle_screen = handle_size_screen / 2.0
+                    handle_pen = QPen(Qt.GlobalColor.black); handle_pen.setCosmetic(True)
+                    handle_brush = QBrush(QColor(0, 100, 255, 128))
+                    painter.setPen(handle_pen); painter.setBrush(handle_brush)
+                    # Standart tutamaçlar
+                    handle_positions_world = geometry_helpers.get_standard_handle_positions(bbox_world)
+                    for handle_name, pos_world in handle_positions_world.items():
+                        pos_screen = canvas.world_to_screen(pos_world)
+                        handle_rect_screen = QRectF(
+                            pos_screen.x() - half_handle_screen,
+                            pos_screen.y() - half_handle_screen,
+                            handle_size_screen, handle_size_screen
+                        )
+                        painter.drawRect(handle_rect_screen)
+                        canvas.current_handles[handle_name] = handle_rect_screen
+                    # Döndürme tutamacı
+                    handle_positions = selection_helpers.calculate_handle_positions_for_rotated_rect(bbox_world, 0.0)
+                    if 'rotate' in handle_positions:
+                        rotate_world = handle_positions['rotate']
+                        rotate_screen = canvas.world_to_screen(rotate_world)
+                        rotation_handle_size = handle_size_screen * 1.2
+                        half_rotation_handle = rotation_handle_size / 2.0
+                        painter.setPen(QPen(QColor(0,0,0,180), 1, Qt.PenStyle.SolidLine))
+                        painter.setBrush(QBrush(QColor(0, 200, 0, 180)))
+                        rotation_handle_rect = QRectF(
+                            rotate_screen.x() - half_rotation_handle,                            rotate_screen.y() - half_rotation_handle,
+                            rotation_handle_size, rotation_handle_size
+                        )
+                        painter.drawEllipse(rotation_handle_rect)
+                        canvas.current_handles['rotate'] = rotation_handle_rect
+                else:  # Döndürülmüş seçim çerçevesi çiz
+                    # Döndürülmüş seçim çerçevesini çiz
+                    # world koordinatlarında çiz
+                    handle_positions = selection_helpers.calculate_handle_positions_for_rotated_rect(bbox_world, rotation_angle)
+                    
+                    # Döndürülmüş seçim çerçevesinin köşelerini hesapla
+                    rect_center = bbox_world.center()
+                    angle_rad = math.radians(rotation_angle)
+                    cos_a = math.cos(angle_rad)
+                    sin_a = math.sin(angle_rad)
+                    
+                    # Dörtgenin köşelerini döndür
+                    corners_world = []
+                    for corner in [bbox_world.topLeft(), bbox_world.topRight(), bbox_world.bottomRight(), bbox_world.bottomLeft()]:
+                        dx = corner.x() - rect_center.x()
+                        dy = corner.y() - rect_center.y()
+                        rotated_x = dx * cos_a - dy * sin_a
+                        rotated_y = dx * sin_a + dy * cos_a
+                        corners_world.append(QPointF(rect_center.x() + rotated_x, rect_center.y() + rotated_y))
+                    
+                    # Köşeleri ekran koordinatlarına çevir
+                    corners_screen = [canvas.world_to_screen(p) for p in corners_world]
+                    
+                    # Döndürülmüş çerçeveyi çiz
+                    frame_pen = QPen(QColor(0, 100, 255, 200), 1, Qt.PenStyle.DashLine)
+                    frame_pen.setCosmetic(True)
+                    painter.setPen(frame_pen)
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    
+                    # Polygon olarak çiz
+                    from PyQt6.QtGui import QPolygonF
+                    polygon = QPolygonF(corners_screen)
+                    painter.drawPolygon(polygon)
+                    
+                    # Döndürülmüş tutamaçları çiz
+                    handle_size_screen = selection_helpers.HANDLE_SIZE
+                    half_handle_screen = handle_size_screen / 2.0
+                    
+                    handle_pen = QPen(Qt.GlobalColor.black)
+                    handle_pen.setCosmetic(True)
+                    handle_brush = QBrush(QColor(0, 100, 255, 128))
+                    painter.setPen(handle_pen)
+                    painter.setBrush(handle_brush)
+                    
+                    # Standart tutamaçları çiz
+                    for handle_name, pos_world in handle_positions.items():
+                        if handle_name != 'rotate':  # Rotate tutamacını ayrı çizeceğiz
+                            pos_screen = canvas.world_to_screen(pos_world)
+                            handle_rect_screen = QRectF(
+                                pos_screen.x() - half_handle_screen,
+                                pos_screen.y() - half_handle_screen,
+                                handle_size_screen, handle_size_screen
+                            )
+                            painter.drawRect(handle_rect_screen)
+                            canvas.current_handles[handle_name] = handle_rect_screen
+                    
+                    # Döndürme tutamacını çiz
+                    if 'rotate' in handle_positions:
+                        rotate_world = handle_positions['rotate']
+                        rotate_screen = canvas.world_to_screen(rotate_world)
+                        rotation_handle_size = handle_size_screen * 1.2
+                        half_rotation_handle = rotation_handle_size / 2.0
+                        painter.setPen(QPen(QColor(0,0,0,180), 1, Qt.PenStyle.SolidLine))
+                        painter.setBrush(QBrush(QColor(0, 200, 0, 180)))
+                        rotation_handle_rect = QRectF(
+                            rotate_screen.x() - half_rotation_handle,
+                            rotate_screen.y() - half_rotation_handle,
+                            rotation_handle_size, rotation_handle_size
+                        )
+                        painter.drawEllipse(rotation_handle_rect)
+                        canvas.current_handles['rotate'] = rotation_handle_rect
         painter.restore()
         return
 
     elif item_type == 'shapes':
-        painter.save() 
+        painter.save()
         if 0 <= item_index < len(canvas.shapes):
             shape_data = canvas.shapes[item_index]
             tool_type = shape_data[0]
+            bbox_world = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
+            
+            # Döndürme açısını al (döndürme sırasındaysa canvas.selection_rotation_angle kullan)
+            rotation_angle = getattr(canvas, 'selection_rotation_angle', 0.0)
+            
+            handle_size_screen = selection_helpers.HANDLE_SIZE
+            half_handle_screen = handle_size_screen / 2.0
+            
+            # --- Standart tutamaçlar ve seçim çerçevesi ---
             if tool_type == ToolType.LINE:
+                # LINE için özel işlem (döndürme uygulanmaz, sadece start/end handles)
                 p1, p2 = shape_data[3], shape_data[4]
-                handle_size_screen = selection_helpers.HANDLE_SIZE
-                half_handle_screen = handle_size_screen / 2.0
                 start_screen = canvas.world_to_screen(p1)
                 end_screen = canvas.world_to_screen(p2)
                 handle_pen = QPen(Qt.GlobalColor.black); handle_pen.setCosmetic(True)
@@ -276,93 +377,256 @@ def draw_selection_overlay(canvas: 'DrawingCanvas', painter: QPainter):
                     handle_rect = QRectF(center.x() - half_handle_screen, center.y() - half_handle_screen, handle_size_screen, handle_size_screen)
                     painter.drawRect(handle_rect)
                     canvas.current_handles[key] = handle_rect
-                painter.restore() 
-                return 
+                    
             elif tool_type == ToolType.EDITABLE_LINE and canvas.current_tool != ToolType.EDITABLE_LINE_NODE_SELECTOR:
                 control_points = shape_data[3]
                 if not control_points or len(control_points) < 1:
-                    painter.restore() 
+                    painter.restore()
                     return
-                bbox_world = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
                 if not bbox_world.isNull():
-                    screen_top_left = canvas.world_to_screen(bbox_world.topLeft())
-                    screen_bottom_right = canvas.world_to_screen(bbox_world.bottomRight())
-                    selection_rect_screen = QRectF(screen_top_left, screen_bottom_right).normalized()
-                    frame_pen = QPen(QColor(0, 100, 255, 200), 1, Qt.PenStyle.DashLine); frame_pen.setCosmetic(True)
-                    painter.setPen(frame_pen); painter.setBrush(Qt.BrushStyle.NoBrush)
-                    painter.drawRect(selection_rect_screen)
-                    handle_size_screen = selection_helpers.HANDLE_SIZE
-                    half_handle_screen = handle_size_screen / 2.0
-                    handle_pen = QPen(Qt.GlobalColor.black); handle_pen.setCosmetic(True)
-                    handle_brush = QBrush(QColor(0, 100, 255, 128))
-                    painter.setPen(handle_pen); painter.setBrush(handle_brush)
-                    handle_positions_world = geometry_helpers.get_standard_handle_positions(bbox_world)
-                    for handle_name, pos_world in handle_positions_world.items():
-                        pos_screen = canvas.world_to_screen(pos_world)
-                        handle_rect_screen = QRectF(pos_screen.x() - half_handle_screen, pos_screen.y() - half_handle_screen, handle_size_screen, handle_size_screen)
-                        painter.drawRect(handle_rect_screen)
-                        canvas.current_handles[handle_name] = handle_rect_screen
-                painter.restore() 
-                return
+                    if abs(rotation_angle) < 0.1:  # Döndürme yoksa normal çizim
+                        screen_top_left = canvas.world_to_screen(bbox_world.topLeft())
+                        screen_bottom_right = canvas.world_to_screen(bbox_world.bottomRight())
+                        selection_rect_screen = QRectF(screen_top_left, screen_bottom_right).normalized()
+                        frame_pen = QPen(QColor(0, 100, 255, 200), 1, Qt.PenStyle.DashLine); frame_pen.setCosmetic(True)
+                        painter.setPen(frame_pen); painter.setBrush(Qt.BrushStyle.NoBrush)
+                        painter.drawRect(selection_rect_screen)
+                        handle_pen = QPen(Qt.GlobalColor.black); handle_pen.setCosmetic(True)
+                        handle_brush = QBrush(QColor(0, 100, 255, 128))
+                        painter.setPen(handle_pen); painter.setBrush(handle_brush)
+                        handle_positions_world = geometry_helpers.get_standard_handle_positions(bbox_world)
+                        for handle_name, pos_world in handle_positions_world.items():
+                            pos_screen = canvas.world_to_screen(pos_world)
+                            handle_rect_screen = QRectF(pos_screen.x() - half_handle_screen, pos_screen.y() - half_handle_screen, handle_size_screen, handle_size_screen)
+                            painter.drawRect(handle_rect_screen)
+                            canvas.current_handles[handle_name] = handle_rect_screen
+                    else:  # Döndürülmüş seçim çerçevesi çiz
+                        # Same rotated selection frame logic as for lines
+                        handle_positions = selection_helpers.calculate_handle_positions_for_rotated_rect(bbox_world, rotation_angle)
+                        
+                        # Döndürülmüş seçim çerçevesinin köşelerini hesapla
+                        rect_center = bbox_world.center()
+                        angle_rad = math.radians(rotation_angle)
+                        cos_a = math.cos(angle_rad)
+                        sin_a = math.sin(angle_rad)
+                        
+                        # Dörtgenin köşelerini döndür
+                        corners_world = []
+                        for corner in [bbox_world.topLeft(), bbox_world.topRight(), bbox_world.bottomRight(), bbox_world.bottomLeft()]:
+                            dx = corner.x() - rect_center.x()
+                            dy = corner.y() - rect_center.y()
+                            rotated_x = dx * cos_a - dy * sin_a
+                            rotated_y = dx * sin_a + dy * cos_a
+                            corners_world.append(QPointF(rect_center.x() + rotated_x, rect_center.y() + rotated_y))
+                        
+                        # Köşeleri ekran koordinatlarına çevir
+                        corners_screen = [canvas.world_to_screen(p) for p in corners_world]
+                        
+                        # Döndürülmüş çerçeveyi çiz
+                        frame_pen = QPen(QColor(0, 100, 255, 200), 1, Qt.PenStyle.DashLine)
+                        frame_pen.setCosmetic(True)
+                        painter.setPen(frame_pen)
+                        painter.setBrush(Qt.BrushStyle.NoBrush)
+                        
+                        # Polygon olarak çiz
+                        from PyQt6.QtGui import QPolygonF
+                        polygon = QPolygonF(corners_screen)
+                        painter.drawPolygon(polygon)
+                        
+                        # Döndürülmüş tutamaçları çiz
+                        handle_pen = QPen(Qt.GlobalColor.black)
+                        handle_pen.setCosmetic(True)
+                        handle_brush = QBrush(QColor(0, 100, 255, 128))
+                        painter.setPen(handle_pen)
+                        painter.setBrush(handle_brush)
+                        
+                        # Standart tutamaçları çiz
+                        for handle_name, pos_world in handle_positions.items():
+                            if handle_name != 'rotate':  # Rotate tutamacını ayrı çizeceğiz
+                                pos_screen = canvas.world_to_screen(pos_world)
+                                handle_rect_screen = QRectF(
+                                    pos_screen.x() - half_handle_screen,
+                                    pos_screen.y() - half_handle_screen,
+                                    handle_size_screen, handle_size_screen
+                                )
+                                painter.drawRect(handle_rect_screen)
+                                canvas.current_handles[handle_name] = handle_rect_screen
+                        
+                        # Döndürme tutamacını çiz
+                        if 'rotate' in handle_positions:
+                            rotate_world = handle_positions['rotate']
+                            rotate_screen = canvas.world_to_screen(rotate_world)
+                            rotation_handle_size = handle_size_screen * 1.2
+                            half_rotation_handle = rotation_handle_size / 2.0
+                            painter.setPen(QPen(QColor(0,0,0,180), 1, Qt.PenStyle.SolidLine))
+                            painter.setBrush(QBrush(QColor(0, 200, 0, 180)))
+                            rotation_handle_rect = QRectF(
+                                rotate_screen.x() - half_rotation_handle,
+                                rotate_screen.y() - half_rotation_handle,
+                                rotation_handle_size, rotation_handle_size
+                            )
+                            painter.drawEllipse(rotation_handle_rect)
+                            canvas.current_handles['rotate'] = rotation_handle_rect
+                            
             elif tool_type in [ToolType.RECTANGLE, ToolType.CIRCLE]:
-                bbox_world = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
                 if not bbox_world.isNull():
-                    screen_top_left = canvas.world_to_screen(bbox_world.topLeft())
-                    screen_bottom_right = canvas.world_to_screen(bbox_world.bottomRight())
-                    selection_rect_screen = QRectF(screen_top_left, screen_bottom_right).normalized()
-                    frame_pen = QPen(QColor(0, 100, 255, 200), 1, Qt.PenStyle.DashLine)
-                    frame_pen.setCosmetic(True)
-                    painter.setPen(frame_pen)
-                    painter.setBrush(Qt.BrushStyle.NoBrush)
-                    painter.drawRect(selection_rect_screen)
-                    # --- Tutamaçları çiz ---
-                    handle_size_screen = selection_helpers.HANDLE_SIZE
-                    half_handle_screen = handle_size_screen / 2.0
-                    handle_pen = QPen(Qt.GlobalColor.black); handle_pen.setCosmetic(True)
-                    handle_brush = QBrush(QColor(0, 100, 255, 128))
-                    painter.setPen(handle_pen); painter.setBrush(handle_brush)
-                    handle_positions_world = geometry_helpers.get_standard_handle_positions(bbox_world)
-                    for handle_name, pos_world in handle_positions_world.items():
-                        pos_screen = canvas.world_to_screen(pos_world)
-                        handle_rect_screen = QRectF(
-                            pos_screen.x() - half_handle_screen,
-                            pos_screen.y() - half_handle_screen,
-                            handle_size_screen, handle_size_screen
-                        )
-                        painter.drawRect(handle_rect_screen)
-                        canvas.current_handles[handle_name] = handle_rect_screen
+                    if abs(rotation_angle) < 0.1:  # Döndürme yoksa normal çizim
+                        screen_top_left = canvas.world_to_screen(bbox_world.topLeft())
+                        screen_bottom_right = canvas.world_to_screen(bbox_world.bottomRight())
+                        selection_rect_screen = QRectF(screen_top_left, screen_bottom_right).normalized()
+                        frame_pen = QPen(QColor(0, 100, 255, 200), 1, Qt.PenStyle.DashLine)
+                        frame_pen.setCosmetic(True)
+                        painter.setPen(frame_pen)
+                        painter.setBrush(Qt.BrushStyle.NoBrush)
+                        painter.drawRect(selection_rect_screen)
+                        handle_pen = QPen(Qt.GlobalColor.black); handle_pen.setCosmetic(True)
+                        handle_brush = QBrush(QColor(0, 100, 255, 128))
+                        painter.setPen(handle_pen); painter.setBrush(handle_brush)
+                        handle_positions_world = geometry_helpers.get_standard_handle_positions(bbox_world)
+                        for handle_name, pos_world in handle_positions_world.items():
+                            pos_screen = canvas.world_to_screen(pos_world)
+                            handle_rect_screen = QRectF(
+                                pos_screen.x() - half_handle_screen,
+                                pos_screen.y() - half_handle_screen,
+                                handle_size_screen, handle_size_screen
+                            )
+                            painter.drawRect(handle_rect_screen)
+                            canvas.current_handles[handle_name] = handle_rect_screen
+                    else:  # Döndürülmüş seçim çerçevesi çiz
+                        # Same rotated selection frame logic as for lines
+                        handle_positions = selection_helpers.calculate_handle_positions_for_rotated_rect(bbox_world, rotation_angle)
+                        
+                        # Döndürülmüş seçim çerçevesinin köşelerini hesapla
+                        rect_center = bbox_world.center()
+                        angle_rad = math.radians(rotation_angle)
+                        cos_a = math.cos(angle_rad)
+                        sin_a = math.sin(angle_rad)
+                        
+                        # Dörtgenin köşelerini döndür
+                        corners_world = []
+                        for corner in [bbox_world.topLeft(), bbox_world.topRight(), bbox_world.bottomRight(), bbox_world.bottomLeft()]:
+                            dx = corner.x() - rect_center.x()
+                            dy = corner.y() - rect_center.y()
+                            rotated_x = dx * cos_a - dy * sin_a
+                            rotated_y = dx * sin_a + dy * cos_a
+                            corners_world.append(QPointF(rect_center.x() + rotated_x, rect_center.y() + rotated_y))
+                        
+                        # Köşeleri ekran koordinatlarına çevir
+                        corners_screen = [canvas.world_to_screen(p) for p in corners_world]
+                        
+                        # Döndürülmüş çerçeveyi çiz
+                        frame_pen = QPen(QColor(0, 100, 255, 200), 1, Qt.PenStyle.DashLine)
+                        frame_pen.setCosmetic(True)
+                        painter.setPen(frame_pen)
+                        painter.setBrush(Qt.BrushStyle.NoBrush)
+                        
+                        # Polygon olarak çiz
+                        from PyQt6.QtGui import QPolygonF
+                        polygon = QPolygonF(corners_screen)
+                        painter.drawPolygon(polygon)
+                        
+                        # Döndürülmüş tutamaçları çiz
+                        handle_pen = QPen(Qt.GlobalColor.black)
+                        handle_pen.setCosmetic(True)
+                        handle_brush = QBrush(QColor(0, 100, 255, 128))
+                        painter.setPen(handle_pen)
+                        painter.setBrush(handle_brush)
+                        
+                        # Standart tutamaçları çiz
+                        for handle_name, pos_world in handle_positions.items():
+                            if handle_name != 'rotate':  # Rotate tutamacını ayrı çizeceğiz
+                                pos_screen = canvas.world_to_screen(pos_world)
+                                handle_rect_screen = QRectF(
+                                    pos_screen.x() - half_handle_screen,
+                                    pos_screen.y() - half_handle_screen,
+                                    handle_size_screen, handle_size_screen
+                                )
+                                painter.drawRect(handle_rect_screen)
+                                canvas.current_handles[handle_name] = handle_rect_screen
+                        
+                        # Döndürme tutamacını çiz
+                        if 'rotate' in handle_positions:
+                            rotate_world = handle_positions['rotate']
+                            rotate_screen = canvas.world_to_screen(rotate_world)
+                            rotation_handle_size = handle_size_screen * 1.2
+                            half_rotation_handle = rotation_handle_size / 2.0
+                            painter.setPen(QPen(QColor(0,0,0,180), 1, Qt.PenStyle.SolidLine))
+                            painter.setBrush(QBrush(QColor(0, 200, 0, 180)))
+                            rotation_handle_rect = QRectF(
+                                rotate_screen.x() - half_rotation_handle,
+                                rotate_screen.y() - half_rotation_handle,
+                                rotation_handle_size, rotation_handle_size
+                            )
+                            painter.drawEllipse(rotation_handle_rect)
+                            canvas.current_handles['rotate'] = rotation_handle_rect
+                            
             elif tool_type == ToolType.PATH:
-                # PATH için bbox ve tutamaçlar
-                bbox_world = geometry_helpers.get_item_bounding_box(shape_data, 'shapes')
                 if not bbox_world.isNull():
-                    screen_top_left = canvas.world_to_screen(bbox_world.topLeft())
-                    screen_bottom_right = canvas.world_to_screen(bbox_world.bottomRight())
-                    selection_rect_screen = QRectF(screen_top_left, screen_bottom_right).normalized()
-                    frame_pen = QPen(QColor(0, 100, 255, 200), 1, Qt.PenStyle.DashLine)
-                    frame_pen.setCosmetic(True)
-                    painter.setPen(frame_pen)
-                    painter.setBrush(Qt.BrushStyle.NoBrush)
-                    painter.drawRect(selection_rect_screen)
-                    # Tutamaçlar: PATH noktalarının hepsine tutamaç çiz
-                    handle_size_screen = selection_helpers.HANDLE_SIZE
-                    half_handle_screen = handle_size_screen / 2.0
-                    handle_pen = QPen(Qt.GlobalColor.black); handle_pen.setCosmetic(True)
-                    handle_brush = QBrush(QColor(0, 100, 255, 128))
-                    painter.setPen(handle_pen); painter.setBrush(handle_brush)
-                    points = shape_data[3] if len(shape_data) > 3 else []
-                    for idx, pt in enumerate(points):
-                        pos_screen = canvas.world_to_screen(pt)
-                        handle_rect_screen = QRectF(
-                            pos_screen.x() - half_handle_screen,
-                            pos_screen.y() - half_handle_screen,
-                            handle_size_screen, handle_size_screen
-                        )
-                        painter.drawRect(handle_rect_screen)
-                        canvas.current_handles[f'pt_{idx}'] = handle_rect_screen
-                painter.restore()
-                return
-        painter.restore() 
-        return 
+                    if abs(rotation_angle) < 0.1:  # Döndürme yoksa normal çizim
+                        screen_top_left = canvas.world_to_screen(bbox_world.topLeft())
+                        screen_bottom_right = canvas.world_to_screen(bbox_world.bottomRight())
+                        selection_rect_screen = QRectF(screen_top_left, screen_bottom_right).normalized()
+                        frame_pen = QPen(QColor(0, 100, 255, 200), 1, Qt.PenStyle.DashLine)
+                        frame_pen.setCosmetic(True)
+                        painter.setPen(frame_pen)
+                        painter.setBrush(Qt.BrushStyle.NoBrush)
+                        painter.drawRect(selection_rect_screen)
+                        handle_pen = QPen(Qt.GlobalColor.black); handle_pen.setCosmetic(True)
+                        handle_brush = QBrush(QColor(0, 100, 255, 128))
+                        painter.setPen(handle_pen); painter.setBrush(handle_brush)
+                        points = shape_data[3] if len(shape_data) > 3 else []
+                        for idx, pt in enumerate(points):
+                            pos_screen = canvas.world_to_screen(pt)
+                            handle_rect_screen = QRectF(
+                                pos_screen.x() - half_handle_screen,
+                                pos_screen.y() - half_handle_screen,
+                                handle_size_screen, handle_size_screen
+                            )
+                            painter.drawRect(handle_rect_screen)
+                            canvas.current_handles[f'pt_{idx}'] = handle_rect_screen
+                    else:  # Döndürülmüş seçim çerçevesi çiz
+                        # PATH için döndürme durumunda da normal bbox çizimi (PATH noktaları bağımsız)
+                        screen_top_left = canvas.world_to_screen(bbox_world.topLeft())
+                        screen_bottom_right = canvas.world_to_screen(bbox_world.bottomRight())
+                        selection_rect_screen = QRectF(screen_top_left, screen_bottom_right).normalized()
+                        frame_pen = QPen(QColor(0, 100, 255, 200), 1, Qt.PenStyle.DashLine)
+                        frame_pen.setCosmetic(True)
+                        painter.setPen(frame_pen)
+                        painter.setBrush(Qt.BrushStyle.NoBrush)
+                        painter.drawRect(selection_rect_screen)
+                        handle_pen = QPen(Qt.GlobalColor.black); handle_pen.setCosmetic(True)
+                        handle_brush = QBrush(QColor(0, 100, 255, 128))
+                        painter.setPen(handle_pen); painter.setBrush(handle_brush)
+                        points = shape_data[3] if len(shape_data) > 3 else []
+                        for idx, pt in enumerate(points):
+                            pos_screen = canvas.world_to_screen(pt)
+                            handle_rect_screen = QRectF(
+                                pos_screen.x() - half_handle_screen,
+                                pos_screen.y() - half_handle_screen,
+                                handle_size_screen, handle_size_screen
+                            )
+                            painter.drawRect(handle_rect_screen)
+                            canvas.current_handles[f'pt_{idx}'] = handle_rect_screen
+                            
+            # --- Döndürme tutamacı ekle (sadece döndürme yoksa) ---
+            if abs(rotation_angle) < 0.1 and tool_type != ToolType.LINE:  # LINE için döndürme tutamacı yok
+                handle_positions = selection_helpers.calculate_handle_positions_for_rotated_rect(bbox_world, 0.0)
+                if 'rotate' in handle_positions:
+                    rotate_world = handle_positions['rotate']
+                    rotate_screen = canvas.world_to_screen(rotate_world)
+                    rotation_handle_size = handle_size_screen * 1.2
+                    half_rotation_handle = rotation_handle_size / 2.0
+                    painter.setPen(QPen(QColor(0,0,0,180), 1, Qt.PenStyle.SolidLine))
+                    painter.setBrush(QBrush(QColor(0, 200, 0, 180)))
+                    rotation_handle_rect = QRectF(
+                        rotate_screen.x() - half_rotation_handle,
+                        rotate_screen.y() - half_rotation_handle,
+                        rotation_handle_size, rotation_handle_size
+                    )
+                    painter.drawEllipse(rotation_handle_rect)
+                    canvas.current_handles['rotate'] = rotation_handle_rect
+        painter.restore()
+        return
 
     elif item_type == 'bspline_strokes':
         painter.save() 

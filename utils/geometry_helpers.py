@@ -298,6 +298,8 @@ def get_resize_cursor(handle_type: str) -> Qt.CursorShape:
         return Qt.CursorShape.SizeVerCursor   # Dikey
     elif handle_type in ['middle-left', 'middle-right']:
         return Qt.CursorShape.SizeHorCursor   # Yatay
+    elif handle_type == 'rotate':
+        return Qt.CursorShape.PointingHandCursor # Döndürme için işaret eden el
     else:
         return Qt.CursorShape.ArrowCursor     # Varsayılan
 
