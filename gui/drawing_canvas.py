@@ -13,7 +13,10 @@ import copy
 from PyQt6.QtCore import pyqtSlot, pyqtSignal
 import math
 import time
-from typing import Optional, Tuple
+from typing import Optional, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .page import Page
 
 from utils import drawing_helpers as utils_drawing_helpers # Alias vererek utils'teki helper ile karışmasını önleyelim
 from utils import geometry_helpers, erasing_helpers, moving_helpers # YENİ: moving_helpers buraya eklendi
@@ -267,11 +270,10 @@ class DrawingCanvas(QWidget):
         self.current_font_bold = False
         self.current_font_italic = False
         self.current_font_underline = False
-        
-        # Sinyal bağlantıları
+          # Sinyal bağlantıları
         if parent:
             # İçeriği değiştirdiğimizi parent'a bildir
-            self.content_changed = QSignal()
+            self.content_changed = pyqtSignal()
             self.content_changed.connect(parent.mark_as_modified)
         self.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
         self.installEventFilter(self)
@@ -321,15 +323,16 @@ class DrawingCanvas(QWidget):
         self.temporary_line_duration = 8.0  # Geçici çizgilerin ekranda kalma süresi (saniye)
         self.temp_glow_width_factor = 3.0  # Glow efekti için genişlik faktörü
         self.temp_core_width_factor = 1.0  # Merkez çizgi için genişlik faktörü
-        self.temp_glow_alpha_factor = 0.3  # Glow efekti için saydamlık faktörü
-        self.temp_core_alpha_factor = 0.9  # Merkez çizgi için saydamlık faktörü
-        
+        self.temp_glow_alpha_factor = 0.3  # Glow efekti için saydamlık faktörü        self.temp_core_alpha_factor = 0.9  # Merkez çizgi için saydamlık faktörü
         self.move_start_point = QPointF()
         self.resize_start_pos = QPointF()
         self.rotation_start_pos_world = QPointF() 
-        self.rotation_center_world = QPointF() 
+        self.rotation_center_world = QPointF()
         self.grabbed_handle_type: str | None = None
         self.resize_original_bbox = QRectF()
+        # YENİ: Orijinal selection bbox'ı döndürme sırasında saklama
+        self.original_selection_bbox = QRectF()
+        self.selection_rotation_angle = 0.0
         self.current_line_points: List[QPointF] = []
         self.current_eraser_path: List[QPointF] = [] 
         self.erased_this_stroke: List[Tuple[str, int, Any]] = [] 

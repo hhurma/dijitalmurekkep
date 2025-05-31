@@ -272,25 +272,31 @@ def draw_selection_overlay(canvas: 'DrawingCanvas', painter: QPainter):
                         painter.setPen(QPen(QColor(0,0,0,180), 1, Qt.PenStyle.SolidLine))
                         painter.setBrush(QBrush(QColor(0, 200, 0, 180)))
                         rotation_handle_rect = QRectF(
-                            rotate_screen.x() - half_rotation_handle,                            rotate_screen.y() - half_rotation_handle,
+                            rotate_screen.x() - half_rotation_handle,
+                            rotate_screen.y() - half_rotation_handle,
                             rotation_handle_size, rotation_handle_size
                         )
                         painter.drawEllipse(rotation_handle_rect)
                         canvas.current_handles['rotate'] = rotation_handle_rect
                 else:  # Döndürülmüş seçim çerçevesi çiz
+                    # Use original selection bbox if available during rotation
+                    bbox_to_use = getattr(canvas, 'original_selection_bbox', bbox_world)
+                    if bbox_to_use.isNull() or not bbox_to_use.isValid():
+                        bbox_to_use = bbox_world
+                    
                     # Döndürülmüş seçim çerçevesini çiz
                     # world koordinatlarında çiz
-                    handle_positions = selection_helpers.calculate_handle_positions_for_rotated_rect(bbox_world, rotation_angle)
+                    handle_positions = selection_helpers.calculate_handle_positions_for_rotated_rect(bbox_to_use, rotation_angle)
                     
                     # Döndürülmüş seçim çerçevesinin köşelerini hesapla
-                    rect_center = bbox_world.center()
+                    rect_center = bbox_to_use.center()
                     angle_rad = math.radians(rotation_angle)
                     cos_a = math.cos(angle_rad)
                     sin_a = math.sin(angle_rad)
                     
                     # Dörtgenin köşelerini döndür
                     corners_world = []
-                    for corner in [bbox_world.topLeft(), bbox_world.topRight(), bbox_world.bottomRight(), bbox_world.bottomLeft()]:
+                    for corner in [bbox_to_use.topLeft(), bbox_to_use.topRight(), bbox_to_use.bottomRight(), bbox_to_use.bottomLeft()]:
                         dx = corner.x() - rect_center.x()
                         dy = corner.y() - rect_center.y()
                         rotated_x = dx * cos_a - dy * sin_a
@@ -401,18 +407,23 @@ def draw_selection_overlay(canvas: 'DrawingCanvas', painter: QPainter):
                             painter.drawRect(handle_rect_screen)
                             canvas.current_handles[handle_name] = handle_rect_screen
                     else:  # Döndürülmüş seçim çerçevesi çiz
+                        # Use original selection bbox if available during rotation
+                        bbox_to_use = getattr(canvas, 'original_selection_bbox', bbox_world)
+                        if bbox_to_use.isNull() or not bbox_to_use.isValid():
+                            bbox_to_use = bbox_world
+                        
                         # Same rotated selection frame logic as for lines
-                        handle_positions = selection_helpers.calculate_handle_positions_for_rotated_rect(bbox_world, rotation_angle)
+                        handle_positions = selection_helpers.calculate_handle_positions_for_rotated_rect(bbox_to_use, rotation_angle)
                         
                         # Döndürülmüş seçim çerçevesinin köşelerini hesapla
-                        rect_center = bbox_world.center()
+                        rect_center = bbox_to_use.center()
                         angle_rad = math.radians(rotation_angle)
                         cos_a = math.cos(angle_rad)
                         sin_a = math.sin(angle_rad)
                         
                         # Dörtgenin köşelerini döndür
                         corners_world = []
-                        for corner in [bbox_world.topLeft(), bbox_world.topRight(), bbox_world.bottomRight(), bbox_world.bottomLeft()]:
+                        for corner in [bbox_to_use.topLeft(), bbox_to_use.topRight(), bbox_to_use.bottomRight(), bbox_to_use.bottomLeft()]:
                             dx = corner.x() - rect_center.x()
                             dy = corner.y() - rect_center.y()
                             rotated_x = dx * cos_a - dy * sin_a
@@ -493,18 +504,23 @@ def draw_selection_overlay(canvas: 'DrawingCanvas', painter: QPainter):
                             painter.drawRect(handle_rect_screen)
                             canvas.current_handles[handle_name] = handle_rect_screen
                     else:  # Döndürülmüş seçim çerçevesi çiz
+                        # Use original selection bbox if available during rotation
+                        bbox_to_use = getattr(canvas, 'original_selection_bbox', bbox_world)
+                        if bbox_to_use.isNull() or not bbox_to_use.isValid():
+                            bbox_to_use = bbox_world
+                        
                         # Same rotated selection frame logic as for lines
-                        handle_positions = selection_helpers.calculate_handle_positions_for_rotated_rect(bbox_world, rotation_angle)
+                        handle_positions = selection_helpers.calculate_handle_positions_for_rotated_rect(bbox_to_use, rotation_angle)
                         
                         # Döndürülmüş seçim çerçevesinin köşelerini hesapla
-                        rect_center = bbox_world.center()
+                        rect_center = bbox_to_use.center()
                         angle_rad = math.radians(rotation_angle)
                         cos_a = math.cos(angle_rad)
                         sin_a = math.sin(angle_rad)
                         
                         # Dörtgenin köşelerini döndür
                         corners_world = []
-                        for corner in [bbox_world.topLeft(), bbox_world.topRight(), bbox_world.bottomRight(), bbox_world.bottomLeft()]:
+                        for corner in [bbox_to_use.topLeft(), bbox_to_use.topRight(), bbox_to_use.bottomRight(), bbox_to_use.bottomLeft()]:
                             dx = corner.x() - rect_center.x()
                             dy = corner.y() - rect_center.y()
                             rotated_x = dx * cos_a - dy * sin_a
@@ -585,9 +601,14 @@ def draw_selection_overlay(canvas: 'DrawingCanvas', painter: QPainter):
                             painter.drawRect(handle_rect_screen)
                             canvas.current_handles[f'pt_{idx}'] = handle_rect_screen
                     else:  # Döndürülmüş seçim çerçevesi çiz
+                        # Use original selection bbox if available during rotation for PATH
+                        bbox_to_use = getattr(canvas, 'original_selection_bbox', bbox_world)
+                        if bbox_to_use.isNull() or not bbox_to_use.isValid():
+                            bbox_to_use = bbox_world
+                        
                         # PATH için döndürme durumunda da normal bbox çizimi (PATH noktaları bağımsız)
-                        screen_top_left = canvas.world_to_screen(bbox_world.topLeft())
-                        screen_bottom_right = canvas.world_to_screen(bbox_world.bottomRight())
+                        screen_top_left = canvas.world_to_screen(bbox_to_use.topLeft())
+                        screen_bottom_right = canvas.world_to_screen(bbox_to_use.bottomRight())
                         selection_rect_screen = QRectF(screen_top_left, screen_bottom_right).normalized()
                         frame_pen = QPen(QColor(0, 100, 255, 200), 1, Qt.PenStyle.DashLine)
                         frame_pen.setCosmetic(True)

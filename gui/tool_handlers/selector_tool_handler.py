@@ -131,8 +131,7 @@ def handle_selector_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
         # (Ctrl+Shift durumu hariç)
         if not canvas.grabbed_handle_type and not item_at_click and not canvas.selected_item_indices and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier and ctrl_pressed):
             #logging.debug(f"Selector Press: Selection rectangle started at world_pos: {pos}")
-            canvas.shape_start_point = pos # BAŞLANGIÇ NOKTASINI AYARLA
-            canvas.drawing = True 
+            canvas.shape_start_point = pos # BAŞLANGIÇ NOKTASINI AYARLA            canvas.drawing = True 
             canvas.selecting = True 
             canvas.resizing_selection = False
 
@@ -148,6 +147,10 @@ def handle_selector_press(canvas: 'DrawingCanvas', pos: QPointF, event: QTabletE
             # Orijinal durumları ve bbox'u al
             canvas.original_resize_states = canvas._get_current_selection_states(canvas._parent_page)
             canvas.resize_original_bbox = canvas._get_combined_bbox([]) 
+            
+            # Store original selection bbox dimensions for consistent selection frame during rotation
+            canvas.original_selection_bbox = QRectF(canvas.resize_original_bbox)
+            canvas.selection_rotation_angle = 0.0  # Reset rotation angle
             
             QApplication.setOverrideCursor(Qt.CursorShape.PointingHandCursor)
         else:
